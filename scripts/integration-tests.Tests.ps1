@@ -306,6 +306,114 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $timeDiff = [DateTime]::UtcNow - $timestamp.ToUniversalTime()
             $timeDiff.TotalMinutes | Should -BeLessThan 5
         }
+        
+        It "Should add countryHeader to allowed requests" {
+            # Make an allowed request to the countryHeaderTest endpoint
+            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/countryHeaderTest" -Headers $headers
+            $result.StatusCode | Should -Be 200
+            
+            # Wait a moment for any potential log to be written
+            Start-Sleep -Seconds 2
+            
+            # Read the access.log file from the traefik container
+            $accessLogContent = cat /var/log/traefik/access.log 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to read traefik access log"
+            }
+            
+            # Parse the log lines and check for any entries related to the German IP
+            $logLines = $accessLogContent -split "`n" | Where-Object { $_.Trim() -ne "" }
+            
+            # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
+            $allLogEntries = @()
+            foreach ($line in $logLines) {
+                try {
+                    $logEntry = $line | ConvertFrom-Json
+                    $allLogEntries += $logEntry
+                } catch {
+                    throw "Malformed JSON line found in log file: '$line'."
+                }
+            }
+            
+            # Look for log entries where the X-IPCountry header for Germany is added to the request
+            $countryHeaderLogFound = ($allLogEntries | Where-Object { $_.'request_X-Ipcountry' -eq "DE" }).Count -gt 0
+            
+            # Verify that the country header was added to the request
+            $countryHeaderLogFound | Should -Be $true
+        }
+
+        It "Should add countryHeader to blocked requests" {
+            # Make an allowed request to the countryHeaderTest endpoint
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/countryHeaderTest" -Headers $headers
+            $result.StatusCode | Should -Be 403
+            
+            # Wait a moment for any potential log to be written
+            Start-Sleep -Seconds 2
+            
+            # Read the access.log file from the traefik container
+            $accessLogContent = cat /var/log/traefik/access.log 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to read traefik access log"
+            }
+            
+            # Parse the log lines and check for any entries related to the German IP
+            $logLines = $accessLogContent -split "`n" | Where-Object { $_.Trim() -ne "" }
+            
+            # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
+            $allLogEntries = @()
+            foreach ($line in $logLines) {
+                try {
+                    $logEntry = $line | ConvertFrom-Json
+                    $allLogEntries += $logEntry
+                } catch {
+                    throw "Malformed JSON line found in log file: '$line'."
+                }
+            }
+            
+            # Look for log entries where the X-IPCountry header for US is added to the request
+            $countryHeaderLogFound = ($allLogEntries | Where-Object { $_.'request_X-Ipcountry' -eq "US" }).Count -gt 0
+            
+            # Verify that the country header was added to the request
+            $countryHeaderLogFound | Should -Be $true
+        }
+
+        It "Should not add countryHeader to local requests" {
+            # Make an allowed request to the countryHeaderTest endpoint
+            $headers = @{ "X-Real-IP" = $script:TestIPs.Private_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/countryHeaderTest" -Headers $headers
+            $result.StatusCode | Should -Be 200
+            
+            # Wait a moment for any potential log to be written
+            Start-Sleep -Seconds 2
+            
+            # Read the access.log file from the traefik container
+            $accessLogContent = cat /var/log/traefik/access.log 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to read traefik access log"
+            }
+            
+            # Parse the log lines and check for any entries related to the German IP
+            $logLines = $accessLogContent -split "`n" | Where-Object { $_.Trim() -ne "" }
+            
+            # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
+            $allLogEntries = @()
+            foreach ($line in $logLines) {
+                try {
+                    $logEntry = $line | ConvertFrom-Json
+                    $allLogEntries += $logEntry
+                } catch {
+                    throw "Malformed JSON line found in log file: '$line'."
+                }
+            }
+            
+            # Count the log entries with a country header (should be none)
+            $countryHeaderLogFound = ($allLogEntries | Where-Object { -not $_.PSObject.Properties.Match('request_X-Ipcountry') }).Count -gt 0
+            
+            # Verify that the country header was NOT added to the request
+            $countryHeaderLogFound | Should -Be $false
+        }
     }
     
     Context "Performance and Reliability" {

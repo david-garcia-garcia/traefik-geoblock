@@ -507,6 +507,71 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("Set Country Header", func(t *testing.T) {
+		countryHeader := "X-Country"
+		cfg := &Config{
+			Enabled:              true,
+			DatabaseFilePath:     dbFilePath,
+			AllowedCountries:     []string{"AU"},
+			DisallowedStatusCode: http.StatusForbidden,
+			CountryHeader:        countryHeader,
+		}
+
+		tests := []struct {
+			name                  string
+			ip                    string
+			expectedCode          int
+			expectedCountryHeader string
+			description           string
+		}{
+			{
+				name: "Request from allowed country",
+				ip: "1.1.1.1",
+				expectedCode: http.StatusTeapot,
+				expectedCountryHeader: "AU",
+				description:  "should set country header if request is allowed",
+			},
+			{
+				name: "Request from disallowed country",
+				ip: "8.8.8.8",
+				expectedCountryHeader: "US",
+				expectedCode: http.StatusForbidden,
+				description:  "should set country header if request is denied",
+			},
+			{
+				name: "Request from private IP",
+				ip: "192.168.178.66",
+				expectedCountryHeader: "",
+				expectedCode: http.StatusForbidden,
+				description:  "should not set country header if request has private IP",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+				if err != nil {
+					t.Fatalf("expected no error, but got: %v", err)
+				}
+
+				req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+				req.Header.Set("X-Real-IP", tt.ip)
+
+				rr := httptest.NewRecorder()
+				plugin.ServeHTTP(rr, req)
+
+				if rr.Code != tt.expectedCode {
+					t.Errorf("%s: expected status code %d, but got: %d",
+						tt.description, tt.expectedCode, rr.Code)
+				}
+				header := req.Header.Get(countryHeader)
+				if header != tt.expectedCountryHeader {
+					t.Errorf("expected header %s with value %s, but got: %s", countryHeader, tt.expectedCountryHeader, header)
+				}
+			})
+		}
+	})
 }
 
 func testRequest(t *testing.T, testName string, cfg *Config, ip string, expectedStatus int) {

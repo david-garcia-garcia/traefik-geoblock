@@ -201,6 +201,11 @@ http:
           databaseAutoUpdateToken: ""                # IP2Location download token (if using premium)
           databaseAutoUpdateCode: "DB1"              # Database product code to download (if using premium)
 
+          #-------------------------------
+          # Response header settings
+          #-------------------------------  
+          countryHeader: "X-IPCountry"  # Optional header to store the country code in
+
 ```
 
 ### 🔄 Processing Order

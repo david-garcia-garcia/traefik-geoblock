@@ -43,6 +43,7 @@ type Config struct {
 	// Response settings
 	DisallowedStatusCode int    // HTTP status code for blocked requests
 	BanHtmlFilePath      string // Custom HTML template for blocked requests
+	CountryHeader        string // Header to write the country code to
 
 	// Logging configuration
 	LogLevel          string // Log level: "debug", "info", "warn", "error"
@@ -76,6 +77,7 @@ func CreateConfig() *Config {
 		IPHeaders:              []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
 		DatabaseAutoUpdateCode: "DB1",                                    // Default database code
 		LogBannedRequests:      true,                                     // Default to logging blocked requests
+		CountryHeader:      	"",                                       // Default to empty thus not setting the header
 	}
 }
 
@@ -99,6 +101,8 @@ type Plugin struct {
 	bypassHeaders        map[string]string
 	ipHeaders            []string // List of headers to check for client IP addresses
 	logBannedRequests    bool
+	countryHeader        string
+
 }
 
 func createBootstrapLogger(name string) *slog.Logger {
@@ -404,6 +408,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		ipHeaders:            cfg.IPHeaders,
 		logger:               logger,
 		logBannedRequests:    cfg.LogBannedRequests,
+		countryHeader:    	  cfg.CountryHeader,
 	}
 
 	return plugin, nil
@@ -436,6 +441,10 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	for _, ip := range remoteIPs {
 		allowed, country, phase, err := p.CheckAllowed(ip)
+
+		if p.countryHeader != "" && country != "" && country != PrivateIpCountryAlias {
+			req.Header.Set(p.countryHeader, country)
+		}
 		if err != nil {
 			var ipChain string = ""
 			if len(remoteIPs) > 1 {
