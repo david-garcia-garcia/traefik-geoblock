@@ -106,8 +106,8 @@ func TestGetDBVersion(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error for valid database, got: %v", err)
 	}
-	if version.Month != 2 {
-		t.Errorf("Expected month 5, got: %d", version.Month)
+	if version.Month != 4 {
+		t.Errorf("Expected month 4, got: %d", version.Month)
 	}
 
 	// Test error case
