@@ -21,14 +21,6 @@ func (n noopHandler) ServeHTTP(rw http.ResponseWriter, _ *http.Request) {
 	rw.WriteHeader(http.StatusTeapot)
 }
 
-// Helper function to create test config with required defaults
-func createTestConfig() *Config {
-	return &Config{
-		DisallowedStatusCode: http.StatusForbidden,
-		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
-	}
-}
-
 func TestNew(t *testing.T) {
 	t.Run("Disabled", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: false, IPHeaders: []string{"x-real-ip"}}, pluginName)
