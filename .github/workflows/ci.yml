@@ -38,3 +38,75 @@ jobs:
         go-version: "1.21"
     - name: Run Tests
       run: go test -v ./...
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    - name: Install PowerShell and Pester
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget apt-transport-https software-properties-common
+        wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+        sudo dpkg -i packages-microsoft-prod.deb
+        sudo apt-get update
+        sudo apt-get install -y powershell
+        pwsh -c "Install-Module -Name Pester -Force -Scope CurrentUser -SkipPublisherCheck"
+    - name: Start services
+      run: docker compose up -d
+    - name: Wait for services to be ready
+      shell: pwsh
+      run: |
+        Write-Host "Waiting for Traefik to be ready..."
+        $timeout = 60
+        $elapsed = 0
+        do {
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:8080/api/rawdata" -Method Get -TimeoutSec 5
+            if ($response.StatusCode -eq 200) { break }
+          } catch { }
+          Start-Sleep 2
+          $elapsed += 2
+        } while ($elapsed -lt $timeout)
+        
+        Write-Host "Waiting for whoami services to be ready..."
+        $elapsed = 0
+        do {
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:8000/foo" -Method Get -TimeoutSec 5
+            if ($response.StatusCode -eq 200) { break }
+          } catch { }
+          Start-Sleep 2
+          $elapsed += 2
+        } while ($elapsed -lt $timeout)
+        
+        $elapsed = 0
+        do {
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:8000/bar" -Method Get -TimeoutSec 5
+            if ($response.StatusCode -eq 200) { break }
+          } catch { }
+          Start-Sleep 2
+          $elapsed += 2
+        } while ($elapsed -lt $timeout)
+    - name: Run integration tests
+      shell: pwsh
+      run: |
+        Import-Module Pester -Force
+        Invoke-Pester -Path ./scripts/integration-tests.Tests.ps1 -Output Detailed
+    - name: Show logs on failure
+      if: failure()
+      run: |
+        echo "=== Traefik logs ==="
+        docker compose logs traefik
+        echo "=== Whoami-foo logs ==="
+        docker compose logs whoami-foo
+        echo "=== Whoami2 logs ==="
+        docker compose logs whoami2
+    - name: Cleanup
+      if: always()
+      run: docker compose down -v
