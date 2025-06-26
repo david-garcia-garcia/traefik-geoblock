@@ -152,6 +152,17 @@ http:
             # More specific ranges (longer prefix) take precedence
           
           #-------------------------------
+          # IP Extraction Configuration
+          #-------------------------------
+          ipHeaders:                      # List of headers to check for client IP addresses (required, cannot be empty)
+            - "x-forwarded-for"           # Default: check X-Forwarded-For header first
+            - "x-real-ip"                 # Default: check X-Real-IP header second
+          # Custom examples:
+          # - "cf-connecting-ip"          # Cloudflare
+          # - "x-client-ip"               # Custom proxy
+          # - "x-original-forwarded-for"  # Load balancer
+          
+          #-------------------------------
           # Bypass Configuration
           #-------------------------------
           bypassHeaders:                  # Headers that skip geoblocking entirely
@@ -198,7 +209,7 @@ The plugin processes requests in the following order:
 
 1. Check if plugin is enabled
 2. Check bypass headers
-3. Extract IP addresses from X-Forwarded-For and X-Real-IP headers
+3. Extract IP addresses from configured IP headers (ipHeaders)
 4. For each IP:
    - Check if it's in private network range [allowPrivate]
    - Check allowed/blocked IP blocks [allowedIPBlocks, blockedIPBlocks] (most specific match wins)

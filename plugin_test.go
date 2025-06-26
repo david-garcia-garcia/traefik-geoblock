@@ -21,9 +21,17 @@ func (n noopHandler) ServeHTTP(rw http.ResponseWriter, _ *http.Request) {
 	rw.WriteHeader(http.StatusTeapot)
 }
 
+// Helper function to create test config with required defaults
+func createTestConfig() *Config {
+	return &Config{
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+	}
+}
+
 func TestNew(t *testing.T) {
 	t.Run("Disabled", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: false}, pluginName)
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: false, IPHeaders: []string{"x-real-ip"}}, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -39,7 +47,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("NoNextHandler", func(t *testing.T) {
-		plugin, err := New(context.TODO(), nil, &Config{Enabled: true}, pluginName)
+		plugin, err := New(context.TODO(), nil, &Config{Enabled: true, IPHeaders: []string{"x-real-ip"}}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -59,7 +67,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("InvalidDisallowedStatusCode", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: -1}, pluginName)
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: -1, IPHeaders: []string{"x-real-ip"}}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -69,7 +77,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("UnableToFindDatabase", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: http.StatusForbidden, DatabaseFilePath: "bad-database"}, pluginName)
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: http.StatusForbidden, DatabaseFilePath: "bad-database", IPHeaders: []string{"x-real-ip"}}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -82,12 +90,68 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:          true,
 			DatabaseFilePath: "./testdata/invalid.bin",
+			IPHeaders:        []string{"x-real-ip"},
 		}, pluginName)
 		if err == nil {
 			t.Errorf("expected error about invalid database version, but got none")
 		}
 		if plugin != nil {
 			t.Error("expected plugin to be nil, but is not")
+		}
+	})
+
+	t.Run("EmptyIPHeaders", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:              true,
+			DatabaseFilePath:     dbFilePath,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{}, // Empty slice should be rejected
+		}, pluginName)
+		if err == nil {
+			t.Errorf("expected error about empty IPHeaders, but got none")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil, but is not")
+		}
+	})
+
+	t.Run("CustomIPHeaders", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:              true,
+			DatabaseFilePath:     dbFilePath,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"custom-ip-header", "another-ip-header"},
+			AllowedCountries:     []string{"AU"},
+		}, pluginName)
+		if err != nil {
+			t.Errorf("expected no error, but got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin to not be nil")
+		}
+
+		// Test that custom headers are used for IP extraction
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("custom-ip-header", "1.1.1.1") // Cloudflare DNS (AU)
+
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusTeapot {
+			t.Errorf("expected status code %d for allowed AU IP, but got: %d", http.StatusTeapot, rr.Code)
+		}
+
+		// Test that default headers are NOT used when custom headers are configured
+		req2 := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req2.Header.Set("x-real-ip", "1.1.1.1")       // This should be ignored
+		req2.Header.Set("x-forwarded-for", "1.1.1.1") // This should be ignored
+
+		rr2 := httptest.NewRecorder()
+		plugin.ServeHTTP(rr2, req2)
+
+		// Should get localhost behavior (allowed due to private IP) since custom headers are not set
+		if rr2.Code != http.StatusTeapot {
+			t.Errorf("expected status code %d when custom headers not present, but got: %d", http.StatusTeapot, rr2.Code)
 		}
 	})
 }
@@ -117,6 +181,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 			DatabaseAutoUpdateDir:  tmpDir,
 			DatabaseAutoUpdateCode: "DB1",
 			DisallowedStatusCode:   http.StatusForbidden,
+			IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -139,6 +204,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 			Enabled:              true,
 			DatabaseAutoUpdate:   true,
 			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 			// Deliberately omit DatabaseAutoUpdateDir
 		}
 
@@ -164,6 +230,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 			DatabaseAutoUpdateDir: emptyDir,
 			DisallowedStatusCode:  http.StatusForbidden,
 			DatabaseFilePath:      dbFilePath, // Fall back to default database
+			IPHeaders:             []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -183,6 +250,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			DatabaseFilePath:     dbFilePath,
 			AllowedCountries:     []string{"AU"},
 			DisallowedStatusCode: http.StatusOK,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -208,6 +276,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowedCountries:     []string{},
 			AllowPrivate:         true,
 			DisallowedStatusCode: http.StatusOK,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -233,6 +302,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowedCountries:     []string{},
 			AllowPrivate:         true,
 			DisallowedStatusCode: http.StatusOK,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -258,6 +328,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowedCountries:     []string{"DE"},
 			DisallowedStatusCode: http.StatusForbidden,
 			BanHtmlFilePath:      "geoblockban.html",
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -290,6 +361,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowPrivate:         false,
 			DisallowedStatusCode: http.StatusForbidden,
 			BanHtmlFilePath:      "geoblockban.html",
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -322,6 +394,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowPrivate:         false,
 			DefaultAllow:         true,
 			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		testRequest(t, "US IP blocked", cfg, "8.8.8.8", http.StatusForbidden)
@@ -350,6 +423,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowedIPBlocks:      []string{"203.0.113.0/24", "198.51.100.1/32"}, // Using TEST-NET-3 and TEST-NET-2 ranges
 			DefaultAllow:         false,
 			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		testRequest(t, "Whitelisted subnet allowed", cfg, "203.0.113.100", http.StatusTeapot)
@@ -369,6 +443,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			DatabaseFilePath:     dbFilePath,
 			BlockedCountries:     []string{"US"},
 			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 			BypassHeaders: map[string]string{
 				"X-Bypass-Key": "secret123",
 				"Auth-Token":   "bypass-token",
@@ -469,6 +544,7 @@ func TestPlugin_Lookup(t *testing.T) {
 			AllowedCountries:     []string{},
 			AllowPrivate:         false,
 			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -492,6 +568,7 @@ func TestPlugin_Lookup(t *testing.T) {
 			AllowedCountries:     []string{},
 			AllowPrivate:         false,
 			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -553,6 +630,7 @@ func TestPlugin_ServeHTTP_MalformedIP(t *testing.T) {
 				DisallowedStatusCode: http.StatusForbidden,
 				BanIfError:           tt.banIfError,
 				DatabaseFilePath:     dbFilePath,
+				IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 			}
 
 			// Initialize plugin

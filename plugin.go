@@ -54,6 +54,9 @@ type Config struct {
 	// will skip the geoblocking check entirely
 	BypassHeaders map[string]string
 
+	// IP extraction settings
+	IPHeaders []string // List of headers to check for client IP addresses (cannot be empty)
+
 	// Auto-update settings
 	DatabaseAutoUpdate      bool   `json:"databaseAutoUpdate,omitempty"`
 	DatabaseAutoUpdateDir   string `json:"databaseAutoUpdateDir,omitempty"`
@@ -65,13 +68,14 @@ type Config struct {
 func CreateConfig() *Config {
 	return &Config{
 		DisallowedStatusCode:   http.StatusForbidden,
-		LogLevel:               "info",                  // Default to info logging
-		LogFormat:              "text",                  // Default to text format
-		LogPath:                "",                      // Default to traefik
-		BanIfError:             true,                    // Default to banning on errors
-		BypassHeaders:          make(map[string]string), // Initialize empty map
-		DatabaseAutoUpdateCode: "DB1",                   // Default database code
-		LogBannedRequests:      true,                    // Default to logging blocked requests
+		LogLevel:               "info",                                   // Default to info logging
+		LogFormat:              "text",                                   // Default to text format
+		LogPath:                "",                                       // Default to traefik
+		BanIfError:             true,                                     // Default to banning on errors
+		BypassHeaders:          make(map[string]string),                  // Initialize empty map
+		IPHeaders:              []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
+		DatabaseAutoUpdateCode: "DB1",                                    // Default database code
+		LogBannedRequests:      true,                                     // Default to logging blocked requests
 	}
 }
 
@@ -93,6 +97,7 @@ type Plugin struct {
 	banHtmlContent       string // Changed from banHtmlTemplate
 	logger               *slog.Logger
 	bypassHeaders        map[string]string
+	ipHeaders            []string // List of headers to check for client IP addresses
 	logBannedRequests    bool
 }
 
@@ -260,6 +265,11 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		return nil, fmt.Errorf("%s: %d is not a valid http status code", name, cfg.DisallowedStatusCode)
 	}
 
+	// Validate that IPHeaders is not empty
+	if len(cfg.IPHeaders) == 0 {
+		return nil, fmt.Errorf("%s: IPHeaders cannot be empty - at least one header must be specified for IP extraction", name)
+	}
+
 	// Search for database file in plugin directories if path is provided. Even if auto-update is enabled this
 	// might be a fallback location.
 	if cfg.DatabaseFilePath != "" {
@@ -391,6 +401,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		blockedIPBlocks:      blockedIPBlocks,
 		banHtmlContent:       banHtmlContent,
 		bypassHeaders:        cfg.BypassHeaders,
+		ipHeaders:            cfg.IPHeaders,
 		logger:               logger,
 		logBannedRequests:    cfg.LogBannedRequests,
 	}
@@ -469,26 +480,20 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	p.next.ServeHTTP(rw, req)
 }
 
-// GetRemoteIPs collects the remote IPs from the X-Forwarded-For and X-Real-IP headers.
+// GetRemoteIPs collects the remote IPs from the configured IP headers.
 func (p Plugin) GetRemoteIPs(req *http.Request) []string {
 	uniqIPs := make(map[string]struct{})
 
-	if xff := req.Header.Get("x-forwarded-for"); xff != "" {
-		for _, ip := range strings.Split(xff, ",") {
-			ip = cleanIPAddress(ip)
-			if ip == "" {
-				continue
+	// Check each configured IP header
+	for _, headerName := range p.ipHeaders {
+		if headerValue := req.Header.Get(headerName); headerValue != "" {
+			for _, ip := range strings.Split(headerValue, ",") {
+				ip = cleanIPAddress(ip)
+				if ip == "" {
+					continue
+				}
+				uniqIPs[ip] = struct{}{}
 			}
-			uniqIPs[ip] = struct{}{}
-		}
-	}
-	if xri := req.Header.Get("x-real-ip"); xri != "" {
-		for _, ip := range strings.Split(xri, ",") {
-			ip = cleanIPAddress(ip)
-			if ip == "" {
-				continue
-			}
-			uniqIPs[ip] = struct{}{}
 		}
 	}
 

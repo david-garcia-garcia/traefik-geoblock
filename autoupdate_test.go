@@ -34,6 +34,7 @@ func TestPlugin_DatabaseDownloadAndUpdate(t *testing.T) {
 				DatabaseAutoUpdate:     true,
 				DatabaseAutoUpdateDir:  "./testdata/autoupdate",
 				DatabaseAutoUpdateCode: "DB1",
+				IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 			},
 			setupFiles: func(t *testing.T, dir string) {
 				// Create some test database files with different dates
@@ -195,6 +196,7 @@ func TestUpdateIfNeeded(t *testing.T) {
 			cfg := &Config{
 				DatabaseAutoUpdateDir:  tmpDir,
 				DatabaseAutoUpdateCode: "DB1",
+				IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 			}
 
 			_ = os.RemoveAll(tmpDir)
@@ -264,6 +266,7 @@ func TestDatabaseDirectoryIsCreatedAndDatabaseDownloaded(t *testing.T) {
 		DatabaseAutoUpdate:     true,
 		DatabaseAutoUpdateDir:  targetDir,
 		DatabaseAutoUpdateCode: "DB1",
+		IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 	}
 
 	// Verify directory doesn't exist before test
