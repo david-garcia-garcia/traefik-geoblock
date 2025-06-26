@@ -179,6 +179,135 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         }
     }
     
+    Context "Geoblock Log File Testing" {
+        It "Should write blocked requests to custom log file" {
+            # Clear any existing log content by triggering a container restart if needed
+            # Make a blocked request to the logtest endpoint
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/logtest" -Headers $headers
+            $result.StatusCode | Should -Be 403
+            
+            # Wait a moment for log to be written
+            Start-Sleep -Seconds 2
+            
+            # Read the log file from the Docker container
+            $logContent = docker exec traefik cat /var/log/geoblock/geoblock.log 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to read geoblock log file from container"
+            }
+            
+            # Parse the JSON log entries
+            $logLines = $logContent -split "`n" | Where-Object { $_.Trim() -ne "" }
+            $logLines.Count | Should -BeGreaterThan 0
+            
+            # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
+            $allLogEntries = @()
+            foreach ($line in $logLines) {
+                try {
+                    $logEntry = $line | ConvertFrom-Json
+                    $allLogEntries += $logEntry
+                } catch {
+                    throw "Malformed JSON line found in log file: '$line'. This indicates a bug in the logging implementation."
+                }
+            }
+            
+            # Find the blocked request log entry
+            $blockedEntry = $allLogEntries | Where-Object { 
+                $_.msg -eq "blocked request" -and $_.ip -eq $script:TestIPs.US_Google_DNS 
+            } | Select-Object -First 1
+            
+            # Verify the log entry contains expected fields
+            $blockedEntry | Should -Not -BeNullOrEmpty
+            $blockedEntry.level | Should -Be "INFO"
+            $blockedEntry.msg | Should -Be "blocked request"
+            $blockedEntry.plugin | Should -Match "geoblock"
+            $blockedEntry.ip | Should -Be $script:TestIPs.US_Google_DNS
+            $blockedEntry.country | Should -Be "US"
+            $blockedEntry.host | Should -Match "localhost"
+            $blockedEntry.method | Should -Be "GET"
+            $blockedEntry.path | Should -Be "/logtest"
+            $blockedEntry.phase | Should -Be "blocked_country"
+        }
+        
+        It "Should not log allowed requests (only blocked requests are logged)" {
+            # Make an allowed request to the logtest endpoint
+            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/logtest" -Headers $headers
+            $result.StatusCode | Should -Be 200
+            
+            # Wait a moment for any potential log to be written
+            Start-Sleep -Seconds 2
+            
+            # Read the log file from the Docker container
+            $logContent = docker exec traefik cat /var/log/geoblock/geoblock.log 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to read geoblock log file from container"
+            }
+            
+            # Parse the log lines and check for any entries related to the German IP
+            $logLines = $logContent -split "`n" | Where-Object { $_.Trim() -ne "" }
+            
+            # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
+            $allLogEntries = @()
+            foreach ($line in $logLines) {
+                try {
+                    $logEntry = $line | ConvertFrom-Json
+                    $allLogEntries += $logEntry
+                } catch {
+                    throw "Malformed JSON line found in log file: '$line'. This indicates a bug in the logging implementation."
+                }
+            }
+            
+            # Look for any log entries with the German IP (should not find any for allowed requests)
+            $germanIPLogFound = ($allLogEntries | Where-Object { $_.ip -eq $script:TestIPs.German_IP }).Count -gt 0
+            
+            # Verify that allowed requests are NOT logged
+            $germanIPLogFound | Should -Be $false
+        }
+        
+        It "Should include correct timestamp format in log entries" {
+            # Make a blocked request to generate a log entry
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/logtest" -Headers $headers
+            $result.StatusCode | Should -Be 403
+            
+            # Wait a moment for log to be written
+            Start-Sleep -Seconds 2
+            
+            # Read and parse the log file
+            $logContent = docker exec traefik cat /var/log/geoblock/geoblock.log 2>$null
+            $logLines = $logContent -split "`n" | Where-Object { $_.Trim() -ne "" }
+            
+            # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
+            $allLogEntries = @()
+            foreach ($line in $logLines) {
+                try {
+                    $logEntry = $line | ConvertFrom-Json
+                    $allLogEntries += $logEntry
+                } catch {
+                    throw "Malformed JSON line found in log file: '$line'. This indicates a bug in the logging implementation."
+                }
+            }
+            
+            # Find a geoblock log entry
+            $geoblockEntry = $allLogEntries | Where-Object { 
+                $_.plugin -match "geoblock" -and $_.time 
+            } | Select-Object -First 1
+            
+            # Verify timestamp format (ISO 8601)
+            $geoblockEntry | Should -Not -BeNullOrEmpty
+            $geoblockEntry.time | Should -Match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+            
+            # Verify the timestamp can be parsed as a valid DateTime
+            $timestamp = [DateTime]::Parse($geoblockEntry.time)
+            $timestamp | Should -BeOfType [DateTime]
+            
+            # Verify the timestamp is recent (within last 5 minutes)
+            $timeDiff = [DateTime]::UtcNow - $timestamp.ToUniversalTime()
+            $timeDiff.TotalMinutes | Should -BeLessThan 5
+        }
+    }
+    
     Context "Performance and Reliability" {
         It "Should respond within reasonable time" {
             $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()

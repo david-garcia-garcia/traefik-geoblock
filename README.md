@@ -59,6 +59,25 @@ experimental:
       version: v1.0.1
 ```
 
+## 🧪 Testing
+
+The project includes comprehensive integration tests using PowerShell and Pester. The tests validate:
+
+- Basic connectivity and geoblocking functionality
+- Country-based blocking rules (US, CN, RU blocked; DE, FR, GB allowed)
+- IP header processing (X-Real-IP, X-Forwarded-For)
+- Custom ban HTML responses
+- Log file functionality with JSON format (blocked requests only)
+- Edge cases and error handling
+- Performance and concurrent request handling
+
+Run integration tests locally:
+```powershell
+.\Test-Integration.ps1
+```
+
+The test suite includes a dedicated `/logtest` endpoint that writes geoblock logs to `/var/log/geoblock/geoblock.log` in JSON format for testing log file functionality.
+
 ## ⚙️ Configuration
 
 ### Example Docker Compose Setup
@@ -191,7 +210,7 @@ If any IP in the chain is blocked, the request is denied.
 
 ### 📝 Log Format
 
-When using JSON logging, the following fields are included in the log entries:
+When using JSON logging, the following fields are included in **blocked request** log entries (note: allowed requests are not logged):
 
 - `time`: Timestamp of the request in ISO 8601 format
 - `level`: Log level (debug, info, warn, error)
