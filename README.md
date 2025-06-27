@@ -204,7 +204,11 @@ http:
           #-------------------------------
           # Response header settings
           #-------------------------------  
-          countryHeader: "X-IPCountry"  # Optional header to store the country code in
+          countryHeader: "X-IPCountry"  
+          # Optional header to store the country code in
+          # you can use this to add the header to the access logs
+          # and see where all your trafik is coming from
+          # make sure to include the header in the logs: accesslog.fields.headers.names.X-IPCountry=keep
 
 ```
 
