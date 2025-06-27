@@ -291,6 +291,203 @@ func TestIpLookupHelper_EdgeCases(t *testing.T) {
 	}
 }
 
+func TestIpLookupHelper_PrefixLengthAccuracy(t *testing.T) {
+	tests := []struct {
+		name       string
+		cidrBlocks []string
+		testCases  []struct {
+			ip             string
+			expectedPrefix int
+			shouldMatch    bool
+		}
+	}{
+		{
+			name: "IPv4 Various Prefix Lengths",
+			cidrBlocks: []string{
+				"0.0.0.0/0",        // All IPv4 - /0
+				"10.0.0.0/8",       // Class A - /8
+				"192.168.0.0/16",   // Class C network - /16
+				"203.0.113.0/24",   // Subnet - /24
+				"198.51.100.50/32", // Single IP - /32
+			},
+			testCases: []struct {
+				ip             string
+				expectedPrefix int
+				shouldMatch    bool
+			}{
+				// Should match most specific (longest prefix)
+				{"10.5.10.20", 8, true},     // Matches /8, not /0
+				{"192.168.5.10", 16, true},  // Matches /16, not /0
+				{"203.0.113.100", 24, true}, // Matches /24, not /0
+				{"198.51.100.50", 32, true}, // Matches /32 (exact), not /0
+				{"8.8.8.8", 0, true},        // Only matches /0 (catch-all)
+				{"1.2.3.4", 0, true},        // Only matches /0 (catch-all)
+			},
+		},
+		{
+			name: "IPv6 Various Prefix Lengths",
+			cidrBlocks: []string{
+				"::/0",                   // All IPv6 - /0
+				"2001:db8::/32",          // Large network - /32
+				"2001:db8:85a3::/48",     // Subnet - /48
+				"2001:db8:85a3:8d3::/64", // Host subnet - /64
+				"::1/128",                // Single IP - /128
+			},
+			testCases: []struct {
+				ip             string
+				expectedPrefix int
+				shouldMatch    bool
+			}{
+				// Should match most specific (longest prefix)
+				{"2001:db8:1234:5678::1", 32, true},     // Matches /32, not /0
+				{"2001:db8:85a3:1234::1", 48, true},     // Matches /48, not /32 or /0
+				{"2001:db8:85a3:8d3:1234::1", 64, true}, // Matches /64, not /48, /32, or /0
+				{"::1", 128, true},                      // Matches /128 (exact), not /0
+				{"2001:db9::1", 0, true},                // Only matches /0 (catch-all)
+			},
+		},
+		{
+			name: "Overlapping IPv4 Networks",
+			cidrBlocks: []string{
+				"192.168.0.0/16",   // Large network
+				"192.168.1.0/24",   // Subnet within above
+				"192.168.1.100/30", // Even smaller subnet (4 IPs: .100-.103)
+				"192.168.1.101/32", // Single IP within above
+			},
+			testCases: []struct {
+				ip             string
+				expectedPrefix int
+				shouldMatch    bool
+			}{
+				{"192.168.1.101", 32, true}, // Most specific: /32
+				{"192.168.1.100", 30, true}, // Most specific: /30 (not /24 or /16)
+				{"192.168.1.102", 30, true}, // Most specific: /30
+				{"192.168.1.103", 30, true}, // Most specific: /30
+				{"192.168.1.104", 24, true}, // Most specific: /24 (not in /30)
+				{"192.168.1.50", 24, true},  // Most specific: /24
+				{"192.168.2.1", 16, true},   // Most specific: /16
+				{"192.169.1.1", 0, false},   // No match
+			},
+		},
+		{
+			name: "Edge Case Prefixes",
+			cidrBlocks: []string{
+				"127.0.0.0/8",        // Loopback network
+				"127.0.0.1/32",       // Specific loopback IP
+				"255.255.255.255/32", // Broadcast address
+				"224.0.0.0/4",        // Multicast range
+			},
+			testCases: []struct {
+				ip             string
+				expectedPrefix int
+				shouldMatch    bool
+			}{
+				{"127.0.0.1", 32, true},       // Most specific match
+				{"127.0.0.2", 8, true},        // Loopback network
+				{"127.1.1.1", 8, true},        // Loopback network
+				{"255.255.255.255", 32, true}, // Exact match
+				{"224.0.0.1", 4, true},        // Multicast
+				{"239.255.255.255", 4, true},  // Multicast (end of range)
+				{"240.0.0.1", 0, false},       // No match
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper, err := NewIpLookupHelper(tt.cidrBlocks)
+			if err != nil {
+				t.Fatalf("Failed to create IpLookupHelper: %v", err)
+			}
+
+			for _, tc := range tt.testCases {
+				t.Run("IP_"+tc.ip, func(t *testing.T) {
+					ip := net.ParseIP(tc.ip)
+					if ip == nil {
+						t.Fatalf("Invalid IP address: %s", tc.ip)
+					}
+
+					found, prefixLen, err := helper.IsContained(ip)
+					if err != nil {
+						t.Errorf("IsContained returned error: %v", err)
+					}
+
+					if found != tc.shouldMatch {
+						t.Errorf("IsContained(%s) = %v, want %v", tc.ip, found, tc.shouldMatch)
+					}
+
+					if found && prefixLen != tc.expectedPrefix {
+						t.Errorf("IsContained(%s) returned prefix %d, want %d (IP should match most specific CIDR)",
+							tc.ip, prefixLen, tc.expectedPrefix)
+					}
+
+					if !found && tc.shouldMatch {
+						t.Errorf("IsContained(%s) should have matched with prefix %d", tc.ip, tc.expectedPrefix)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestIpLookupHelper_PrefixLengthConsistency(t *testing.T) {
+	// Test that the same CIDR block always returns the same prefix length
+	cidrBlocks := []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"203.0.113.0/24",
+		"198.51.100.1/32",
+		"2001:db8::/32",
+		"fe80::/10",
+		"::1/128",
+	}
+
+	helper, err := NewIpLookupHelper(cidrBlocks)
+	if err != nil {
+		t.Fatalf("Failed to create IpLookupHelper: %v", err)
+	}
+
+	testCases := []struct {
+		ip             string
+		expectedPrefix int
+	}{
+		{"10.1.2.3", 8},
+		{"172.16.0.1", 12},
+		{"192.168.1.1", 16},
+		{"203.0.113.50", 24},
+		{"198.51.100.1", 32},
+		{"2001:db8::1", 32},
+		{"fe80::1", 10},
+		{"::1", 128},
+	}
+
+	// Test multiple times to ensure consistency
+	for i := 0; i < 10; i++ {
+		for _, tc := range testCases {
+			ip := net.ParseIP(tc.ip)
+			if ip == nil {
+				t.Fatalf("Invalid IP address: %s", tc.ip)
+			}
+
+			found, prefixLen, err := helper.IsContained(ip)
+			if err != nil {
+				t.Errorf("IsContained returned error on iteration %d: %v", i, err)
+			}
+
+			if !found {
+				t.Errorf("IsContained(%s) should have matched on iteration %d", tc.ip, i)
+				continue
+			}
+
+			if prefixLen != tc.expectedPrefix {
+				t.Errorf("Iteration %d: IsContained(%s) returned inconsistent prefix %d, want %d",
+					i, tc.ip, prefixLen, tc.expectedPrefix)
+			}
+		}
+	}
+}
+
 // Benchmark to compare radix tree performance
 func BenchmarkIpLookupHelper_IPv4_Small(b *testing.B) {
 	cidrBlocks := []string{

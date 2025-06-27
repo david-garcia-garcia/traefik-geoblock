@@ -547,14 +547,20 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, country string, phase strin
 		}
 	}
 
+	// Look up the country for this IP first, so we have it available for all code paths
+	country, err = p.Lookup(ip)
+	if err != nil {
+		return false, ip, "", fmt.Errorf("lookup of %s failed: %w", ip, err)
+	}
+
 	blocked, blockedNetworkLength, err := p.isBlockedIPBlocks(ipAddr)
 	if err != nil {
-		return false, ip, "", fmt.Errorf("failed to check if IP %q is blocked by IP block: %w", ip, err)
+		return false, country, "", fmt.Errorf("failed to check if IP %q is blocked by IP block: %w", ip, err)
 	}
 
 	allowed, allowedNetworkLength, err := p.isAllowedIPBlocks(ipAddr)
 	if err != nil {
-		return false, ip, "", fmt.Errorf("failed to check if IP %q is allowed by IP block: %w", ip, err)
+		return false, country, "", fmt.Errorf("failed to check if IP %q is allowed by IP block: %w", ip, err)
 	}
 
 	// NB: whichever matched prefix is longer has higher priority: more specific to less specific only if both matched.
@@ -572,12 +578,6 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, country string, phase strin
 		if blocked {
 			return false, country, "blocked_ip_block", nil
 		}
-	}
-
-	// Look up the country for this IP
-	country, err = p.Lookup(ip)
-	if err != nil {
-		return false, ip, "", fmt.Errorf("lookup of %s failed: %w", ip, err)
 	}
 
 	if _, allowed := p.allowedCountries[country]; allowed {
