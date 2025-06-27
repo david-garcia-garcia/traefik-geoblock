@@ -8,7 +8,7 @@ services:
       - "--accesslog"
       - "--accesslog.filepath=/var/log/traefik/access.log"
       - "--accesslog.format=json"
-      - "--accesslog.fields.headers.names.X-IPCountry=keep"
+      - "--accesslog.fields.headers.names.X-Ipcountry=keep"
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
@@ -116,7 +116,7 @@ services:
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.blockedCountries=US,CN,RU"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.allowedCountries=DE,FR,GB"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.defaultAllow=false"
-      - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.countryHeader=X-IPCountry"
+      - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.countryHeader=X-Ipcountry"
 
 volumes:
   logs-local:
