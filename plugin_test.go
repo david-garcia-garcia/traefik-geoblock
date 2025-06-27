@@ -516,6 +516,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowedCountries:     []string{"AU"},
 			DisallowedStatusCode: http.StatusForbidden,
 			CountryHeader:        countryHeader,
+			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		tests := []struct {
@@ -526,25 +527,25 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			description           string
 		}{
 			{
-				name: "Request from allowed country",
-				ip: "1.1.1.1",
-				expectedCode: http.StatusTeapot,
+				name:                  "Request from allowed country",
+				ip:                    "1.1.1.1",
+				expectedCode:          http.StatusTeapot,
 				expectedCountryHeader: "AU",
-				description:  "should set country header if request is allowed",
+				description:           "should set country header if request is allowed",
 			},
 			{
-				name: "Request from disallowed country",
-				ip: "8.8.8.8",
+				name:                  "Request from disallowed country",
+				ip:                    "8.8.8.8",
 				expectedCountryHeader: "US",
-				expectedCode: http.StatusForbidden,
-				description:  "should set country header if request is denied",
+				expectedCode:          http.StatusForbidden,
+				description:           "should set country header if request is denied",
 			},
 			{
-				name: "Request from private IP",
-				ip: "192.168.178.66",
-				expectedCountryHeader: "",
-				expectedCode: http.StatusForbidden,
-				description:  "should not set country header if request has private IP",
+				name:                  "Request from private IP",
+				ip:                    "192.168.178.66",
+				expectedCountryHeader: "PRIVATE",
+				expectedCode:          http.StatusForbidden,
+				description:           "should set country header to PRIVATE for private IP",
 			},
 		}
 

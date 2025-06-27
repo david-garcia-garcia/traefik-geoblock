@@ -317,7 +317,7 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             Start-Sleep -Seconds 2
             
             # Read the access.log file from the traefik container
-            $accessLogContent = cat /var/log/traefik/access.log 2>$null
+            $accessLogContent = docker exec traefik cat /var/log/traefik/access.log 2>$null
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to read traefik access log"
             }
@@ -353,7 +353,7 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             Start-Sleep -Seconds 2
             
             # Read the access.log file from the traefik container
-            $accessLogContent = cat /var/log/traefik/access.log 2>$null
+            $accessLogContent = docker exec traefik cat /var/log/traefik/access.log 2>$null
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to read traefik access log"
             }
@@ -379,7 +379,7 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $countryHeaderLogFound | Should -Be $true
         }
 
-        It "Should not add countryHeader to local requests" {
+        It "Should add countryHeader with PRIVATE value to local requests" {
             # Make an allowed request to the countryHeaderTest endpoint
             $headers = @{ "X-Real-IP" = $script:TestIPs.Private_IP }
             $result = Invoke-TestRequest -Uri "$script:BaseUrl/countryHeaderTest" -Headers $headers
@@ -389,12 +389,12 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             Start-Sleep -Seconds 2
             
             # Read the access.log file from the traefik container
-            $accessLogContent = cat /var/log/traefik/access.log 2>$null
+            $accessLogContent = docker exec traefik cat /var/log/traefik/access.log 2>$null
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to read traefik access log"
             }
             
-            # Parse the log lines and check for any entries related to the German IP
+            # Parse the log lines and check for any entries related to the private IP
             $logLines = $accessLogContent -split "`n" | Where-Object { $_.Trim() -ne "" }
             
             # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
@@ -408,11 +408,11 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
                 }
             }
             
-            # Count the log entries with a country header (should be none)
-            $countryHeaderLogFound = ($allLogEntries | Where-Object { -not $_.PSObject.Properties.Match('request_X-Ipcountry') }).Count -gt 0
+            # Look for log entries where the X-IPCountry header for PRIVATE is added to the request
+            $countryHeaderLogFound = ($allLogEntries | Where-Object { $_.'request_X-Ipcountry' -eq "PRIVATE" }).Count -gt 0
             
-            # Verify that the country header was NOT added to the request
-            $countryHeaderLogFound | Should -Be $false
+            # Verify that the country header was added with PRIVATE value
+            $countryHeaderLogFound | Should -Be $true
         }
     }
     
