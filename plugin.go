@@ -94,9 +94,9 @@ type Plugin struct {
 	allowPrivate         bool
 	banIfError           bool
 	disallowedStatusCode int
-	allowedIPBlocks      []*net.IPNet
-	blockedIPBlocks      []*net.IPNet
-	banHtmlContent       string // Changed from banHtmlTemplate
+	allowedIPBlocks      *IpLookupHelper // Fast radix tree-based allowed IP block lookups
+	blockedIPBlocks      *IpLookupHelper // Fast radix tree-based blocked IP block lookups
+	banHtmlContent       string          // Changed from banHtmlTemplate
 	logger               *slog.Logger
 	bypassHeaders        map[string]string
 	ipHeaders            []string // List of headers to check for client IP addresses
@@ -355,14 +355,15 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 			"age", time.Since(version.Date()).Round(24*time.Hour))
 	}
 
-	allowedIPBlocks, err := initIPBlocks(cfg.AllowedIPBlocks)
+	// Create separate IP lookup helpers with radix trees for fast lookups
+	allowedIPHelper, err := NewIpLookupHelper(cfg.AllowedIPBlocks)
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed loading allowed CIDR blocks: %w", name, err)
+		return nil, fmt.Errorf("%s: failed loading allowed IP blocks: %w", name, err)
 	}
 
-	blockedIPBlocks, err := initIPBlocks(cfg.BlockedIPBlocks)
+	blockedIPHelper, err := NewIpLookupHelper(cfg.BlockedIPBlocks)
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed loading blocked CIDR blocks: %w", name, err)
+		return nil, fmt.Errorf("%s: failed loading blocked IP blocks: %w", name, err)
 	}
 
 	var banHtmlContent string
@@ -400,8 +401,8 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		allowPrivate:         cfg.AllowPrivate,
 		banIfError:           cfg.BanIfError,
 		disallowedStatusCode: cfg.DisallowedStatusCode,
-		allowedIPBlocks:      allowedIPBlocks,
-		blockedIPBlocks:      blockedIPBlocks,
+		allowedIPBlocks:      allowedIPHelper,
+		blockedIPBlocks:      blockedIPHelper,
 		banHtmlContent:       banHtmlContent,
 		bypassHeaders:        cfg.BypassHeaders,
 		ipHeaders:            cfg.IPHeaders,
@@ -608,42 +609,14 @@ func (p Plugin) Lookup(ip string) (string, error) {
 	return record.Country_short, nil
 }
 
-// Create IP Networks using CIDR block array
-func initIPBlocks(ipBlocks []string) ([]*net.IPNet, error) {
-
-	var ipBlocksNet []*net.IPNet
-
-	for _, cidr := range ipBlocks {
-		_, block, err := net.ParseCIDR(cidr)
-		if err != nil {
-			return nil, fmt.Errorf("parse error on %q: %v", cidr, err)
-		}
-		ipBlocksNet = append(ipBlocksNet, block)
-	}
-
-	return ipBlocksNet, nil
-}
-
-// isAllowedIPBlocks checks if an IP is allowed base on the allowed CIDR blocks
+// isAllowedIPBlocks checks if an IP is allowed based on the allowed CIDR blocks using fast radix tree lookup
 func (p Plugin) isAllowedIPBlocks(ipAddr net.IP) (bool, int, error) {
-	return p.isInIPBlocks(ipAddr, p.allowedIPBlocks)
+	return p.allowedIPBlocks.IsContained(ipAddr)
 }
 
-// isBlockedIPBlocks checks if an IP is allowed base on the blocked CIDR blocks
+// isBlockedIPBlocks checks if an IP is blocked based on the blocked CIDR blocks using fast radix tree lookup
 func (p Plugin) isBlockedIPBlocks(ipAddr net.IP) (bool, int, error) {
-	return p.isInIPBlocks(ipAddr, p.blockedIPBlocks)
-}
-
-// isInIPBlocks indicates whether the given IP exists in any of the IP subnets contained within ipBlocks.
-func (p Plugin) isInIPBlocks(ipAddr net.IP, ipBlocks []*net.IPNet) (bool, int, error) {
-	for _, block := range ipBlocks {
-		if block.Contains(ipAddr) {
-			ones, _ := block.Mask.Size()
-			return true, ones, nil
-		}
-	}
-
-	return false, 0, nil
+	return p.blockedIPBlocks.IsContained(ipAddr)
 }
 
 // Update the serveBanHtml function to use simple string replacement
