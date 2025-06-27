@@ -508,7 +508,10 @@ func BenchmarkIpLookupHelper_IPv4_Small(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		helper.IsContained(ip)
+		_, _, err := helper.IsContained(ip)
+		if err != nil {
+			b.Fatalf("IsContained returned error: %v", err)
+		}
 	}
 }
 
@@ -532,6 +535,9 @@ func BenchmarkIpLookupHelper_IPv4_Large(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		helper.IsContained(ip)
+		_, _, err := helper.IsContained(ip)
+		if err != nil {
+			b.Fatalf("IsContained returned error: %v", err)
+		}
 	}
 }
