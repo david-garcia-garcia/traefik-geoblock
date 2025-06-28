@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const testPluginName = "test-plugin"
+
 func TestTraefikLogWriter_Write(t *testing.T) {
 	// Capture log output by temporarily replacing the default logger
 	var buf bytes.Buffer
@@ -38,7 +40,7 @@ func TestTraefikLogWriter_Write(t *testing.T) {
 }
 
 func TestCreateBootstrapLogger(t *testing.T) {
-	pluginName := "test-plugin"
+	pluginName := testPluginName
 	logger := createBootstrapLogger(pluginName)
 
 	if logger == nil {
@@ -67,7 +69,7 @@ func TestCreateBootstrapLogger(t *testing.T) {
 }
 
 func TestCreateLogger_LogLevels(t *testing.T) {
-	pluginName := "test-plugin"
+	pluginName := testPluginName
 	bootstrapLogger := createBootstrapLogger(pluginName)
 
 	tests := []struct {
@@ -101,7 +103,7 @@ func TestCreateLogger_LogLevels(t *testing.T) {
 }
 
 func TestCreateLogger_LogFormats(t *testing.T) {
-	pluginName := "test-plugin"
+	pluginName := testPluginName
 	bootstrapLogger := createBootstrapLogger(pluginName)
 
 	tests := []struct {
@@ -131,7 +133,7 @@ func TestCreateLogger_LogFormats(t *testing.T) {
 }
 
 func TestCreateLogger_LogPaths(t *testing.T) {
-	pluginName := "test-plugin"
+	pluginName := testPluginName
 	bootstrapLogger := createBootstrapLogger(pluginName)
 
 	t.Run("empty path (default to traefik)", func(t *testing.T) {
@@ -306,7 +308,7 @@ func BenchmarkTraefikLogWriter_Write(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		writer.Write(message)
+		_, _ = writer.Write(message)
 	}
 }
 
