@@ -3,7 +3,6 @@ package traefik_geoblock
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -115,54 +114,4 @@ func GetDateFromName(dbPath string) (time.Time, error) {
 	}
 
 	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), nil
-}
-
-func fileExists(filename string) bool {
-	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return !info.IsDir()
-}
-
-// copyFile copies a file from src to dst.
-// If dst exists, it will be overwritten.
-func copyFile(src string, dst string, overwrite bool) error {
-	// Check if source file exists
-	if !fileExists(src) {
-		return fmt.Errorf("source file does not exist: %s", src)
-	}
-
-	// Check if destination exists and handle according to overwrite parameter
-	if fileExists(dst) {
-		// File exists - return error if overwrite is false
-		if !overwrite {
-			return fmt.Errorf("destination file already exists: %s", dst)
-		}
-	}
-
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("failed to open source file: %w", err)
-	}
-	defer sourceFile.Close()
-
-	// Create or truncate the destination file with same permissions as source
-	destFile, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to create destination file: %w", err)
-	}
-	defer destFile.Close()
-
-	// Copy the contents
-	if _, err := io.Copy(destFile, sourceFile); err != nil {
-		return fmt.Errorf("failed to copy file contents: %w", err)
-	}
-
-	// Ensure all data is written to disk
-	if err := destFile.Sync(); err != nil {
-		return fmt.Errorf("failed to sync destination file: %w", err)
-	}
-
-	return nil
 }

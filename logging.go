@@ -65,7 +65,7 @@ func createLogger(name, level, format, path string, bootstrapLogger *slog.Logger
 
 	// Only attempt file writing if explicitly specified
 	if path != "" {
-		bw, err := newBufferedFileWriter(path, 2048, 2*time.Second)
+		bw, err := newBufferedFileWriter(path, 1024, 2*time.Second)
 		if err != nil {
 			bootstrapLogger.Error("Failed to create buffered file writer for path '%s': %v\n", path, err)
 		} else {

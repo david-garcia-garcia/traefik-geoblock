@@ -7,9 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"log/slog"
 
@@ -102,56 +100,6 @@ type Plugin struct {
 	countryHeader        string
 }
 
-// searchFile looks for a file in the filesystem, handling both direct paths and directory searches.
-// If baseFile is a direct path to an existing file, that path is returned.
-// If baseFile is a directory, it recursively searches for defaultFile within that directory.
-//
-// Parameters:
-//   - baseFile: Either a direct file path or directory to search in
-//   - defaultFile: Filename to search for if baseFile is a directory
-//
-// Returns:
-//   - The path to the found file, or the original baseFile path if not found
-//
-// The function will log errors if the file cannot be found or if there are issues during the search,
-// but will not fail - it always returns a path.
-func searchFile(baseFile string, defaultFile string, logger *slog.Logger) string {
-
-	// Return early if baseFile is empty
-	if baseFile == "" {
-		return defaultFile
-	}
-
-	// Check if the file exists at the specified path
-	if fileExists(baseFile) {
-		return baseFile
-	}
-
-	err := filepath.Walk(baseFile, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip errors and continue walking
-		}
-		if !info.IsDir() {
-			if filepath.Base(path) == defaultFile {
-				baseFile = path         // Update baseFile with the found path
-				return filepath.SkipAll // Stop walking once found
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		// Log error but continue with original path
-		logger.Error("error searching for file", "error", err)
-	}
-
-	if !fileExists(baseFile) {
-		logger.Error("could not find file", "file", defaultFile, "path", baseFile)
-	}
-
-	return baseFile // Return found path or original path if not found
-}
-
 // New creates a new plugin instance.
 func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http.Handler, error) {
 	bootstrapLogger := createBootstrapLogger(name)
@@ -191,86 +139,27 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		return nil, fmt.Errorf("%s: IPHeaders cannot be empty - at least one header must be specified for IP extraction", name)
 	}
 
-	// Search for database file in plugin directories if path is provided. Even if auto-update is enabled this
-	// might be a fallback location.
-	if cfg.DatabaseFilePath != "" {
-		cfg.DatabaseFilePath = searchFile(cfg.DatabaseFilePath, "IP2LOCATION-LITE-DB1.IPV6.BIN", bootstrapLogger)
+	// Initialize database factory (singleton pattern ensures this only happens once)
+	dbFactory := GetDatabaseFactory()
+
+	// Create focused database configuration
+	dbConfig := &DatabaseConfig{
+		DatabaseFilePath:        cfg.DatabaseFilePath,
+		DatabaseAutoUpdate:      cfg.DatabaseAutoUpdate,
+		DatabaseAutoUpdateDir:   cfg.DatabaseAutoUpdateDir,
+		DatabaseAutoUpdateToken: cfg.DatabaseAutoUpdateToken,
+		DatabaseAutoUpdateCode:  cfg.DatabaseAutoUpdateCode,
 	}
 
-	// Handle auto-update configuration. This must be carefully crafted because multiple middleware instances
-	// might be running at the same time and trying to compete here.
-	if cfg.DatabaseAutoUpdate {
-		if cfg.DatabaseAutoUpdateDir == "" {
-			return nil, fmt.Errorf("DatabaseAutoUpdateDir must be specified when auto-update is enabled")
-		}
-
-		tmpFile := filepath.Join(os.TempDir(), "IP2LOCATION-LITE-DB1.IPV6.BIN")
-
-		newDatabase := ""
-
-		if fileExists(tmpFile) {
-			// The traefik instance was already initialized previously or the middleware might have been refreshed.
-			logger.Debug("Using already existing database from temp location")
-			newDatabase = tmpFile
-		} else {
-			latest := ""
-
-			// Try to find and use latest database.
-			if latest, err := findLatestDatabase(cfg.DatabaseAutoUpdateDir, cfg.DatabaseAutoUpdateCode); err == nil && latest != "" {
-				// Copy database to temporary location. We can safely assume that the underlying storage defined in DatabaseAutoUpdateDir is NFS so it is
-				// probably orders of magnitude slower in terms of IO than wherever the container itself is, which is probably
-				// fast ephemeral storage in the node itself (i.e. in a Kubernetes cluster). If we have multiple middlewares
-				// in the same traefik instance they will all compete to do this at startup, but i really DO NOT WANT to add
-				// any sort of synchronization or lock during startup.
-				if err := copyFile(latest, tmpFile, false); err != nil {
-					logger.Warn(fmt.Sprintf("failed to copy database to temp location: %v", err))
-					if fileExists(tmpFile) {
-						// Other middlware initialization might have already copied the file, so we can use it.
-						newDatabase = tmpFile
-					} else {
-						newDatabase = latest // Fallback to original location
-					}
-				} else {
-					newDatabase = tmpFile
-					logger.Debug(fmt.Sprintf("copied database to temp location: %s", tmpFile))
-				}
-			}
-
-			// This is a deferred action that updates the database in the background if needed. Returned errors
-			// only work for the non deferred calls. Careful with this method because it uses the filename
-			// and not the actual DB metadata to decide if the DB is outdated. It accepts an empty path indicating
-			// no auto-update database is available (so it will force an initial download).
-			_ = UpdateIfNeeded(latest, false, logger, cfg)
-		}
-
-		if fileExists(newDatabase) {
-			// Make sure this is a valid IP2 database before assigning it to the config
-			_, err := GetDatabaseVersion(newDatabase)
-			if err != nil {
-				logger.Warn(fmt.Sprintf("failed to open database %s: %v", newDatabase, err))
-			} else {
-				cfg.DatabaseFilePath = newDatabase
-			}
-		}
+	// Initialize the database factory if not already done
+	if err := dbFactory.Initialize(dbConfig, logger); err != nil {
+		return nil, fmt.Errorf("%s: failed to initialize database: %w", name, err)
 	}
 
-	db, err := ip2location.OpenDB(cfg.DatabaseFilePath)
+	// Get database instance from factory
+	db, err := dbFactory.GetDatabase()
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to open database: %w", name, err)
-	}
-
-	// Check database version
-	version, err := GetDatabaseVersion(cfg.DatabaseFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to read database version: %w", name, err)
-	}
-	logger.Debug("using ip2location database version: " + version.String() + " from " + cfg.DatabaseFilePath)
-
-	// Check if database is older than 2 months
-	if time.Since(version.Date()) > 60*24*time.Hour {
-		bootstrapLogger.Warn("ip2location database is more than 2 months old",
-			"version", version.String(),
-			"age", time.Since(version.Date()).Round(24*time.Hour))
+		return nil, fmt.Errorf("%s: failed to get database instance: %w", name, err)
 	}
 
 	// Create separate IP lookup helpers with radix trees for fast lookups
@@ -310,7 +199,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	plugin := &Plugin{
 		next:                 next,
 		name:                 name,
-		databaseFile:         cfg.DatabaseFilePath,
+		databaseFile:         dbFactory.GetDatabasePath(),
 		db:                   db,
 		enabled:              cfg.Enabled,
 		allowedCountries:     allowedCountries,
