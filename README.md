@@ -14,8 +14,8 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 ## ✨ Features
 
 - Block or allow requests based on country of origin (using ISO 3166-1 alpha-2 country codes)
-- Whitelist specific IP ranges (CIDR notation)
-- Blacklist specific IP ranges (CIDR notation)
+- Whitelist specific IP ranges (CIDR notation) - supports both inline configuration and directory-based files
+- Blacklist specific IP ranges (CIDR notation) - supports both inline configuration and directory-based files
 - Optional bypass using custom headers
 - Configurable handling of private/internal networks
 - Customizable error responses
@@ -151,11 +151,12 @@ http:
             - "203.0.113.0/24"
             # More specific ranges (longer prefix) take precedence
           
-          # Directory-based IP blocks (automatically monitored for changes)
+          # Directory-based IP blocks (loaded once during plugin initialization)
           allowedIPBlocksDir: "/data/allowed-ips/"   # Directory with .txt files containing allowed CIDR blocks
           blockedIPBlocksDir: "/data/blocked-ips/"   # Directory with .txt files containing blocked CIDR blocks
-          # Files are monitored every 60-90 seconds for changes and automatically reloaded
+          # All .txt files in the directory are scanned recursively during plugin startup
           # Each .txt file should contain one CIDR block per line (comments with # supported)
+          # Note: Changes to files require plugin restart to take effect
           # Example file content:
           #   # AWS IP ranges
           #   172.16.0.0/12

@@ -90,9 +90,9 @@ type Plugin struct {
 	allowPrivate         bool
 	banIfError           bool
 	disallowedStatusCode int
-	allowedIPBlocks      *sharedIpLookupMonitor // Fast radix tree-based allowed IP block lookups with file monitoring
-	blockedIPBlocks      *sharedIpLookupMonitor // Fast radix tree-based blocked IP block lookups with file monitoring
-	banHtmlContent       string                 // Changed from banHtmlTemplate
+	allowedIPBlocks      *IpLookupFileMonitor // Fast radix tree-based allowed IP block lookups
+	blockedIPBlocks      *IpLookupFileMonitor // Fast radix tree-based blocked IP block lookups
+	banHtmlContent       string               // Changed from banHtmlTemplate
 	logger               *slog.Logger
 	bypassHeaders        map[string]string
 	ipHeaders            []string // List of headers to check for client IP addresses
