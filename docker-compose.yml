@@ -141,6 +141,40 @@ services:
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.blockedCountries="
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.defaultAllow=false"
 
+  # NEW: Additional routes sharing existing middleware definitions
+  whoami-shared1:
+    image: traefik/whoami
+    container_name: "simple-service-shared1"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-shared1.rule=PathPrefix(`/shared1`)"
+      - "traefik.http.routers.router-shared1.entrypoints=web"
+      - "traefik.http.routers.router-shared1.middlewares=geoblock@docker"  # SHARES geoblock middleware
+      - "traefik.http.services.service-shared1.loadbalancer.server.port=80"
+
+  whoami-shared2:
+    image: traefik/whoami
+    container_name: "simple-service-shared2"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-shared2.rule=PathPrefix(`/shared2`)"
+      - "traefik.http.routers.router-shared2.entrypoints=web"
+      - "traefik.http.routers.router-shared2.middlewares=geoblock@docker"  # SHARES geoblock middleware
+      - "traefik.http.services.service-shared2.loadbalancer.server.port=80"
+
+  whoami-shared3:
+    image: traefik/whoami
+    container_name: "simple-service-shared3"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-shared3.rule=PathPrefix(`/shared3`)"
+      - "traefik.http.routers.router-shared3.entrypoints=web"
+      - "traefik.http.routers.router-shared3.middlewares=geoblock2@docker"  # SHARES geoblock2 middleware
+      - "traefik.http.services.service-shared3.loadbalancer.server.port=80"
+
 volumes:
   logs-local:
   geoblock-logs:

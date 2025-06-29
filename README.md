@@ -151,6 +151,16 @@ http:
             - "203.0.113.0/24"
             # More specific ranges (longer prefix) take precedence
           
+          # Directory-based IP blocks (automatically monitored for changes)
+          allowedIPBlocksDir: "/data/allowed-ips/"   # Directory with .txt files containing allowed CIDR blocks
+          blockedIPBlocksDir: "/data/blocked-ips/"   # Directory with .txt files containing blocked CIDR blocks
+          # Files are monitored every 60-90 seconds for changes and automatically reloaded
+          # Each .txt file should contain one CIDR block per line (comments with # supported)
+          # Example file content:
+          #   # AWS IP ranges
+          #   172.16.0.0/12
+          #   203.0.113.0/24
+          
           #-------------------------------
           # IP Extraction Configuration
           #-------------------------------
@@ -223,7 +233,7 @@ The plugin processes requests in the following order:
 3. Extract IP addresses from configured IP headers (ipHeaders)
 4. For each IP:
    - Check if it's in private network range [allowPrivate]
-   - Check allowed/blocked IP blocks [allowedIPBlocks, blockedIPBlocks] (most specific match wins)
+   - Check allowed/blocked IP blocks [allowedIPBlocks + allowedIPBlocksDir, blockedIPBlocks + blockedIPBlocksDir] (most specific match wins)
    - Look up country code 
    - Check allowed/blocked countries [allowedCountries, blockedCountries]
    - Apply default allow/deny if no rules match [defaultAllow]

@@ -31,8 +31,10 @@ type Config struct {
 	BlockedCountries []string // Blocklist of countries to block
 
 	// IP-based rules
-	AllowedIPBlocks []string // Whitelist of CIDR blocks
-	BlockedIPBlocks []string // Blocklist of CIDR blocks
+	AllowedIPBlocks    []string // Whitelist of CIDR blocks
+	BlockedIPBlocks    []string // Blocklist of CIDR blocks
+	AllowedIPBlocksDir string   // Path to directory containing allowed CIDR block files (.txt)
+	BlockedIPBlocksDir string   // Path to directory containing blocked CIDR block files (.txt)
 
 	// Response settings
 	DisallowedStatusCode int    // HTTP status code for blocked requests
@@ -88,9 +90,9 @@ type Plugin struct {
 	allowPrivate         bool
 	banIfError           bool
 	disallowedStatusCode int
-	allowedIPBlocks      *IpLookupHelper // Fast radix tree-based allowed IP block lookups
-	blockedIPBlocks      *IpLookupHelper // Fast radix tree-based blocked IP block lookups
-	banHtmlContent       string          // Changed from banHtmlTemplate
+	allowedIPBlocks      *sharedIpLookupMonitor // Fast radix tree-based allowed IP block lookups with file monitoring
+	blockedIPBlocks      *sharedIpLookupMonitor // Fast radix tree-based blocked IP block lookups with file monitoring
+	banHtmlContent       string                 // Changed from banHtmlTemplate
 	logger               *slog.Logger
 	bypassHeaders        map[string]string
 	ipHeaders            []string // List of headers to check for client IP addresses
@@ -156,13 +158,13 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	db := factory.GetWrapper()
 	databasePath := db.GetPath()
 
-	// Create separate IP lookup helpers with radix trees for fast lookups
-	allowedIPHelper, err := NewIpLookupHelper(cfg.AllowedIPBlocks)
+	// Create separate IP lookup file monitors with radix trees for fast lookups and file monitoring
+	allowedIPHelper, err := NewIpLookupFileMonitor(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading allowed IP blocks: %w", name, err)
 	}
 
-	blockedIPHelper, err := NewIpLookupHelper(cfg.BlockedIPBlocks)
+	blockedIPHelper, err := NewIpLookupFileMonitor(cfg.BlockedIPBlocks, cfg.BlockedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading blocked IP blocks: %w", name, err)
 	}

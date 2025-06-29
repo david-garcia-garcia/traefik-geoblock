@@ -138,19 +138,32 @@ type IpLookupHelper struct {
 	tree *ipRadixTree
 }
 
-// NewIpLookupHelper creates a new IP lookup helper with the given CIDR block list
-func NewIpLookupHelper(cidrBlocks []string) (*IpLookupHelper, error) {
-	helper := &IpLookupHelper{
+// NewEmptyIpLookupHelper creates a new empty IP lookup helper
+func NewEmptyIpLookupHelper() *IpLookupHelper {
+	return &IpLookupHelper{
 		tree: newIPRadixTree(),
 	}
+}
+
+// AddCIDR adds a single CIDR block to the helper
+func (helper *IpLookupHelper) AddCIDR(cidr string) error {
+	_, block, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return fmt.Errorf("parse error on CIDR %q: %v", cidr, err)
+	}
+	helper.tree.insert(block)
+	return nil
+}
+
+// NewIpLookupHelper creates a new IP lookup helper with the given CIDR block list
+func NewIpLookupHelper(cidrBlocks []string) (*IpLookupHelper, error) {
+	helper := NewEmptyIpLookupHelper()
 
 	// Parse and insert CIDR blocks
 	for _, cidr := range cidrBlocks {
-		_, block, err := net.ParseCIDR(cidr)
-		if err != nil {
-			return nil, fmt.Errorf("parse error on CIDR %q: %v", cidr, err)
+		if err := helper.AddCIDR(cidr); err != nil {
+			return nil, err
 		}
-		helper.tree.insert(block)
 	}
 
 	return helper, nil

@@ -1,0 +1,6 @@
+# AWS IP blocks - example file
+# This file contains some example AWS CIDR blocks
+3.5.140.0/22
+52.95.245.0/24
+54.239.2.0/23
+15.230.39.0/24 
