@@ -362,6 +362,8 @@ func TestIpLookupFileMonitor_FileChanges(t *testing.T) {
 	}
 
 	// Modify file to add new block
+	// Add a small delay to ensure file modification time changes
+	time.Sleep(100 * time.Millisecond)
 	writeBlocksFile(t, blockFile, []string{
 		"192.168.0.0/16",
 		"10.0.0.0/8",
