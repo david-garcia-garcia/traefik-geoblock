@@ -189,7 +189,7 @@ func TestFileUtils_Search(t *testing.T) {
 
 		// Create target file in subdirectory
 		targetFile := filepath.Join(subDir, "target.bin")
-		if err := os.WriteFile(targetFile, []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(targetFile, []byte("test"), 0600); err != nil {
 			t.Fatalf("failed to create target file: %v", err)
 		}
 

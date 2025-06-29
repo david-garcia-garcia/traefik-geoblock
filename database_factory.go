@@ -1,12 +1,12 @@
 package traefik_geoblock
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -362,10 +362,10 @@ func generateConfigHash(config *DatabaseConfig) string {
 			config.DatabaseAutoUpdateCode)
 	}
 
-	// Generate MD5 hash
-	hasher := md5.New()
+	// Generate FNV hash
+	hasher := fnv.New32()
 	hasher.Write(configBytes)
-	return hex.EncodeToString(hasher.Sum(nil))
+	return strconv.FormatUint(uint64(hasher.Sum32()), 10)
 }
 
 // GetDatabaseFactory returns a singleton database factory for the given configuration

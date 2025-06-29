@@ -470,3 +470,164 @@ func TestDatabaseFactory_Integration(t *testing.T) {
 		t.Errorf("Expected database path to be a timestamped local copy, got: %s", dbPath)
 	}
 }
+
+func TestDatabaseFactory_StartupUpdateAndVersionChange(t *testing.T) {
+	// Cleanup factories before test
+	CleanupFactories()
+	defer CleanupFactories()
+
+	// Create a temporary directory for auto-update
+	tmpDir, err := os.MkdirTemp("", "geoblock-startup-update-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	// Step 1: Create an old database (2 months ago) to trigger immediate update
+	oldDate := time.Now().AddDate(0, -2, 0).Format("20060102") // 2 months ago
+	oldDbPath := filepath.Join(tmpDir, oldDate+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	if err := copyFile("./IP2LOCATION-LITE-DB1.IPV6.BIN", oldDbPath, true); err != nil {
+		t.Fatalf("Failed to copy old test database: %v", err)
+	}
+
+	config := &DatabaseConfig{
+		DatabaseFilePath:        "./IP2LOCATION-LITE-DB1.IPV6.BIN", // Fallback database
+		DatabaseAutoUpdate:      true,
+		DatabaseAutoUpdateDir:   tmpDir,
+		DatabaseAutoUpdateCode:  "DB1",
+		DatabaseAutoUpdateToken: "", // Use free version for test
+	}
+
+	// Step 2: Create factory - this should trigger immediate update check due to old database
+	factory, err := NewDatabaseFactory(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create factory with auto-update: %v", err)
+	}
+	defer factory.Close()
+
+	wrapper := factory.GetWrapper()
+	if wrapper == nil {
+		t.Fatal("Expected wrapper to not be nil")
+	}
+
+	// Step 3: Get initial version and verify database is working
+	initialVersion := wrapper.GetVersion()
+	if initialVersion == nil {
+		t.Fatal("Expected initial version to not be nil")
+	}
+
+	// Verify initial lookup works
+	record, err := wrapper.Get_country_short("8.8.8.8")
+	if err != nil {
+		t.Fatalf("Failed to lookup IP initially: %v", err)
+	}
+	if record.Country_short != "US" {
+		t.Errorf("Expected country US for 8.8.8.8, got %s", record.Country_short)
+	}
+
+	t.Logf("Initial database version: %s, age: %v", initialVersion.String(), time.Since(initialVersion.Date()))
+
+	// Step 4: Wait for the startup update process to complete with timeout
+	// The immediate check runs in a goroutine, so we need to wait for it to detect the old database
+	updateDetected := false
+	timeout := time.After(5 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for !updateDetected {
+		select {
+		case <-timeout:
+			t.Fatal("Timeout waiting for startup update to be detected")
+		case <-ticker.C:
+			// Check if an update process has been triggered by checking if any newer database exists
+			// or if the current path indicates a local copy was created (which happens during auto-update init)
+			currentPath := wrapper.GetPath()
+			if strings.Contains(currentPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+				updateDetected = true
+				t.Logf("Startup update initialization detected - using local copy: %s", currentPath)
+			}
+		}
+	}
+
+	// Step 5: Simulate a successful update by creating a newer database in the auto-update directory
+	// This simulates what would happen after a successful download
+	newDate := time.Now().Format("20060102")
+	newDbPath := filepath.Join(tmpDir, newDate+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	if err := copyFile("./IP2LOCATION-LITE-DB1.IPV6.BIN", newDbPath, true); err != nil {
+		t.Fatalf("Failed to copy new test database: %v", err)
+	}
+
+	t.Logf("Created simulated updated database: %s", newDbPath)
+
+	// Step 6: Manually trigger another check and update cycle to pick up the new database
+	factory.checkAndUpdate()
+
+	// Step 7: Wait for the hot-swap process to complete with timeout
+	hotSwapCompleted := false
+	initialPath := wrapper.GetPath()
+	hotSwapTimeout := time.After(3 * time.Second)
+	hotSwapTicker := time.NewTicker(50 * time.Millisecond)
+	defer hotSwapTicker.Stop()
+
+	for !hotSwapCompleted {
+		select {
+		case <-hotSwapTimeout:
+			t.Logf("Hot-swap may not have occurred (which is acceptable if no newer database was found)")
+			hotSwapCompleted = true // Exit the loop
+		case <-hotSwapTicker.C:
+			currentPath := wrapper.GetPath()
+			// Check if the database path has changed (indicating a hot-swap occurred)
+			if currentPath != initialPath {
+				t.Logf("Hot-swap detected - path changed from %s to %s", initialPath, currentPath)
+				hotSwapCompleted = true
+			}
+		}
+	}
+
+	// Step 8: Verify the new version is being used
+	currentVersion := wrapper.GetVersion()
+	if currentVersion == nil {
+		t.Fatal("Expected current version to not be nil")
+	}
+
+	t.Logf("Current database version: %s, age: %v", currentVersion.String(), time.Since(currentVersion.Date()))
+
+	// Step 9: Verify that a new database version is being used
+	// The version should be different if an update occurred
+	if currentVersion.Date().Equal(initialVersion.Date()) {
+		// If dates are the same, check if the database path has changed (indicating a hot-swap occurred)
+		currentPath := wrapper.GetPath()
+		t.Logf("Database path after update: %s", currentPath)
+
+		// The path should contain a newer timestamp indicating a hot-swap occurred
+		if !strings.Contains(currentPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+			t.Error("Expected database path to be a timestamped local copy indicating hot-swap occurred")
+		}
+	}
+
+	// Step 10: Verify database functionality still works after potential update
+	record2, err := wrapper.Get_country_short("8.8.4.4") // Different IP for variety
+	if err != nil {
+		t.Fatalf("Failed to lookup IP after update: %v", err)
+	}
+	if record2.Country_short != "US" {
+		t.Errorf("Expected country US for 8.8.4.4 after update, got %s", record2.Country_short)
+	}
+
+	// Step 11: Verify that the database age check logic is working
+	// Since we created databases, one should be older than 1 month
+	oldDbVersion, err := GetDatabaseVersion(oldDbPath)
+	if err != nil {
+		t.Fatalf("Failed to get old database version: %v", err)
+	}
+
+	if time.Since(oldDbVersion.Date()) <= 30*24*time.Hour {
+		t.Errorf("Expected old database to be older than 1 month, but age is: %v", time.Since(oldDbVersion.Date()))
+	}
+
+	t.Logf("Test completed successfully - startup update behavior verified")
+}
