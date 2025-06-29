@@ -2,10 +2,10 @@ package traefik_geoblock
 
 import (
 	"bufio"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // Used for non-cryptographic cache key generation
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/rand" //nolint:gosec // Used for timing jitter, not security
 	"net"
 	"os"
 	"path/filepath"
@@ -52,7 +52,7 @@ func generateMonitorHash(cidrBlocks []string, directoryPath string) string {
 	}
 
 	// Generate MD5 hash (sufficient for cache key)
-	hash := md5.Sum(configBytes)
+	hash := md5.Sum(configBytes) //nolint:gosec // Used for non-cryptographic cache key generation
 	return fmt.Sprintf("%x", hash)
 }
 
@@ -86,7 +86,7 @@ func NewIpLookupFileMonitor(cidrBlocks []string, directoryPath string, logger *s
 	}
 
 	// Random jitter between 0-30 seconds to prevent thundering herd when many routes exist
-	jitter := time.Duration(rand.Intn(30)) * time.Second
+	jitter := time.Duration(rand.Intn(30)) * time.Second //nolint:gosec // Used for timing jitter, not security
 	checkInterval := 60*time.Second + jitter
 
 	shared := &sharedIpLookupMonitor{

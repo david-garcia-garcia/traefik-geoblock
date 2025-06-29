@@ -435,7 +435,7 @@ completely-malformed-entry
 # Another valid block
 10.0.0.0/8
 `
-		err := os.WriteFile(blockFile, []byte(content), 0644)
+		err := os.WriteFile(blockFile, []byte(content), 0600)
 		if err != nil {
 			t.Fatalf("Failed to create test file: %v", err)
 		}
@@ -502,7 +502,7 @@ not.an.ip/subnet
 8.8.8.0/24
 # End of file
 `
-		err := os.WriteFile(mixedFile, []byte(mixedContent), 0644)
+		err := os.WriteFile(mixedFile, []byte(mixedContent), 0600)
 		if err != nil {
 			t.Fatalf("Failed to create mixed file: %v", err)
 		}
@@ -515,7 +515,7 @@ totally-invalid
 not-an-ip-at-all
 192.168.1.0/999
 `
-		err = os.WriteFile(badFile, []byte(badContent), 0644)
+		err = os.WriteFile(badFile, []byte(badContent), 0600)
 		if err != nil {
 			t.Fatalf("Failed to create bad file: %v", err)
 		}
@@ -572,9 +572,15 @@ not-an-ip-at-all
 		writeBlocksFile(t, filepath.Join(tempDir, "blocks.txt"), []string{"192.168.0.0/16"})
 
 		// These should be ignored
-		os.WriteFile(filepath.Join(tempDir, "readme.md"), []byte("# Readme\n10.0.0.0/8"), 0644)
-		os.WriteFile(filepath.Join(tempDir, "config.json"), []byte(`{"cidr": "172.16.0.0/12"}`), 0644)
-		os.WriteFile(filepath.Join(tempDir, "uppercase.TXT"), []byte("203.0.113.0/24"), 0644) // uppercase extension should work
+		if err := os.WriteFile(filepath.Join(tempDir, "readme.md"), []byte("# Readme\n10.0.0.0/8"), 0600); err != nil {
+			t.Fatalf("Failed to create readme.md: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(tempDir, "config.json"), []byte(`{"cidr": "172.16.0.0/12"}`), 0600); err != nil {
+			t.Fatalf("Failed to create config.json: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(tempDir, "uppercase.TXT"), []byte("203.0.113.0/24"), 0600); err != nil {
+			t.Fatalf("Failed to create uppercase.TXT: %v", err)
+		}
 
 		monitor, err := NewIpLookupFileMonitor(nil, tempDir, logger)
 		if err != nil {
@@ -1019,7 +1025,7 @@ func TestIpLookupFileMonitor_DynamicFileOperations(t *testing.T) {
 // Helper function to write CIDR blocks to a file
 func writeBlocksFile(t *testing.T, filename string, blocks []string) {
 	content := strings.Join(blocks, "\n")
-	err := os.WriteFile(filename, []byte(content), 0644)
+	err := os.WriteFile(filename, []byte(content), 0600)
 	if err != nil {
 		t.Fatalf("Failed to write blocks file: %v", err)
 	}
