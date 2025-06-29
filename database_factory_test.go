@@ -631,3 +631,134 @@ func TestDatabaseFactory_StartupUpdateAndVersionChange(t *testing.T) {
 
 	t.Logf("Test completed successfully - startup update behavior verified")
 }
+
+func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
+	// Cleanup factories before test
+	CleanupFactories()
+	defer CleanupFactories()
+
+	// Create a temporary directory for auto-update
+	tmpDir, err := os.MkdirTemp("", "geoblock-init-updated-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	// Step 1: Create an updated database in the auto-update directory
+	// Use today's date to ensure it's considered "new"
+	todayDate := time.Now().Format("20060102")
+	updatedDbPath := filepath.Join(tmpDir, todayDate+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	if err := copyFile("./IP2LOCATION-LITE-DB1.IPV6.BIN", updatedDbPath, true); err != nil {
+		t.Fatalf("Failed to copy updated test database: %v", err)
+	}
+
+	t.Logf("Created updated database in auto-update directory: %s", updatedDbPath)
+
+	// Step 2: Configure factory to use auto-update with the directory containing the updated database
+	config := &DatabaseConfig{
+		DatabaseFilePath:        "./IP2LOCATION-LITE-DB1.IPV6.BIN", // Default fallback database
+		DatabaseAutoUpdate:      true,
+		DatabaseAutoUpdateDir:   tmpDir,
+		DatabaseAutoUpdateCode:  "DB1",
+		DatabaseAutoUpdateToken: "", // Use free version for test
+	}
+
+	// Step 3: Create factory - initialization should find and use the updated database
+	factory, err := NewDatabaseFactory(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create factory with auto-update: %v", err)
+	}
+	defer factory.Close()
+
+	wrapper := factory.GetWrapper()
+	if wrapper == nil {
+		t.Fatal("Expected wrapper to not be nil")
+	}
+
+	// Step 4: Verify that the database being used is from the auto-update directory, not the default
+	currentPath := wrapper.GetPath()
+	sourceDbPath := factory.GetSourceDbPath()
+	t.Logf("Database path being used: %s", currentPath)
+	t.Logf("Source database path: %s", sourceDbPath)
+
+	// The path should be a local copy of the updated database, not the default fallback
+	if !strings.Contains(currentPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+		t.Error("Expected database path to be a timestamped local copy, indicating auto-update initialization occurred")
+	}
+
+	// Verify this is a temporary file (local copy), not the original fallback
+	if strings.Contains(currentPath, "./IP2LOCATION-LITE-DB1.IPV6.BIN") {
+		t.Error("Expected to use local copy, not the direct fallback database file")
+	}
+
+	// Most importantly: verify the source database was from the auto-update directory
+	if !strings.Contains(sourceDbPath, tmpDir) {
+		t.Errorf("Expected source database to be from auto-update directory %s, but got: %s", tmpDir, sourceDbPath)
+	}
+
+	// Verify the source database path contains today's date
+	if !strings.Contains(sourceDbPath, todayDate) {
+		t.Errorf("Expected source database to contain today's date %s, but got: %s", todayDate, sourceDbPath)
+	}
+
+	// Step 5: Verify the database is working correctly
+	record, err := wrapper.Get_country_short("8.8.8.8")
+	if err != nil {
+		t.Fatalf("Failed to lookup IP with updated database: %v", err)
+	}
+	if record.Country_short != "US" {
+		t.Errorf("Expected country US for 8.8.8.8, got %s", record.Country_short)
+	}
+
+	// Step 6: Verify version information is available
+	version := wrapper.GetVersion()
+	if version == nil {
+		t.Fatal("Expected version to not be nil")
+	}
+
+	t.Logf("Using database version: %s, age: %v", version.String(), time.Since(version.Date()))
+
+	// Step 8: Verify that without auto-update directory, fallback database would be used
+	configWithoutAutoUpdate := &DatabaseConfig{
+		DatabaseFilePath:   "./IP2LOCATION-LITE-DB1.IPV6.BIN",
+		DatabaseAutoUpdate: false, // Disabled
+	}
+
+	fallbackFactory, err := NewDatabaseFactory(configWithoutAutoUpdate, logger)
+	if err != nil {
+		t.Fatalf("Failed to create fallback factory: %v", err)
+	}
+	defer fallbackFactory.Close()
+
+	fallbackWrapper := fallbackFactory.GetWrapper()
+	fallbackPath := fallbackWrapper.GetPath()
+	fallbackSourcePath := fallbackFactory.GetSourceDbPath()
+	t.Logf("Fallback database path: %s", fallbackPath)
+	t.Logf("Fallback source database path: %s", fallbackSourcePath)
+
+	// Fallback path should be the direct file path, not a timestamped copy
+	if strings.Contains(fallbackPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+		t.Error("Expected fallback database to use direct file path, not timestamped copy")
+	}
+
+	// Fallback source should be the original file, not from auto-update directory
+	if strings.Contains(fallbackSourcePath, tmpDir) {
+		t.Error("Expected fallback source to NOT be from auto-update directory")
+	}
+
+	// The paths should be different
+	if currentPath == fallbackPath {
+		t.Error("Expected different paths for auto-update vs fallback databases")
+	}
+
+	// The source paths should be different
+	if sourceDbPath == fallbackSourcePath {
+		t.Error("Expected different source paths for auto-update vs fallback databases")
+	}
+
+	t.Logf("Test completed successfully - initialization correctly uses updated database from auto-update directory")
+}

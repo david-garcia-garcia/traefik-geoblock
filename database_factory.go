@@ -71,6 +71,7 @@ type DatabaseFactory struct {
 	logger             *slog.Logger
 	wrapper            *DatabaseWrapper
 	currentLocalDbCopy string
+	sourceDbPath       string // Track the original database that was used for the current local copy
 	updateTicker       *time.Ticker
 	stopChan           chan struct{}
 }
@@ -100,6 +101,11 @@ func NewDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseF
 // GetWrapper returns the database wrapper for use
 func (df *DatabaseFactory) GetWrapper() *DatabaseWrapper {
 	return df.wrapper
+}
+
+// GetSourceDbPath returns the original database path that was used for the current active database
+func (df *DatabaseFactory) GetSourceDbPath() string {
+	return df.sourceDbPath
 }
 
 // Close shuts down the factory and cleans up resources
@@ -136,6 +142,11 @@ func (df *DatabaseFactory) initialize() error {
 			targetPath = updatedPath
 			df.logger.Debug("using auto-updated database", "path", updatedPath)
 		}
+	}
+
+	// Track the source database path before opening (only if not already set by auto-update)
+	if df.sourceDbPath == "" {
+		df.sourceDbPath = targetPath
 	}
 
 	// Open the database
@@ -203,6 +214,8 @@ func (df *DatabaseFactory) handleAutoUpdateInit(fallbackPath string) (string, er
 
 	if latest != "" {
 		df.logger.Debug("found existing database in auto-update directory", "path", latest)
+		// Track the original source before creating local copy
+		df.sourceDbPath = latest
 		// Create local copy for consistent access
 		return df.createLocalDatabaseCopy(latest)
 	}
@@ -324,6 +337,10 @@ func (df *DatabaseFactory) performHotSwap(newDatabasePath string) error {
 	// Perform the swap
 	oldDB := df.wrapper.swapDatabase(newDB, newLocalCopy, newVersion)
 
+	// Update tracking information
+	df.currentLocalDbCopy = newLocalCopy
+	df.sourceDbPath = newDatabasePath // Track the new source database
+
 	// Close old database after brief delay for ongoing operations
 	if oldDB != nil {
 		go func() {
@@ -331,9 +348,6 @@ func (df *DatabaseFactory) performHotSwap(newDatabasePath string) error {
 			oldDB.Close()
 		}()
 	}
-
-	// Update local copy tracking
-	df.currentLocalDbCopy = newLocalCopy
 
 	df.logger.Info("database hot-swapped successfully",
 		"new_version", newVersion.String(),
