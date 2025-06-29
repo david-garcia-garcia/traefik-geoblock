@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"log/slog"
 )
@@ -427,6 +428,10 @@ func TestIpLookupFileMonitor_ErrorHandling(t *testing.T) {
 invalid-cidr
 192.168.1.0/33
 not.an.ip/24
+completely-malformed-entry
+300.400.500.600/8
+192.168.1.0/99
+1.2.3/24
 # Another valid block
 10.0.0.0/8
 `
@@ -455,6 +460,105 @@ not.an.ip/24
 		}
 		if !contained {
 			t.Errorf("Valid CIDR should still work")
+		}
+
+		// Verify invalid entries are not blocking anything (test with valid IPs)
+		invalidIPs := []string{"1.2.3.4", "5.6.7.8", "1.2.3.255"}
+		for _, ip := range invalidIPs {
+			parsedIP := net.ParseIP(ip)
+			if parsedIP == nil {
+				t.Errorf("Test IP %s should be valid", ip)
+				continue
+			}
+			contained, _, err := monitor.IsContained(parsedIP)
+			if err != nil {
+				t.Errorf("Lookup should not fail for %s: %v", ip, err)
+			}
+			if contained {
+				t.Errorf("Invalid CIDR entries should not block IP %s", ip)
+			}
+		}
+	})
+
+	t.Run("MalformedFileHandling", func(t *testing.T) {
+		CleanupMonitors()
+
+		tempDir := t.TempDir()
+
+		// Create multiple files, some with malformed content
+		writeBlocksFile(t, filepath.Join(tempDir, "good.txt"), []string{
+			"192.168.0.0/16",
+			"10.0.0.0/8",
+		})
+
+		// File with mixed valid and invalid entries
+		mixedFile := filepath.Join(tempDir, "mixed.txt")
+		mixedContent := `# Mixed file with good and bad entries
+172.16.0.0/12
+invalid-line-here
+203.0.113.0/24
+another-invalid-entry
+not.an.ip/subnet
+8.8.8.0/24
+# End of file
+`
+		err := os.WriteFile(mixedFile, []byte(mixedContent), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create mixed file: %v", err)
+		}
+
+		// File with only invalid entries
+		badFile := filepath.Join(tempDir, "bad.txt")
+		badContent := `# File with only invalid entries
+totally-invalid
+256.256.256.256/8
+not-an-ip-at-all
+192.168.1.0/999
+`
+		err = os.WriteFile(badFile, []byte(badContent), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create bad file: %v", err)
+		}
+
+		monitor, err := NewIpLookupFileMonitor(nil, tempDir, logger)
+		if err != nil {
+			t.Fatalf("Monitor creation should not fail with malformed files: %v", err)
+		}
+
+		// Test that valid entries from good files work
+		goodIPs := map[string]bool{
+			"192.168.1.1": true, // good.txt
+			"10.0.0.1":    true, // good.txt
+			"172.16.0.1":  true, // mixed.txt
+			"203.0.113.1": true, // mixed.txt
+			"8.8.8.8":     true, // mixed.txt
+		}
+
+		for ip, expected := range goodIPs {
+			contained, _, err := monitor.IsContained(net.ParseIP(ip))
+			if err != nil {
+				t.Errorf("Lookup failed for %s: %v", ip, err)
+			}
+			if contained != expected {
+				t.Errorf("IP %s: expected %v, got %v", ip, expected, contained)
+			}
+		}
+
+		// Test that invalid entries don't interfere (test with valid IPs not in our ranges)
+		invalidIPs := []string{"1.2.3.4", "9.9.9.9", "5.6.7.8"}
+		for _, ip := range invalidIPs {
+			parsedIP := net.ParseIP(ip)
+			if parsedIP == nil {
+				t.Errorf("Test IP %s should be valid", ip)
+				continue
+			}
+			contained, _, err := monitor.IsContained(parsedIP)
+			if err != nil {
+				t.Errorf("Lookup should not fail for %s: %v", ip, err)
+			}
+			if contained {
+				t.Errorf("Invalid CIDR entries should not affect IP %s", ip)
+			}
 		}
 	})
 
@@ -496,6 +600,52 @@ not.an.ip/24
 		contained, _, _ = monitor.IsContained(net.ParseIP("172.16.0.1"))
 		if contained {
 			t.Errorf("Expected config.json to be ignored")
+		}
+	})
+
+	t.Run("NilIPHandling", func(t *testing.T) {
+		CleanupMonitors()
+
+		tempDir := t.TempDir()
+		writeBlocksFile(t, filepath.Join(tempDir, "blocks.txt"), []string{"192.168.0.0/16"})
+
+		monitor, err := NewIpLookupFileMonitor(nil, tempDir, logger)
+		if err != nil {
+			t.Fatalf("Failed to create monitor: %v", err)
+		}
+
+		// Test with nil IP (should return error, not panic)
+		contained, prefixLen, err := monitor.IsContained(nil)
+		if err == nil {
+			t.Errorf("Expected error when passing nil IP")
+		}
+		if contained {
+			t.Errorf("Expected nil IP to not be contained")
+		}
+		if prefixLen != 0 {
+			t.Errorf("Expected prefix length 0 for nil IP, got %d", prefixLen)
+		}
+
+		// Test with malformed IP string parsing (simulate real-world scenario)
+		invalidIPStrings := []string{"300.400.500.600", "not.an.ip", "192.168.1.0/24"}
+		for _, ipStr := range invalidIPStrings {
+			parsedIP := net.ParseIP(ipStr)
+			if parsedIP != nil {
+				t.Errorf("Expected %s to be unparseable by net.ParseIP", ipStr)
+				continue
+			}
+
+			// Verify calling with nil doesn't panic
+			contained, prefixLen, err := monitor.IsContained(parsedIP)
+			if err == nil {
+				t.Errorf("Expected error when passing nil IP parsed from %s", ipStr)
+			}
+			if contained {
+				t.Errorf("Expected malformed IP %s to not be contained", ipStr)
+			}
+			if prefixLen != 0 {
+				t.Errorf("Expected prefix length 0 for malformed IP %s, got %d", ipStr, prefixLen)
+			}
 		}
 	})
 }
@@ -832,6 +982,9 @@ func TestIpLookupFileMonitor_DynamicFileOperations(t *testing.T) {
 		if contained {
 			t.Errorf("Expected 10.0.0.1 to NOT be contained initially")
 		}
+
+		// Sleep briefly to ensure file modification time is different
+		time.Sleep(10 * time.Millisecond)
 
 		// Modify the file to add new blocks
 		writeBlocksFile(t, modifyFile, []string{

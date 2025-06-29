@@ -172,6 +172,9 @@ func NewIpLookupHelper(cidrBlocks []string) (*IpLookupHelper, error) {
 // IsContained checks if an IP is contained in any of the CIDR blocks
 // Returns (isContained, prefixLength, error)
 func (helper *IpLookupHelper) IsContained(ipAddr net.IP) (bool, int, error) {
+	if ipAddr == nil {
+		return false, 0, fmt.Errorf("IP address is nil")
+	}
 	found, prefixLen := helper.tree.contains(ipAddr)
 	return found, prefixLen, nil
 }
