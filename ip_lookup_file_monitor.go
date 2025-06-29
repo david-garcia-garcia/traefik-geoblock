@@ -21,15 +21,14 @@ type IpLookupFileMonitor struct {
 func NewIpLookupFileMonitor(cidrBlocks []string, directoryPath string, logger *slog.Logger) (*IpLookupFileMonitor, error) {
 	// Create empty helper and insert CIDRs directly to save memory
 	helper := NewEmptyIpLookupHelper()
-	totalBlocks := 0
 
 	// Add static blocks first
 	for _, cidr := range cidrBlocks {
 		if err := helper.AddCIDR(cidr); err != nil {
 			return nil, fmt.Errorf("failed to add static CIDR block %q: %w", cidr, err)
 		}
-		totalBlocks++
 	}
+	staticCount := helper.Count()
 
 	// Add blocks from directory if specified
 	if directoryPath != "" {
@@ -41,12 +40,11 @@ func NewIpLookupFileMonitor(cidrBlocks []string, directoryPath string, logger *s
 				return nil, fmt.Errorf("failed to read blocks from directory %s: %w", directoryPath, err)
 			}
 		} else {
-			totalBlocks += directoryBlocks
 			logger.Debug("loaded IP blocks from directory", "directory", directoryPath, "blocks", directoryBlocks)
 		}
 	}
 
-	logger.Debug("loaded IP blocks", "total_count", totalBlocks, "static_count", len(cidrBlocks))
+	logger.Debug("loaded IP blocks", "total_count", helper.Count(), "static_count", staticCount, "directory_count", helper.Count()-staticCount)
 
 	return &IpLookupFileMonitor{
 		helper: helper,
@@ -65,7 +63,8 @@ func insertBlocksFromDirectory(helper *IpLookupHelper, directoryPath string, log
 		return 0, err
 	}
 
-	var totalBlocks int
+	// Track count before adding directory blocks
+	countBefore := helper.Count()
 
 	err := filepath.Walk(directoryPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -85,15 +84,16 @@ func insertBlocksFromDirectory(helper *IpLookupHelper, directoryPath string, log
 			return nil // Continue with other files
 		}
 
+		successfullyAdded := 0
 		for _, cidr := range blocks {
 			if err := helper.AddCIDR(cidr); err != nil {
 				logger.Warn("failed to add CIDR block", "cidr", cidr, "error", err)
 			} else {
-				totalBlocks++
+				successfullyAdded++
 			}
 		}
 
-		logger.Debug("loaded blocks from file", "file", path, "count", len(blocks))
+		logger.Debug("loaded blocks from file", "file", path, "attempted", len(blocks), "successful", successfullyAdded)
 		return nil
 	})
 
@@ -101,7 +101,8 @@ func insertBlocksFromDirectory(helper *IpLookupHelper, directoryPath string, log
 		return 0, err
 	}
 
-	return totalBlocks, nil
+	// Return the actual number of blocks added (helper knows the truth)
+	return helper.Count() - countBefore, nil
 }
 
 // readBlocksFromFile reads CIDR blocks from a single file, one per line
