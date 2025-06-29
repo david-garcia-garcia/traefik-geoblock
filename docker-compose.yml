@@ -110,6 +110,7 @@ services:
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.logLevel=DEBUG"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.logPath="
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.logFormat=JSON"
+      - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.logBannedRequests=true"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.allowPrivate=true"
@@ -117,6 +118,28 @@ services:
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.allowedCountries=DE,FR,GB"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.defaultAllow=false"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.countryHeader=X-Ipcountry"
+
+  whoami-blockall:
+    image: traefik/whoami
+    container_name: "simple-service-blockall"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-blockall.rule=PathPrefix(`/blockall`)"
+      - "traefik.http.routers.router-blockall.entrypoints=web"
+      - "traefik.http.routers.router-blockall.middlewares=geoblock-blockall@docker"
+      - "traefik.http.services.service-blockall.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.logLevel=INFO"
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.logPath="
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.logFormat=JSON"
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.logBannedRequests=true"
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.allowPrivate=false"
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.allowedCountries="
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.blockedCountries="
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.defaultAllow=false"
 
 volumes:
   logs-local:

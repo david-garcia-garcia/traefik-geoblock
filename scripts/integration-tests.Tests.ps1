@@ -416,6 +416,57 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         }
     }
     
+    Context "Block All Requests" {
+        It "Should block localhost request (private IP not allowed)" {
+            # The /blockall endpoint has allowPrivate=false, so even localhost should be blocked
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/blockall"
+            $result.StatusCode | Should -Be 403
+        }
+        
+        It "Should block German IP (normally allowed elsewhere)" {
+            # German IP is normally allowed in other endpoints, but should be blocked here
+            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/blockall" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+        
+        It "Should block US IP" {
+            # US IP should be blocked (consistent with other endpoints)
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/blockall" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+        
+        It "Should block private IP range" {
+            # Private IP should be blocked since allowPrivate=false
+            $headers = @{ "X-Real-IP" = $script:TestIPs.Private_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/blockall" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+        
+        It "Should serve ban HTML for blocked requests with country info" {
+            # Use curl to get the response content for a German IP
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.German_IP)" "$script:BaseUrl/blockall") -join "`n"
+            $statusCode = curl -s -o nul -w "%{http_code}" -H "X-Real-IP: $($script:TestIPs.German_IP)" "$script:BaseUrl/blockall"
+            
+            $statusCode | Should -Be "403"
+            $response | Should -Match "Access Denied"
+            $response | Should -Match $script:TestIPs.German_IP
+            $response | Should -Match "DE"  # Should contain German country code
+        }
+        
+        It "Should serve ban HTML for blocked private IP requests" {
+            # Use curl to get the response content for a private IP
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.Private_IP)" "$script:BaseUrl/blockall") -join "`n"
+            $statusCode = curl -s -o nul -w "%{http_code}" -H "X-Real-IP: $($script:TestIPs.Private_IP)" "$script:BaseUrl/blockall"
+            
+            $statusCode | Should -Be "403"
+            $response | Should -Match "Access Denied"
+            $response | Should -Match $script:TestIPs.Private_IP
+            $response | Should -Match "PRIVATE"  # Should contain PRIVATE for private IP
+        }
+    }
+    
     Context "Performance and Reliability" {
         It "Should respond within reasonable time" {
             $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
