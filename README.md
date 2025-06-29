@@ -20,7 +20,7 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 - Configurable handling of private/internal networks
 - Customizable error responses
 - Flexible logging options
-- Automatic IP2 location database updates both for free and premium
+- Hot-swap database updates - automatic IP2Location database updates with zero downtime
 
 ## 📥 Installation
 
@@ -194,10 +194,14 @@ http:
           # Database Auto-Update Settings
           #-------------------------------
           databaseAutoUpdate: true                   
-          # Enable automatic database updates. Updates are asynchronous and triggere during middleware startup. The updated database will be used when the middleware starts again.
+          # Enable automatic database updates with hot-swapping. Updates check every 24 hours
+          # and immediately on startup if the current database is older than 1 month.
+          # Updated databases are hot-swapped without requiring middleware restart.
           # Make sure you whitelist in your FW domains ["download.ip2location.com", "www.ip2location.com"]
           databaseAutoUpdateDir: "/data/ip2database" 
-          # Directory to store updated databases. This must be a persitent volme in the traefik pod.
+          # Directory to store updated databases. This must be a persistent volume in the traefik pod.
+          # The plugin uses a singleton pattern - multiple middlewares with identical configurations
+          # share the same database factory and hot-swap operations.
           databaseAutoUpdateToken: ""                # IP2Location download token (if using premium)
           databaseAutoUpdateCode: "DB1"              # Database product code to download (if using premium)
 
@@ -209,8 +213,6 @@ http:
           # you can use this to add the header to the access logs
           # and see where all your trafik is coming from
           # make sure to include the header in the logs: accesslog.fields.headers.names.X-IPCountry=keep
-
-```
 
 ### 🔄 Processing Order
 

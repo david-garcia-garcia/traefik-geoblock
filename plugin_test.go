@@ -169,6 +169,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 	t.Run("AutoUpdateEnabled", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                true,
+			DatabaseFilePath:       dbFilePath, // Add fallback database path
 			DatabaseAutoUpdate:     true,
 			DatabaseAutoUpdateDir:  tmpDir,
 			DatabaseAutoUpdateCode: "DB1",
@@ -184,10 +185,14 @@ func TestNew_AutoUpdate(t *testing.T) {
 			t.Error("expected plugin to not be nil")
 		}
 
-		// We have no reference to what database file was actually used....
+		// Verify that the database is working by testing a lookup
 		p := plugin.(*Plugin)
-		if p.databaseFile != tmpFile {
-			t.Error("expected database to be initialized")
+		country, err := p.Lookup("8.8.8.8")
+		if err != nil {
+			t.Errorf("expected database to be initialized and working, but lookup failed: %v", err)
+		}
+		if country != "US" {
+			t.Errorf("expected lookup to return US for 8.8.8.8, but got: %s", country)
 		}
 	})
 
@@ -197,12 +202,12 @@ func TestNew_AutoUpdate(t *testing.T) {
 			DatabaseAutoUpdate:   true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
-			// Deliberately omit DatabaseAutoUpdateDir
+			// Deliberately omit DatabaseAutoUpdateDir AND DatabaseFilePath
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
 		if err == nil {
-			t.Error("expected error about missing DatabaseAutoUpdateDir, but got none")
+			t.Error("expected error about missing database path, but got none")
 		}
 		if plugin != nil {
 			t.Error("expected plugin to be nil")

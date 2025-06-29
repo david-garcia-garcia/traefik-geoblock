@@ -10,8 +10,6 @@ import (
 	"strings"
 
 	"log/slog"
-
-	"github.com/ip2location/ip2location-go/v9"
 )
 
 //go:generate go run ./tools/dbdownload/main.go -o ./IP2LOCATION-LITE-DB1.IPV6.BIN
@@ -81,8 +79,8 @@ func CreateConfig() *Config {
 type Plugin struct {
 	next                 http.Handler
 	name                 string
-	databaseFile         string // Just for testing purposes
-	db                   *ip2location.DB
+	databaseFile         string           // Just for testing purposes
+	db                   *DatabaseWrapper // Changed from ip2location.DB to DatabaseWrapper
 	enabled              bool
 	allowedCountries     map[string]struct{} // Instead of []string to improve lookup performance
 	blockedCountries     map[string]struct{} // Instead of []string to improve lookup performance
@@ -139,10 +137,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		return nil, fmt.Errorf("%s: IPHeaders cannot be empty - at least one header must be specified for IP extraction", name)
 	}
 
-	// Initialize database factory (singleton pattern ensures this only happens once)
-	dbFactory := GetDatabaseFactory()
-
-	// Create focused database configuration
+	// Create database configuration
 	dbConfig := &DatabaseConfig{
 		DatabaseFilePath:        cfg.DatabaseFilePath,
 		DatabaseAutoUpdate:      cfg.DatabaseAutoUpdate,
@@ -151,16 +146,15 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		DatabaseAutoUpdateCode:  cfg.DatabaseAutoUpdateCode,
 	}
 
-	// Initialize the database factory if not already done
-	if err := dbFactory.Initialize(dbConfig, logger); err != nil {
-		return nil, fmt.Errorf("%s: failed to initialize database: %w", name, err)
+	// Get database factory - uses singleton pattern per database path
+	factory, err := GetDatabaseFactory(dbConfig, logger)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to get database factory: %w", name, err)
 	}
 
-	// Get database instance from factory
-	db, err := dbFactory.GetDatabase()
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to get database instance: %w", name, err)
-	}
+	// Get the database wrapper
+	db := factory.GetWrapper()
+	databasePath := db.GetPath()
 
 	// Create separate IP lookup helpers with radix trees for fast lookups
 	allowedIPHelper, err := NewIpLookupHelper(cfg.AllowedIPBlocks)
@@ -199,7 +193,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	plugin := &Plugin{
 		next:                 next,
 		name:                 name,
-		databaseFile:         dbFactory.GetDatabasePath(),
+		databaseFile:         databasePath,
 		db:                   db,
 		enabled:              cfg.Enabled,
 		allowedCountries:     allowedCountries,

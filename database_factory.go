@@ -1,6 +1,9 @@
 package traefik_geoblock
 
 import (
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,62 +24,119 @@ type DatabaseConfig struct {
 	DatabaseAutoUpdateCode  string
 }
 
-// DatabaseFactory manages IP2Location database instances and handles initialization, auto-updates, and caching
+// DatabaseWrapper wraps ip2location.DB and allows for hot-swapping during updates
+type DatabaseWrapper struct {
+	db      *ip2location.DB
+	path    string
+	version *DBVersion
+}
+
+// Get_country_short performs IP country lookup (fast path - no locking)
+func (dw *DatabaseWrapper) Get_country_short(ip string) (ip2location.IP2Locationrecord, error) {
+	return dw.db.Get_country_short(ip)
+}
+
+// GetVersion returns the current database version (fast path - no locking)
+func (dw *DatabaseWrapper) GetVersion() *DBVersion {
+	return dw.version
+}
+
+// GetPath returns the current database path (fast path - no locking)
+func (dw *DatabaseWrapper) GetPath() string {
+	return dw.path
+}
+
+// Close closes the database connection
+func (dw *DatabaseWrapper) Close() error {
+	if dw.db != nil {
+		dw.db.Close()
+		dw.db = nil
+	}
+	return nil
+}
+
+// swapDatabase replaces the current database with a new one (internal method)
+func (dw *DatabaseWrapper) swapDatabase(newDB *ip2location.DB, newPath string, newVersion *DBVersion) *ip2location.DB {
+	oldDB := dw.db
+	dw.db = newDB
+	dw.path = newPath
+	dw.version = newVersion
+
+	return oldDB
+}
+
+// DatabaseFactory manages database instances and auto-updates for a specific database path
 type DatabaseFactory struct {
-	db           *ip2location.DB
-	databasePath string
-	version      *DBVersion
-	mu           sync.RWMutex
-	initialized  bool
+	config             *DatabaseConfig
+	logger             *slog.Logger
+	wrapper            *DatabaseWrapper
+	currentLocalDbCopy string
+	updateTicker       *time.Ticker
+	stopChan           chan struct{}
 }
 
-//nolint:gochecknoglobals
-var (
-	databaseFactory     *DatabaseFactory
-	databaseFactoryOnce sync.Once
-)
+// NewDatabaseFactory creates a new database factory instance
+func NewDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseFactory, error) {
+	factory := &DatabaseFactory{
+		config:   config,
+		logger:   logger,
+		wrapper:  &DatabaseWrapper{},
+		stopChan: make(chan struct{}),
+	}
 
-// GetDatabaseFactory returns the singleton DatabaseFactory instance
-func GetDatabaseFactory() *DatabaseFactory {
-	databaseFactoryOnce.Do(func() {
-		databaseFactory = &DatabaseFactory{}
-	})
+	// Initialize the database
+	if err := factory.initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize database factory: %w", err)
+	}
 
-	return databaseFactory
+	// Start auto-update ticker if enabled
+	if config.DatabaseAutoUpdate {
+		factory.startAutoUpdate()
+	}
+
+	return factory, nil
 }
 
-// ResetForTesting resets the global state for testing purposes
-// This should ONLY be used in tests
-func ResetDatabaseFactoryForTesting() {
-	databaseFactory = nil
-	databaseFactoryOnce = sync.Once{}
+// GetWrapper returns the database wrapper for use
+func (df *DatabaseFactory) GetWrapper() *DatabaseWrapper {
+	return df.wrapper
 }
 
-// Initialize sets up the database with the given configuration
-// This method is idempotent and thread-safe
-func (df *DatabaseFactory) Initialize(cfg *DatabaseConfig, logger *slog.Logger) error {
-	df.mu.Lock()
-	defer df.mu.Unlock()
+// Close shuts down the factory and cleans up resources
+func (df *DatabaseFactory) Close() error {
+	// Stop auto-update ticker
+	if df.updateTicker != nil {
+		df.updateTicker.Stop()
+		close(df.stopChan)
+	}
 
+	// Close current database
+	if df.wrapper != nil {
+		df.wrapper.Close()
+	}
+
+	return nil
+}
+
+// initialize sets up the initial database using the best available version
+func (df *DatabaseFactory) initialize() error {
 	// Determine the target database path
-	targetPath, err := df.resolveDatabasePath(cfg, logger)
+	targetPath, err := df.resolveDatabasePath()
 	if err != nil {
 		return fmt.Errorf("failed to resolve database path: %w", err)
 	}
 
-	// If already initialized with the same path, return early
-	if df.initialized && df.databasePath == targetPath {
-		logger.Debug("database factory already initialized with same path", "path", df.databasePath)
-		return nil
-	}
+	df.logger.Debug("initializing database", "path", targetPath)
 
-	// If we're already initialized with a different path, close and reinitialize
-	if df.initialized {
-		logger.Debug("reinitializing database factory with new path", "oldPath", df.databasePath, "newPath", targetPath)
-		df.closeDatabase()
+	// Find the newest available database if auto-update is enabled (no downloads during init)
+	if df.config.DatabaseAutoUpdate {
+		if updatedPath, err := df.handleAutoUpdateInit(targetPath); err != nil {
+			df.logger.Warn("auto-update initialization failed, using fallback database", "error", err)
+		} else if updatedPath != "" {
+			targetPath = updatedPath
+			df.logger.Debug("using auto-updated database", "path", updatedPath)
+		}
 	}
-
-	logger.Debug("initializing database factory", "path", targetPath)
 
 	// Open the database
 	db, err := ip2location.OpenDB(targetPath)
@@ -91,51 +151,33 @@ func (df *DatabaseFactory) Initialize(cfg *DatabaseConfig, logger *slog.Logger) 
 		return fmt.Errorf("failed to read database version from %s: %w", targetPath, err)
 	}
 
-	logger.Info("database factory initialized",
+	// Initialize wrapper
+	df.wrapper.db = db
+	df.wrapper.path = targetPath
+	df.wrapper.version = version
+
+	df.logger.Info("database initialized",
 		"path", targetPath,
 		"version", version.String(),
 		"age", time.Since(version.Date()).Round(24*time.Hour))
 
 	// Check if database is older than 2 months
 	if time.Since(version.Date()) > 60*24*time.Hour {
-		logger.Warn("ip2location database is more than 2 months old",
+		df.logger.Warn("ip2location database is more than 2 months old",
 			"version", version.String(),
 			"age", time.Since(version.Date()).Round(24*time.Hour))
 	}
-
-	df.db = db
-	df.databasePath = targetPath
-	df.version = version
-	df.initialized = true
 
 	return nil
 }
 
 // resolveDatabasePath determines the best database path based on configuration
-func (df *DatabaseFactory) resolveDatabasePath(cfg *DatabaseConfig, logger *slog.Logger) (string, error) {
-	databasePath := cfg.DatabaseFilePath
+func (df *DatabaseFactory) resolveDatabasePath() (string, error) {
+	databasePath := df.config.DatabaseFilePath
 
 	// Search for database file if path is provided
 	if databasePath != "" {
-		databasePath = searchFile(databasePath, "IP2LOCATION-LITE-DB1.IPV6.BIN", logger)
-	}
-
-	// Handle auto-update configuration
-	if cfg.DatabaseAutoUpdate {
-		if cfg.DatabaseAutoUpdateDir == "" {
-			return "", fmt.Errorf("DatabaseAutoUpdateDir must be specified when auto-update is enabled")
-		}
-
-		updatedPath, err := df.handleAutoUpdate(cfg, databasePath, logger)
-		if err != nil {
-			logger.Warn("auto-update failed, using fallback database", "error", err)
-			if databasePath == "" {
-				return "", fmt.Errorf("no database available after auto-update failure: %w", err)
-			}
-		} else if updatedPath != "" {
-			databasePath = updatedPath
-			logger.Debug("using auto-updated database", "path", updatedPath)
-		}
+		databasePath = searchFile(databasePath, "IP2LOCATION-LITE-DB1.IPV6.BIN", df.logger)
 	}
 
 	if databasePath == "" {
@@ -145,119 +187,226 @@ func (df *DatabaseFactory) resolveDatabasePath(cfg *DatabaseConfig, logger *slog
 	return databasePath, nil
 }
 
-// GetDatabase returns a database instance for IP lookups
-// This method is thread-safe and can be called from multiple goroutines
-func (df *DatabaseFactory) GetDatabase() (*ip2location.DB, error) {
-	df.mu.RLock()
-	defer df.mu.RUnlock()
-
-	if !df.initialized {
-		return nil, fmt.Errorf("database factory not initialized")
-	}
-
-	if df.db == nil {
-		return nil, fmt.Errorf("database not available")
-	}
-
-	return df.db, nil
-}
-
-// GetDatabasePath returns the path to the current database file
-func (df *DatabaseFactory) GetDatabasePath() string {
-	df.mu.RLock()
-	defer df.mu.RUnlock()
-	return df.databasePath
-}
-
-// GetDatabaseVersion returns the version information of the current database
-func (df *DatabaseFactory) GetDatabaseVersion() *DBVersion {
-	df.mu.RLock()
-	defer df.mu.RUnlock()
-	return df.version
-}
-
-// IsInitialized returns whether the database factory has been initialized
-func (df *DatabaseFactory) IsInitialized() bool {
-	df.mu.RLock()
-	defer df.mu.RUnlock()
-	return df.initialized
-}
-
-// Close closes the database connection
-// This should be called during application shutdown
-func (df *DatabaseFactory) Close() error {
-	df.mu.Lock()
-	defer df.mu.Unlock()
-
-	df.closeDatabase()
-	return nil
-}
-
-// closeDatabase closes the database without locking (internal helper)
-func (df *DatabaseFactory) closeDatabase() {
-	if df.db != nil {
-		df.db.Close()
-		df.db = nil
-	}
-	df.initialized = false
-}
-
-// handleAutoUpdate manages the auto-update process and returns the path to the best available database
-func (df *DatabaseFactory) handleAutoUpdate(cfg *DatabaseConfig, fallbackPath string, logger *slog.Logger) (string, error) {
-	tmpFile := filepath.Join(os.TempDir(), "IP2LOCATION-LITE-DB1.IPV6.BIN")
-
-	// Check if we already have a temp database from a previous initialization
-	if fileExists(tmpFile) {
-		logger.Debug("using existing database from temp location", "path", tmpFile)
-		return tmpFile, nil
+// handleAutoUpdateInit finds the newest available database for initialization (no downloads)
+func (df *DatabaseFactory) handleAutoUpdateInit(fallbackPath string) (string, error) {
+	if df.config.DatabaseAutoUpdateDir == "" {
+		return "", fmt.Errorf("DatabaseAutoUpdateDir must be specified when auto-update is enabled")
 	}
 
 	// Try to find the latest database in the auto-update directory
-	latest, err := findLatestDatabase(cfg.DatabaseAutoUpdateDir, cfg.DatabaseAutoUpdateCode)
+	latest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
 	if err != nil {
-		logger.Debug("no existing database found in auto-update directory", "error", err)
+		df.logger.Debug("no existing database found in auto-update directory", "error", err)
+		// Use fallback database directly for initialization
+		return fallbackPath, nil
+	}
+
+	if latest != "" {
+		df.logger.Debug("found existing database in auto-update directory", "path", latest)
+		// Create local copy for consistent access
+		return df.createLocalDatabaseCopy(latest)
+	}
+
+	// Use fallback database directly
+	return fallbackPath, nil
+}
+
+// createLocalDatabaseCopy creates a timestamped local copy that doesn't overwrite existing files
+func (df *DatabaseFactory) createLocalDatabaseCopy(sourcePath string) (string, error) {
+	// Always create unique timestamped copy with nanoseconds to guarantee uniqueness
+	now := time.Now()
+	timestamp := fmt.Sprintf("%s_%d", now.Format("20060102_150405"), now.Nanosecond())
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("IP2LOCATION-LITE-DB1.IPV6_%s.BIN", timestamp))
+
+	// Copy to temp location
+	if err := copyFile(sourcePath, tmpFile, false); err != nil {
+		return "", fmt.Errorf("failed to create local copy: %w", err)
+	}
+
+	df.currentLocalDbCopy = tmpFile
+	df.logger.Debug("created local database copy", "source", sourcePath, "dest", tmpFile)
+	return tmpFile, nil
+}
+
+// startAutoUpdate starts the auto-update ticker
+func (df *DatabaseFactory) startAutoUpdate() {
+	df.updateTicker = time.NewTicker(24 * time.Hour)
+
+	go func() {
+		df.logger.Debug("starting auto-update ticker")
+
+		// Run first check immediately
+		df.checkAndUpdate()
+
+		for {
+			select {
+			case <-df.updateTicker.C:
+				df.checkAndUpdate()
+			case <-df.stopChan:
+				df.logger.Debug("stopping auto-update ticker")
+				return
+			}
+		}
+	}()
+}
+
+// checkAndUpdate checks if an update is needed and performs actual downloads/updates
+func (df *DatabaseFactory) checkAndUpdate() {
+	currentVersion := df.wrapper.GetVersion()
+	if currentVersion == nil {
+		df.logger.Debug("no current version available, skipping update check")
+		return
+	}
+
+	// Only update if database is older than 1 month
+	if time.Since(currentVersion.Date()) < 30*24*time.Hour {
+		df.logger.Debug("database is recent, skipping update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
+		return
+	}
+
+	df.logger.Info("database is old, attempting download update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
+
+	// Find current latest database
+	latest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
+	if err != nil {
+		df.logger.Debug("no existing database found during update check", "error", err)
 		latest = ""
 	}
 
-	var newDatabase string
-
-	if latest != "" {
-		// Copy database to temporary location for faster access
-		if err := copyFile(latest, tmpFile, false); err != nil {
-			logger.Warn("failed to copy database to temp location", "error", err, "source", latest)
-			if fileExists(tmpFile) {
-				// Another process might have copied it
-				newDatabase = tmpFile
-			} else {
-				newDatabase = latest // Fallback to original location
-			}
-		} else {
-			newDatabase = tmpFile
-			logger.Debug("copied database to temp location", "path", tmpFile)
-		}
+	// Attempt to download a newer version (actual download happens here)
+	updateCfg := &Config{
+		DatabaseAutoUpdateDir:   df.config.DatabaseAutoUpdateDir,
+		DatabaseAutoUpdateToken: df.config.DatabaseAutoUpdateToken,
+		DatabaseAutoUpdateCode:  df.config.DatabaseAutoUpdateCode,
 	}
 
-	// Start background update process
-	go func() {
-		updateCfg := &Config{
-			DatabaseAutoUpdateDir:   cfg.DatabaseAutoUpdateDir,
-			DatabaseAutoUpdateToken: cfg.DatabaseAutoUpdateToken,
-			DatabaseAutoUpdateCode:  cfg.DatabaseAutoUpdateCode,
-		}
-		if err := UpdateIfNeeded(latest, false, logger, updateCfg); err != nil {
-			logger.Error("background database update failed", "error", err)
-		}
-	}()
-
-	if newDatabase != "" {
-		// Validate the database before using it
-		if _, err := GetDatabaseVersion(newDatabase); err != nil {
-			logger.Warn("invalid database file", "path", newDatabase, "error", err)
-			return fallbackPath, fmt.Errorf("invalid database file: %w", err)
-		}
-		return newDatabase, nil
+	if err := UpdateIfNeeded(latest, false, df.logger, updateCfg); err != nil {
+		df.logger.Error("background database update failed", "error", err)
+		return
 	}
 
-	// No auto-update database available, use fallback
-	return fallbackPath, nil
+	// Check if we got a new database
+	newLatest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
+	if err != nil || newLatest == "" || newLatest == latest {
+		df.logger.Debug("no new database found after update attempt")
+		return
+	}
+
+	// Perform hot swap
+	if err := df.performHotSwap(newLatest); err != nil {
+		df.logger.Error("failed to perform hot swap", "error", err)
+	}
+}
+
+// performHotSwap replaces the current database with a new one
+func (df *DatabaseFactory) performHotSwap(newDatabasePath string) error {
+	// Create new local copy with unique name
+	newLocalCopy, err := df.createLocalDatabaseCopy(newDatabasePath)
+	if err != nil {
+		return err
+	}
+
+	// Open new database
+	newDB, err := ip2location.OpenDB(newLocalCopy)
+	if err != nil {
+		os.Remove(newLocalCopy)
+		return fmt.Errorf("failed to open new database: %w", err)
+	}
+
+	// Get version
+	newVersion, err := GetDatabaseVersion(newLocalCopy)
+	if err != nil {
+		newDB.Close()
+		os.Remove(newLocalCopy)
+		return fmt.Errorf("failed to read new database version: %w", err)
+	}
+
+	// Perform the swap
+	oldDB := df.wrapper.swapDatabase(newDB, newLocalCopy, newVersion)
+
+	// Close old database after brief delay for ongoing operations
+	if oldDB != nil {
+		go func() {
+			time.Sleep(1 * time.Second) // Brief delay, not the most elegant approach, but simple.
+			oldDB.Close()
+		}()
+	}
+
+	// Update local copy tracking
+	df.currentLocalDbCopy = newLocalCopy
+
+	df.logger.Info("database hot-swapped successfully",
+		"new_version", newVersion.String(),
+		"new_path", newLocalCopy)
+
+	return nil
+}
+
+// Global factory manager
+var (
+	factoryMutex sync.RWMutex
+	factories    = make(map[string]*DatabaseFactory)
+)
+
+// generateConfigHash creates a unique hash key from DatabaseConfig for singleton pattern
+func generateConfigHash(config *DatabaseConfig) string {
+	// Serialize the config to JSON for consistent hashing
+	configBytes, err := json.Marshal(config)
+	if err != nil {
+		// Fallback to a simple key if marshaling fails
+		return fmt.Sprintf("%s_%v_%s_%s_%s",
+			config.DatabaseFilePath,
+			config.DatabaseAutoUpdate,
+			config.DatabaseAutoUpdateDir,
+			config.DatabaseAutoUpdateToken,
+			config.DatabaseAutoUpdateCode)
+	}
+
+	// Generate MD5 hash
+	hasher := md5.New()
+	hasher.Write(configBytes)
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+// GetDatabaseFactory returns a singleton database factory for the given configuration
+func GetDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseFactory, error) {
+	// Generate unique key from the entire configuration
+	key := generateConfigHash(config)
+
+	factoryMutex.RLock()
+	if factory, exists := factories[key]; exists {
+		factoryMutex.RUnlock()
+		return factory, nil
+	}
+	factoryMutex.RUnlock()
+
+	// Create new factory
+	factoryMutex.Lock()
+	defer factoryMutex.Unlock()
+
+	// Double-check pattern
+	if factory, exists := factories[key]; exists {
+		return factory, nil
+	}
+
+	factory, err := NewDatabaseFactory(config, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	factories[key] = factory
+	logger.Debug("created new database factory", "config_hash", key)
+
+	return factory, nil
+}
+
+// CleanupFactories closes all database factories (for testing/shutdown)
+func CleanupFactories() {
+	factoryMutex.Lock()
+	defer factoryMutex.Unlock()
+
+	for key, factory := range factories {
+		factory.Close()
+		delete(factories, key)
+	}
 }
