@@ -59,24 +59,22 @@ experimental:
       version: v1.0.1
 ```
 
-## 🧪 Testing
+## 🧪 Testing and development
 
-The project includes comprehensive integration tests using PowerShell and Pester. The tests validate:
+You can spin up a fully working environment with docker compose:
 
-- Basic connectivity and geoblocking functionality
-- Country-based blocking rules (US, CN, RU blocked; DE, FR, GB allowed)
-- IP header processing (X-Real-IP, X-Forwarded-For)
-- Custom ban HTML responses
-- Log file functionality with JSON format (blocked requests only)
-- Edge cases and error handling
-- Performance and concurrent request handling
-
-Run integration tests locally:
 ```powershell
-.\Test-Integration.ps1
+docker compose up --build
 ```
 
-The test suite includes a dedicated `/logtest` endpoint that writes geoblock logs to `/var/log/geoblock/geoblock.log` in JSON format for testing log file functionality.
+The codebase includes a full set of integration and unit tests:
+```powershell
+# Run unit tests
+go test
+
+# Run integration tests
+.\Test-Integration.ps
+```
 
 ## ⚙️ Configuration
 
@@ -125,8 +123,10 @@ http:
           databaseFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
           # Can be:
           # - Full path: /path/to/IP2LOCATION-LITE-DB1.IPV6.BIN
-          # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively). Use /plugins-storage/sources/ if you are installing from plugin repository.
-          # - Empty: uses embedded database assuming it is installed in /plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/
+          # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively). 
+          # Use /plugins-storage/sources/ if you are installing from plugin repository.
+          # - Empty: uses embedded database assuming it is installed in 
+          # /plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/
           
           #-------------------------------
           # Country-based Rules (ISO 3166-1 alpha-2 format)
@@ -152,6 +152,8 @@ http:
             # More specific ranges (longer prefix) take precedence
           
           # Directory-based IP blocks (loaded once during plugin initialization)
+          # This is useful if you mount configmaps in your traefik plugin
+          # so that these will be shared among all Geoip middleware instances
           allowedIPBlocksDir: "/data/allowed-ips/"   # Directory with .txt files containing allowed CIDR blocks
           blockedIPBlocksDir: "/data/blocked-ips/"   # Directory with .txt files containing blocked CIDR blocks
           # All .txt files in the directory are scanned recursively during plugin startup
@@ -179,6 +181,7 @@ http:
           bypassHeaders:                  # Headers that skip geoblocking entirely
             X-Internal-Request: "true"
             X-Skip-Geoblock: "1"
+            X-Cdn-Auth: "mysupersecretkey"
             
           #-------------------------------
           # Error Handling and ban
@@ -224,6 +227,9 @@ http:
           # you can use this to add the header to the access logs
           # and see where all your trafik is coming from
           # make sure to include the header in the logs: accesslog.fields.headers.names.X-IPCountry=keep
+
+
+```
 
 ### 🔄 Processing Order
 
@@ -277,6 +283,8 @@ Example log entry:
     "path": "/bar"
 }
 ```
+
+
 
 ---
 
