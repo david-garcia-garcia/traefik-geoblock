@@ -35,7 +35,7 @@ func createBootstrapLogger(name string) *slog.Logger {
 }
 
 // createLogger creates a configured logger based on the provided settings
-func createLogger(name, level, format, path string, bootstrapLogger *slog.Logger) *slog.Logger {
+func createLogger(name, level, format, path string, bufferSizeBytes, timeoutSeconds int, bootstrapLogger *slog.Logger) *slog.Logger {
 	var logLevel slog.Level
 	level = strings.ToLower(level) // Convert level to lowercase
 	switch level {
@@ -65,7 +65,8 @@ func createLogger(name, level, format, path string, bootstrapLogger *slog.Logger
 
 	// Only attempt file writing if explicitly specified
 	if path != "" {
-		bw, err := newBufferedFileWriter(path, 1024, 2*time.Second)
+		timeout := time.Duration(timeoutSeconds) * time.Second // Convert seconds to duration
+		bw, err := newBufferedFileWriter(path, bufferSizeBytes, timeout)
 		if err != nil {
 			bootstrapLogger.Error("Failed to create buffered file writer for path '%s': %v\n", path, err)
 		} else {

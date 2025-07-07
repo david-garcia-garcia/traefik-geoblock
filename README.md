@@ -203,6 +203,12 @@ http:
           logFormat: "json"                 # Available: json, text
           logPath: "/var/log/geoblock.log"  # Empty for Traefik's standard output
           logBannedRequests: true           # Log blocked requests. They will be logged at info level.
+          fileLogBufferSizeBytes: 1024      # Buffer size for file logging in bytes (default: 1024)
+          fileLogBufferTimeoutSeconds: 2    # Buffer timeout for file logging in seconds (default: 2)
+          # File logging uses buffered writes for better performance. The buffer is flushed when:
+          # - The buffer reaches fileLogBufferSizeBytes size
+          # - fileLogBufferTimeoutSeconds seconds have passed since the last flush
+          # - The logger is closed/shutdown
 
           #-------------------------------
           # Database Auto-Update Settings

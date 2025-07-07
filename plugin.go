@@ -42,10 +42,12 @@ type Config struct {
 	CountryHeader        string // Header to write the country code to
 
 	// Logging configuration
-	LogLevel          string // Log level: "debug", "info", "warn", "error"
-	LogFormat         string // Log format: "json" or "text"
-	LogPath           string // Log destination: "stdout", "stderr", or file path
-	LogBannedRequests bool   // Log blocked requests
+	LogLevel                    string // Log level: "debug", "info", "warn", "error"
+	LogFormat                   string // Log format: "json" or "text"
+	LogPath                     string // Log destination: "stdout", "stderr", or file path
+	LogBannedRequests           bool   // Log blocked requests
+	FileLogBufferSizeBytes      int    // Buffer size for file logging in bytes (default: 1024)
+	FileLogBufferTimeoutSeconds int    // Buffer timeout for file logging in seconds (default: 2)
 
 	// BypassHeaders is a map of header names to values that, when matched,
 	// will skip the geoblocking check entirely
@@ -64,16 +66,18 @@ type Config struct {
 // CreateConfig creates the default plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
-		DisallowedStatusCode:   http.StatusForbidden,
-		LogLevel:               "info",                                   // Default to info logging
-		LogFormat:              "text",                                   // Default to text format
-		LogPath:                "",                                       // Default to traefik
-		BanIfError:             true,                                     // Default to banning on errors
-		BypassHeaders:          make(map[string]string),                  // Initialize empty map
-		IPHeaders:              []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
-		DatabaseAutoUpdateCode: "DB1",                                    // Default database code
-		LogBannedRequests:      true,                                     // Default to logging blocked requests
-		CountryHeader:          "",                                       // Default to empty thus not setting the header
+		DisallowedStatusCode:        http.StatusForbidden,
+		LogLevel:                    "info",                                   // Default to info logging
+		LogFormat:                   "text",                                   // Default to text format
+		LogPath:                     "",                                       // Default to traefik
+		BanIfError:                  true,                                     // Default to banning on errors
+		BypassHeaders:               make(map[string]string),                  // Initialize empty map
+		IPHeaders:                   []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
+		DatabaseAutoUpdateCode:      "DB1",                                    // Default database code
+		LogBannedRequests:           true,                                     // Default to logging blocked requests
+		CountryHeader:               "",                                       // Default to empty thus not setting the header
+		FileLogBufferSizeBytes:      1024,                                     // Default buffer size 1024 bytes
+		FileLogBufferTimeoutSeconds: 2,                                        // Default timeout 2 seconds
 	}
 }
 
@@ -113,7 +117,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 
 	// Create logger first so we can use it for debugging
-	logger := createLogger(name, cfg.LogLevel, cfg.LogFormat, cfg.LogPath, bootstrapLogger)
+	logger := createLogger(name, cfg.LogLevel, cfg.LogFormat, cfg.LogPath, cfg.FileLogBufferSizeBytes, cfg.FileLogBufferTimeoutSeconds, bootstrapLogger)
 	logger.Debug("initializing plugin",
 		"logLevel", cfg.LogLevel,
 		"logFormat", cfg.LogFormat,
@@ -149,7 +153,8 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 
 	// Get database factory - uses singleton pattern per database path
-	factory, err := GetDatabaseFactory(dbConfig, logger)
+	// Using the bootstrap logger here because the database factory is shared between all plugins
+	factory, err := GetDatabaseFactory(dbConfig, bootstrapLogger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to get database factory: %w", name, err)
 	}
