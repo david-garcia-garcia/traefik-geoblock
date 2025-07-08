@@ -146,6 +146,191 @@ func TestNew(t *testing.T) {
 			t.Errorf("expected status code %d when custom headers not present, but got: %d", http.StatusTeapot, rr2.Code)
 		}
 	})
+
+	// NEW: Test environment variable fallback when no filepath is provided
+	t.Run("EnvironmentVariableFallback_NoFilePath", func(t *testing.T) {
+		// Cleanup any existing factories to avoid conflicts
+		CleanupFactories()
+		defer CleanupFactories()
+
+		// Create a temporary directory and database file for the environment variable
+		envDir := t.TempDir()
+		envDBPath := filepath.Join(envDir, "IP2LOCATION-LITE-DB1.IPV6.BIN")
+
+		// Copy the existing database to the environment directory
+		dbContent, err := os.ReadFile(dbFilePath)
+		if err != nil {
+			t.Fatalf("failed to read source database: %v", err)
+		}
+		if err := os.WriteFile(envDBPath, dbContent, 0644); err != nil {
+			t.Fatalf("failed to create env database: %v", err)
+		}
+
+		// Set the environment variable
+		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", envDir)
+		defer func() {
+			if originalEnv != "" {
+				os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv)
+			} else {
+				os.Unsetenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+			}
+		}()
+
+		// Try to create plugin with empty DatabaseFilePath - should use environment variable
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:              true,
+			DatabaseFilePath:     "", // Empty - should fallback to environment variable
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+		}, pluginName)
+
+		if err != nil {
+			t.Errorf("expected no error when using environment variable fallback, but got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin not to be nil when using environment variable fallback")
+		}
+
+		// Verify the plugin works by testing a lookup
+		if plugin != nil {
+			country, err := plugin.(*Plugin).Lookup("8.8.8.8")
+			if err != nil {
+				t.Errorf("expected successful lookup with env var database, but got: %v", err)
+			}
+			if country != "US" {
+				t.Errorf("expected country US for 8.8.8.8, got %s", country)
+			}
+		}
+	})
+
+	// NEW: Test environment variable fallback when bad filepath is provided
+	t.Run("BadFilePath_FallbackToEnvironmentVariable", func(t *testing.T) {
+		// Cleanup any existing factories to avoid conflicts
+		CleanupFactories()
+		defer CleanupFactories()
+
+		// Create a temporary directory and database file for the environment variable
+		envDir := t.TempDir()
+		envDBPath := filepath.Join(envDir, "IP2LOCATION-LITE-DB1.IPV6.BIN")
+
+		// Copy the existing database to the environment directory
+		dbContent, err := os.ReadFile(dbFilePath)
+		if err != nil {
+			t.Fatalf("failed to read source database: %v", err)
+		}
+		if err := os.WriteFile(envDBPath, dbContent, 0644); err != nil {
+			t.Fatalf("failed to create env database: %v", err)
+		}
+
+		// Set the environment variable
+		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", envDir)
+		defer func() {
+			if originalEnv != "" {
+				os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv)
+			} else {
+				os.Unsetenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+			}
+		}()
+
+		// Try to create plugin with bad DatabaseFilePath but valid environment variable
+		badDBPath := "/nonexistent/path/bad-database.bin"
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:              true,
+			DatabaseFilePath:     badDBPath, // Bad path
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+		}, pluginName)
+
+		if err != nil {
+			t.Errorf("expected no error when environment variable is valid, but got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin not to be nil when environment variable is valid")
+		}
+
+		// Verify the plugin is using the database from the environment variable
+		if plugin != nil {
+			factory, err := GetDatabaseFactory(&DatabaseConfig{
+				DatabaseFilePath: badDBPath,
+			}, plugin.(*Plugin).logger)
+			if err != nil {
+				t.Errorf("failed to get database factory: %v", err)
+			} else {
+				actualPath := factory.GetWrapper().GetPath()
+				if !filepath.IsAbs(actualPath) || !strings.Contains(actualPath, envDir) {
+					t.Errorf("expected database path to be from environment directory, got: %s", actualPath)
+				}
+			}
+		}
+	})
+
+	// NEW: Test error when both filepath and environment variable are bad
+	t.Run("BadFilePath_BadEnvironmentVariable_ShouldError", func(t *testing.T) {
+		// Cleanup any existing factories to avoid conflicts
+		CleanupFactories()
+		defer CleanupFactories()
+
+		// Set a bad environment variable
+		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", "/nonexistent/env/path")
+		defer func() {
+			if originalEnv != "" {
+				os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv)
+			} else {
+				os.Unsetenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+			}
+		}()
+
+		// Try to create plugin with bad DatabaseFilePath and bad environment variable
+		badDBPath := "/nonexistent/path/bad-database.bin"
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:              true,
+			DatabaseFilePath:     badDBPath, // Bad path
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+		}, pluginName)
+
+		if err == nil {
+			t.Error("expected error when both filepath and environment variable are bad, but got none")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil when both filepath and environment variable are bad")
+		}
+	})
+
+	// NEW: Test error when no filepath and no environment variable are provided
+	t.Run("NoFilePath_NoEnvironmentVariable_ShouldError", func(t *testing.T) {
+		// Cleanup any existing factories to avoid conflicts
+		CleanupFactories()
+		defer CleanupFactories()
+
+		// Ensure no environment variable is set
+		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		os.Unsetenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		defer func() {
+			if originalEnv != "" {
+				os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv)
+			}
+		}()
+
+		// Try to create plugin with no DatabaseFilePath and no environment variable
+		// This should fail since the Search function doesn't automatically search current directory
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:              true,
+			DatabaseFilePath:     "", // Empty - should fail without environment variable
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+		}, pluginName)
+
+		if err == nil {
+			t.Error("expected error when no filepath and no environment variable are provided, but got none")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil when no filepath and no environment variable are provided")
+		}
+	})
 }
 
 func TestNew_AutoUpdate(t *testing.T) {

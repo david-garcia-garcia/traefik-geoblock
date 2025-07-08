@@ -186,13 +186,10 @@ func (df *DatabaseFactory) initialize() error {
 func (df *DatabaseFactory) resolveDatabasePath() (string, error) {
 	databasePath := df.config.DatabaseFilePath
 
-	// Search for database file if path is provided
-	if databasePath != "" {
-		databasePath = searchFile(databasePath, "IP2LOCATION-LITE-DB1.IPV6.BIN", df.logger)
-	}
-
-	if databasePath == "" {
-		return "", fmt.Errorf("no database file path provided")
+	// Search for database file
+	databasePath, err := fileUtils.Search(databasePath, "IP2LOCATION-LITE-DB1.IPV6.BIN", df.logger)
+	if err != nil {
+		return "", fmt.Errorf("database file not found: %w", err)
 	}
 
 	return databasePath, nil

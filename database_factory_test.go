@@ -221,7 +221,7 @@ func TestDatabaseFactory_Initialize_Errors(t *testing.T) {
 				DatabaseAutoUpdate: false,
 			},
 			expectError: true,
-			errorText:   "failed to open database",
+			errorText:   "database file not found",
 		},
 		{
 			name: "auto-update enabled but no directory",
@@ -239,7 +239,7 @@ func TestDatabaseFactory_Initialize_Errors(t *testing.T) {
 				DatabaseAutoUpdate: false,
 			},
 			expectError: true,
-			errorText:   "failed to open database",
+			errorText:   "database file not found",
 		},
 	}
 

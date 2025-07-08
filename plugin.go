@@ -177,7 +177,11 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	var banHtmlContent string
 
 	if cfg.BanHtmlFilePath != "" {
-		cfg.BanHtmlFilePath = searchFile(cfg.BanHtmlFilePath, "geoblockban.html", bootstrapLogger)
+		var err error
+		cfg.BanHtmlFilePath, err = fileUtils.Search(cfg.BanHtmlFilePath, "geoblockban.html", bootstrapLogger)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to find ban HTML file: %w", name, err)
+		}
 		content, err := os.ReadFile(cfg.BanHtmlFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to load ban HTML file %s: %w", name, cfg.BanHtmlFilePath, err)

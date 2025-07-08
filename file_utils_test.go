@@ -11,7 +11,7 @@ import (
 func TestFileUtils_Exists(t *testing.T) {
 	fu := NewFileUtils()
 
-	t.Run("existing file", func(t *testing.T) {
+	t.Run("existing file or path", func(t *testing.T) {
 		// Create a temporary file
 		tmpFile, err := os.CreateTemp("", "test-*.txt")
 		if err != nil {
@@ -31,9 +31,40 @@ func TestFileUtils_Exists(t *testing.T) {
 		}
 	})
 
-	t.Run("directory should not exist", func(t *testing.T) {
+	t.Run("directory should exist", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		if fu.Exists(tmpDir) {
+		if !fu.Exists(tmpDir) {
+			t.Error("expected directory to exist")
+		}
+	})
+}
+
+func TestFileUtils_ExistsAndIsFile(t *testing.T) {
+	fu := NewFileUtils()
+
+	t.Run("existing file", func(t *testing.T) {
+		// Create a temporary file
+		tmpFile, err := os.CreateTemp("", "test-*.txt")
+		if err != nil {
+			t.Fatalf("failed to create temp file: %v", err)
+		}
+		defer os.Remove(tmpFile.Name())
+		tmpFile.Close()
+
+		if !fu.ExistsAndIsFile(tmpFile.Name()) {
+			t.Error("expected file to exist")
+		}
+	})
+
+	t.Run("non-existing file", func(t *testing.T) {
+		if fu.ExistsAndIsFile("/non/existing/file.txt") {
+			t.Error("expected file not to exist")
+		}
+	})
+
+	t.Run("directory should not be considered as file", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		if fu.ExistsAndIsFile(tmpDir) {
 			t.Error("expected directory not to be considered as existing file")
 		}
 	})
@@ -65,7 +96,7 @@ func TestFileUtils_Copy(t *testing.T) {
 		}
 
 		// Verify the copy
-		if !fu.Exists(dstFile) {
+		if !fu.ExistsAndIsFile(dstFile) {
 			t.Error("destination file does not exist")
 		}
 
@@ -173,7 +204,10 @@ func TestFileUtils_Search(t *testing.T) {
 		defer os.Remove(tmpFile.Name())
 		tmpFile.Close()
 
-		result := fu.Search(tmpFile.Name(), "default.txt", logger)
+		result, err := fu.Search(tmpFile.Name(), "default.txt", logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result != tmpFile.Name() {
 			t.Errorf("expected %q, got %q", tmpFile.Name(), result)
 		}
@@ -193,26 +227,126 @@ func TestFileUtils_Search(t *testing.T) {
 			t.Fatalf("failed to create target file: %v", err)
 		}
 
-		result := fu.Search(tmpDir, "target.bin", logger)
+		result, err := fu.Search(tmpDir, "target.bin", logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result != targetFile {
 			t.Errorf("expected %q, got %q", targetFile, result)
 		}
 	})
 
-	t.Run("file not found returns original path", func(t *testing.T) {
+	t.Run("file not found returns error", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		nonExistentPath := filepath.Join(tmpDir, "nonexistent.txt")
 
-		result := fu.Search(nonExistentPath, "default.txt", logger)
-		if result != nonExistentPath {
-			t.Errorf("expected %q, got %q", nonExistentPath, result)
+		_, err := fu.Search(nonExistentPath, "default.txt", logger)
+		if err == nil {
+			t.Error("expected error for non-existent file")
 		}
 	})
 
-	t.Run("empty base path returns default", func(t *testing.T) {
-		result := fu.Search("", "default.txt", logger)
-		if result != "default.txt" {
-			t.Errorf("expected %q, got %q", "default.txt", result)
+	t.Run("empty base path returns error without env var", func(t *testing.T) {
+		// Temporarily unset the environment variable to test basic behavior
+		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		os.Unsetenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		defer os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv)
+
+		_, err := fu.Search("", "default.txt", logger)
+		if err == nil {
+			t.Error("expected error when no base path and no env var")
+		}
+	})
+
+	t.Run("environment variable fallback", func(t *testing.T) {
+		// Create a test directory for the environment variable
+		envDir := t.TempDir()
+
+		// Create a test file in the environment directory
+		envFileName := "env-test.txt"
+		envFilePath := filepath.Join(envDir, envFileName)
+		if err := os.WriteFile(envFilePath, []byte("env content"), 0644); err != nil {
+			t.Fatalf("failed to create env test file: %v", err)
+		}
+
+		// Set the environment variable
+		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", envDir)
+		defer os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv) // Restore original value
+
+		// Test with empty base path (should use environment variable)
+		result, err := fu.Search("", envFileName, logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != envFilePath {
+			t.Errorf("expected environment variable fallback %q, got %q", envFilePath, result)
+		}
+
+		// Test with non-existent base path (should fallback to environment variable)
+		nonExistentPath := filepath.Join(t.TempDir(), "nonexistent", "path.txt")
+		result2, err := fu.Search(nonExistentPath, envFileName, logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result2 != envFilePath {
+			t.Errorf("expected environment variable fallback %q, got %q", envFilePath, result2)
+		}
+	})
+
+	t.Run("environment variable with empty base path", func(t *testing.T) {
+		// Create a test directory for the environment variable
+		envDir := t.TempDir()
+
+		// Create test file with specific content
+		testFileName := "env-only-test.txt"
+		envFilePath := filepath.Join(envDir, testFileName)
+
+		if err := os.WriteFile(envFilePath, []byte("env content"), 0644); err != nil {
+			t.Fatalf("failed to create env test file: %v", err)
+		}
+
+		// Set the environment variable
+		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", envDir)
+		defer os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv) // Restore original value
+
+		// Should use environment variable with empty base path
+		result, err := fu.Search("", testFileName, logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != envFilePath {
+			t.Errorf("expected environment variable path %q, got %q", envFilePath, result)
+		}
+
+		// Verify content to ensure we got the right file
+		content, err := os.ReadFile(result)
+		if err != nil {
+			t.Fatalf("failed to read result file: %v", err)
+		}
+		if string(content) != "env content" {
+			t.Errorf("expected content 'env content', got %q", string(content))
+		}
+	})
+
+	t.Run("environment variable fallback not found", func(t *testing.T) {
+		// Create a test directory for the environment variable
+		envDir := t.TempDir()
+
+		// Set the environment variable but don't create the file
+		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", envDir)
+		defer os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv) // Restore original value
+
+		nonExistentFileName := "nonexistent-env-file.txt"
+
+		// Should try environment variable but return error since file not found
+		_, err := fu.Search("", nonExistentFileName, logger)
+
+		// Should get an error since file not found anywhere
+		if err == nil {
+			t.Error("expected error when file not found in environment variable path")
 		}
 	})
 }

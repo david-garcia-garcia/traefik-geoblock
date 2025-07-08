@@ -16,8 +16,17 @@ func NewFileUtils() *FileUtils {
 	return &FileUtils{}
 }
 
-// Exists checks if a file exists and is not a directory
+// ExistsAndIsFile checks if a file exists and is not a directory
 func (fu *FileUtils) Exists(filename string) bool {
+	_, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+// ExistsAndIsFile checks if a file exists and is not a directory
+func (fu *FileUtils) ExistsAndIsFile(filename string) bool {
 	info, err := os.Stat(filename)
 	if os.IsNotExist(err) {
 		return false
@@ -25,16 +34,25 @@ func (fu *FileUtils) Exists(filename string) bool {
 	return !info.IsDir()
 }
 
+// ExistsAndIsDir checks if a file exists and is a directory
+func (fu *FileUtils) ExistsAndIsDir(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return info.IsDir()
+}
+
 // Copy copies a file from src to dst.
 // If dst exists, it will be overwritten only if overwrite is true.
 func (fu *FileUtils) Copy(src string, dst string, overwrite bool) error {
 	// Check if source file exists
-	if !fu.Exists(src) {
+	if !fu.ExistsAndIsFile(src) {
 		return fmt.Errorf("source file does not exist: %s", src)
 	}
 
 	// Check if destination exists and handle according to overwrite parameter
-	if fu.Exists(dst) {
+	if fu.ExistsAndIsFile(dst) {
 		// File exists - return error if overwrite is false
 		if !overwrite {
 			return fmt.Errorf("destination file already exists: %s", dst)
@@ -68,37 +86,59 @@ func (fu *FileUtils) Copy(src string, dst string, overwrite bool) error {
 }
 
 // Search looks for a file in the filesystem, handling both direct paths and directory searches.
-// If baseFile is a direct path to an existing file, that path is returned.
-// If baseFile is a directory, it recursively searches for defaultFile within that directory.
+// If basePathOrFile is a direct path to an existing file, that path is returned.
+// If basePathOrFile is a directory, it recursively searches for defaultFile within that directory.
 //
 // Parameters:
-//   - baseFile: Either a direct file path or directory to search in
-//   - defaultFile: Filename to search for if baseFile is a directory
+//   - basePathOrFile: Either a direct file path or directory to search in
+//   - defaultFile: Filename to search for if basePathOrFile is a directory
 //   - logger: Logger for error reporting
 //
 // Returns:
-//   - The path to the found file, or the original baseFile path if not found
+//   - The path to the found file, or an error if the file is not found
 //
-// The function will log errors if the file cannot be found or if there are issues during the search,
-// but will not fail - it always returns a path.
-func (fu *FileUtils) Search(baseFile string, defaultFile string, logger *slog.Logger) string {
-	// Return early if baseFile is empty
-	if baseFile == "" {
-		return defaultFile
+// The function will return an error if the file cannot be found after trying all fallback options.
+func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *slog.Logger) (string, error) {
+
+	// Check if we received a file path and if it exists return that
+	if basePathOrFile != "" && fu.ExistsAndIsFile(basePathOrFile) {
+		return basePathOrFile, nil
 	}
 
-	// Check if the file exists at the specified path
-	if fu.Exists(baseFile) {
-		return baseFile
+	// If we are going to perform a search, defaultFileName must be provided
+	if defaultFile == "" {
+		return "", fmt.Errorf("database_factory [Search]: defaultFile must be provided when performing a search")
 	}
 
-	err := filepath.Walk(baseFile, func(path string, info os.FileInfo, err error) error {
+	// The basePathOrFile must be a directory
+	if fu.ExistsAndIsDir(basePathOrFile) {
+		logger.Debug("database_factory [Search]: basePathOrFile is a directory, searching recursively for file.", "basePathOrFile", basePathOrFile)
+	} else {
+		// Try to fallback to the environment variable path
+		envPath := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
+		if envPath != "" {
+			if fu.ExistsAndIsDir(envPath) {
+				logger.Debug("database_factory [Search]: using environment variable path TRAEFIK_PLUGIN_GEOBLOCK_PATH for file search.", "envPath", envPath)
+				basePathOrFile = envPath
+			} else {
+				logger.Error("database_factory [Search]: TRAEFIK_PLUGIN_GEOBLOCK_PATH is not a directory", "envPath", envPath)
+				return "", fmt.Errorf("database_factory [Search]: TRAEFIK_PLUGIN_GEOBLOCK_PATH is not a directory")
+			}
+		} else {
+			return "", fmt.Errorf("database_factory [Search]: TRAEFIK_PLUGIN_GEOBLOCK_PATH not provided and basePathOrFile is not a directory or does not exist")
+		}
+	}
+
+	// Try to search recursively in the provided directory
+	originalPath := basePathOrFile
+	foundPath := ""
+	err := filepath.Walk(basePathOrFile, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip errors and continue walking
 		}
 		if !info.IsDir() {
 			if filepath.Base(path) == defaultFile {
-				baseFile = path         // Update baseFile with the found path
+				foundPath = path        // Update foundPath with the found path
 				return filepath.SkipAll // Stop walking once found
 			}
 		}
@@ -106,15 +146,18 @@ func (fu *FileUtils) Search(baseFile string, defaultFile string, logger *slog.Lo
 	})
 
 	if err != nil {
-		// Log error but continue with original path
-		logger.Error("error searching for file", "error", err)
+		// Log error but continue with fallback
+		logger.Debug("error searching for file in specified path", "error", err, "path", originalPath)
 	}
 
-	if !fu.Exists(baseFile) {
-		logger.Error("could not find file", "file", defaultFile, "path", baseFile)
+	// If found in the specified path, return it
+	if foundPath != "" && fu.ExistsAndIsFile(foundPath) {
+		return foundPath, nil
 	}
 
-	return baseFile // Return found path or original path if not found
+	// No file found anywhere - return error
+	logger.Error("could not find file", "file", defaultFile, "originalPath", originalPath, "envFallbackChecked", true)
+	return "", fmt.Errorf("file not found: %s (searched in %s and TRAEFIK_PLUGIN_GEOBLOCK_PATH)", defaultFile, originalPath)
 }
 
 // Global instance for backward compatibility and convenience
@@ -125,7 +168,7 @@ var fileUtils = NewFileUtils()
 
 // fileExists is a convenience function that uses the global FileUtils instance
 func fileExists(filename string) bool {
-	return fileUtils.Exists(filename)
+	return fileUtils.ExistsAndIsFile(filename)
 }
 
 // copyFile is a convenience function that uses the global FileUtils instance
@@ -135,5 +178,10 @@ func copyFile(src string, dst string, overwrite bool) error {
 
 // searchFile is a convenience function that uses the global FileUtils instance
 func searchFile(baseFile string, defaultFile string, logger *slog.Logger) string {
-	return fileUtils.Search(baseFile, defaultFile, logger)
+	result, err := fileUtils.Search(baseFile, defaultFile, logger)
+	if err != nil {
+		// For backward compatibility, return empty string on error
+		return ""
+	}
+	return result
 }

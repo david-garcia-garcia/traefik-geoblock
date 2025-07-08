@@ -78,6 +78,27 @@ go test
 
 ## ⚙️ Configuration
 
+### Environment Variables
+
+The plugin supports the following environment variable for configuration:
+
+- **`TRAEFIK_PLUGIN_GEOBLOCK_PATH`**: Directory path used as fallback location for database and HTML files when they are not found in the specified paths or when paths are empty/omitted.
+
+Example usage:
+```bash
+# Docker Compose
+environment:
+  - TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock
+
+# Docker run
+docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock traefik:latest
+
+# System environment variable
+export TRAEFIK_PLUGIN_GEOBLOCK_PATH=/opt/traefik-plugins/geoblock
+```
+
+When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN` and `geoblockban.html` files in the specified directory if they are not found in their configured locations.
+
 ### Example Docker Compose Setup
 
 ```yaml
@@ -125,8 +146,10 @@ http:
           # - Full path: /path/to/IP2LOCATION-LITE-DB1.IPV6.BIN
           # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively). 
           # Use /plugins-storage/sources/ if you are installing from plugin repository.
-          # - Empty: uses embedded database assuming it is installed in 
-          # /plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/
+          # - Empty: automatically searches using fallback locations (see below)
+          # 
+          # Fallback search order when file is not found:
+          # 1. TRAEFIK_PLUGIN_GEOBLOCK_PATH environment variable directory
           
           #-------------------------------
           # Country-based Rules (ISO 3166-1 alpha-2 format)
@@ -194,6 +217,9 @@ http:
           # - Full path: /path/to/geoblockban.html
           # - Directory: /path/to/ (will search for geoblockban.html recursively). Use /plugins-storage/sources/ if you are installing from plugin repository.
           # - Empty: returns only status code
+          # 
+          # Fallback search order when file is not found:
+          # 1. TRAEFIK_PLUGIN_GEOBLOCK_PATH environment variable directory
           # Template variables available: {{.IP}} and {{.Country}}
           
           #-------------------------------
