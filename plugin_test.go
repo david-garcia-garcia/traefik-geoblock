@@ -2,6 +2,7 @@ package traefik_geoblock
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -896,4 +897,122 @@ func TestPlugin_ServeHTTP_MalformedIP(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPrivateIPDetection(t *testing.T) {
+	// Test what Go's net.IP.IsPrivate() actually returns for various IPs
+	testIPs := []struct {
+		ip       string
+		expected bool
+		name     string
+	}{
+		{"127.0.0.1", true, "localhost"},
+		{"127.0.0.2", true, "loopback range"},
+		{"::1", true, "IPv6 localhost"},
+		{"192.168.1.1", true, "private range 192.168"},
+		{"10.0.0.1", true, "private range 10.x"},
+		{"172.16.0.1", true, "private range 172.16-31"},
+		{"8.8.8.8", false, "public IP"},
+		{"1.1.1.1", false, "public IP"},
+		{"2001:db8::1", false, "public IPv6"},
+	}
+
+	for _, test := range testIPs {
+		t.Run(test.name+"_"+test.ip, func(t *testing.T) {
+			ipAddr := net.ParseIP(test.ip)
+			if ipAddr == nil {
+				t.Fatalf("Failed to parse IP: %s", test.ip)
+			}
+
+			// Test what our updated logic returns
+			isPrivateOrLoopback := ipAddr.IsPrivate() || ipAddr.IsLoopback()
+			t.Logf("IP %s: IsPrivate() || IsLoopback() = %v", test.ip, isPrivateOrLoopback)
+
+			if isPrivateOrLoopback != test.expected {
+				t.Errorf("IP %s: expected IsPrivate() || IsLoopback() = %v, got %v", test.ip, test.expected, isPrivateOrLoopback)
+			}
+		})
+	}
+}
+
+func TestCheckAllowed_Localhost(t *testing.T) {
+	// Test the actual CheckAllowed method with 127.0.0.1
+	cfg := &Config{
+		Enabled:              true,
+		DatabaseFilePath:     dbFilePath,
+		AllowPrivate:         true,
+		DefaultAllow:         false,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+	}
+
+	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	if err != nil {
+		t.Fatalf("Failed to create plugin: %v", err)
+	}
+
+	p := plugin.(*Plugin)
+
+	// Test various loopback IPs (IPv4 and IPv6)
+	testIPs := []string{"127.0.0.1", "127.0.0.2", "127.1.1.1", "::1"}
+
+	for _, ip := range testIPs {
+		t.Run("IP_"+ip, func(t *testing.T) {
+			allowed, country, phase, err := p.CheckAllowed(ip)
+
+			t.Logf("CheckAllowed(%s) = allowed:%v, country:%s, phase:%s, err:%v",
+				ip, allowed, country, phase, err)
+
+			if err != nil {
+				t.Errorf("CheckAllowed returned error: %v", err)
+			}
+
+			// With allowPrivate=true, loopback IPs should be allowed
+			if !allowed {
+				t.Errorf("IP %s should be allowed when allowPrivate=true, but was blocked", ip)
+			}
+
+			// Country should be "PRIVATE" for private IPs
+			if country != "PRIVATE" {
+				t.Errorf("IP %s should have country='PRIVATE', but got '%s'", ip, country)
+			}
+
+			// Phase should be "allow_private" for private IPs
+			if phase != "allow_private" {
+				t.Errorf("IP %s should have phase='allow_private', but got '%s'", ip, phase)
+			}
+		})
+	}
+}
+
+func TestServeHTTP_LocalhostWithAllowPrivate(t *testing.T) {
+	// Test complete HTTP request flow with localhost
+	cfg := &Config{
+		Enabled:              true,
+		DatabaseFilePath:     dbFilePath,
+		AllowPrivate:         true,
+		DefaultAllow:         false,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+	}
+
+	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	if err != nil {
+		t.Fatalf("Failed to create plugin: %v", err)
+	}
+
+	// Test direct localhost request (simulating direct access)
+	req := httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
+	req.RemoteAddr = "127.0.0.1:12345" // This simulates direct localhost access
+	req.Header.Set("X-Real-IP", "127.0.0.1")
+
+	rr := httptest.NewRecorder()
+	plugin.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTeapot {
+		t.Errorf("Expected localhost request to be allowed (status %d), but got status %d",
+			http.StatusTeapot, rr.Code)
+	}
+
+	t.Logf("SUCCESS: Localhost request with allowPrivate=true was allowed (status %d)", rr.Code)
 }

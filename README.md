@@ -166,6 +166,8 @@ http:
           # Network Rules
           #-------------------------------
           allowPrivate: true              # Allow requests from private/internal networks (marked as "PRIVATE")
+          # This includes RFC 1918 private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+          # and loopback addresses (127.0.0.0/8 for IPv4, ::1 for IPv6)
           allowedIPBlocks:                # CIDR ranges to always allow (highest priority)
             - "192.168.0.0/16"
             - "10.0.0.0/8"

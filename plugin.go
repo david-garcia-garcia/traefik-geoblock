@@ -351,7 +351,7 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, country string, phase strin
 		return false, ip, "", fmt.Errorf("unable to parse IP address from [%s]", ip)
 	}
 
-	if ipAddr.IsPrivate() {
+	if ipAddr.IsPrivate() || ipAddr.IsLoopback() {
 		if p.allowPrivate {
 			return true, PrivateIpCountryAlias, "allow_private", nil
 		} else {
