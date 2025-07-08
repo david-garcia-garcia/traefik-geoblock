@@ -20,7 +20,7 @@ func TestTraefikLogWriter_Write(t *testing.T) {
 	os.Stdout = w
 
 	go func() {
-		buf.ReadFrom(r)
+		_, _ = buf.ReadFrom(r)
 	}()
 
 	writer := &traefikLogWriter{}
@@ -68,7 +68,7 @@ func TestCreateBootstrapLogger(t *testing.T) {
 	os.Stdout = w
 
 	go func() {
-		buf.ReadFrom(r)
+		_, _ = buf.ReadFrom(r)
 	}()
 
 	logger.Debug(testMessage)
@@ -205,7 +205,7 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 		os.Stdout = w
 
 		go func() {
-			buf.ReadFrom(r)
+			_, _ = buf.ReadFrom(r)
 		}()
 
 		logger := createLogger(pluginName, "info", "text", invalidPath, 1024, 2, bootstrapLogger)
@@ -244,7 +244,7 @@ func TestCreateLogger_Integration(t *testing.T) {
 	os.Stdout = w
 
 	go func() {
-		buf.ReadFrom(r)
+		_, _ = buf.ReadFrom(r)
 	}()
 
 	// Test complete logger creation and usage
@@ -294,7 +294,7 @@ func TestCreateLogger_WithAttributes(t *testing.T) {
 	os.Stdout = w
 
 	go func() {
-		buf.ReadFrom(r)
+		_, _ = buf.ReadFrom(r)
 	}()
 
 	logger := createLogger(pluginName, "info", "text", "", 1024, 2, bootstrapLogger)
@@ -333,7 +333,7 @@ func TestCreateLogger_JSONFormat(t *testing.T) {
 	os.Stdout = w
 
 	go func() {
-		buf.ReadFrom(r)
+		_, _ = buf.ReadFrom(r)
 	}()
 
 	logger := createLogger(pluginName, "info", "json", "", 1024, 2, bootstrapLogger)
@@ -372,7 +372,7 @@ func BenchmarkTraefikLogWriter_Write(b *testing.B) {
 	os.Stdout = w
 
 	go func() {
-		buf.ReadFrom(r)
+		_, _ = buf.ReadFrom(r)
 	}()
 
 	b.ResetTimer()
