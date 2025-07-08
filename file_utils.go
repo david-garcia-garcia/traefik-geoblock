@@ -19,10 +19,7 @@ func NewFileUtils() *FileUtils {
 // ExistsAndIsFile checks if a file exists and is not a directory
 func (fu *FileUtils) Exists(filename string) bool {
 	_, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return true
+	return !os.IsNotExist(err)
 }
 
 // ExistsAndIsFile checks if a file exists and is not a directory

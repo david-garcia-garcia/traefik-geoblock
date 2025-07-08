@@ -18,7 +18,6 @@ services:
       # Without this, the plugin would only see internal Docker IPs (172.x.x.x) and block legitimate requests
       - "--entrypoints.web.forwardedHeaders.trustedIPs=172.16.0.0/12,192.168.0.0/16,10.0.0.0/8,127.0.0.1/32,::1/128"
       - "--entrypoints.web.forwardedHeaders.insecure=true"
-
       - "--experimental.localplugins.geoblock.modulename=github.com/david-garcia-garcia/traefik-geoblock"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro

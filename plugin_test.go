@@ -162,7 +162,7 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to read source database: %v", err)
 		}
-		if err := os.WriteFile(envDBPath, dbContent, 0644); err != nil {
+		if err := os.WriteFile(envDBPath, dbContent, 0600); err != nil {
 			t.Fatalf("failed to create env database: %v", err)
 		}
 
@@ -219,7 +219,7 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to read source database: %v", err)
 		}
-		if err := os.WriteFile(envDBPath, dbContent, 0644); err != nil {
+		if err := os.WriteFile(envDBPath, dbContent, 0600); err != nil {
 			t.Fatalf("failed to create env database: %v", err)
 		}
 

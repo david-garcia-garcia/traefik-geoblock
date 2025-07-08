@@ -265,7 +265,7 @@ func TestFileUtils_Search(t *testing.T) {
 		// Create a test file in the environment directory
 		envFileName := "env-test.txt"
 		envFilePath := filepath.Join(envDir, envFileName)
-		if err := os.WriteFile(envFilePath, []byte("env content"), 0644); err != nil {
+		if err := os.WriteFile(envFilePath, []byte("env content"), 0600); err != nil {
 			t.Fatalf("failed to create env test file: %v", err)
 		}
 
@@ -302,7 +302,7 @@ func TestFileUtils_Search(t *testing.T) {
 		testFileName := "env-only-test.txt"
 		envFilePath := filepath.Join(envDir, testFileName)
 
-		if err := os.WriteFile(envFilePath, []byte("env content"), 0644); err != nil {
+		if err := os.WriteFile(envFilePath, []byte("env content"), 0600); err != nil {
 			t.Fatalf("failed to create env test file: %v", err)
 		}
 
