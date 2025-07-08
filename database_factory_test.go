@@ -762,3 +762,68 @@ func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
 
 	t.Logf("Test completed successfully - initialization correctly uses updated database from auto-update directory")
 }
+
+func TestDatabaseFactory_CheckAndUpdate_SynchronousDownloadAndHotSwap(t *testing.T) {
+	// Cleanup factories before test
+	CleanupFactories()
+	defer CleanupFactories()
+
+	// Create a temporary directory for auto-update
+	tmpDir, err := os.MkdirTemp("", "geoblock-sync-update-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	config := &DatabaseConfig{
+		DatabaseFilePath:        "./IP2LOCATION-LITE-DB1.IPV6.BIN", // Fallback database
+		DatabaseAutoUpdate:      true,                              // Enable auto-update ticker for full workflow
+		DatabaseAutoUpdateDir:   tmpDir,
+		DatabaseAutoUpdateCode:  "DB1",
+		DatabaseAutoUpdateToken: "", // Use free version for test
+	}
+
+	// Step 1: Create factory with auto-update enabled
+	factory, err := NewDatabaseFactory(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create factory with auto-update: %v", err)
+	}
+	defer factory.Close()
+
+	wrapper := factory.GetWrapper()
+	if wrapper == nil {
+		t.Fatal("Expected wrapper to not be nil")
+	}
+
+	// Step 2: Get initial version
+	initialVersion := wrapper.GetVersion()
+	if initialVersion == nil {
+		t.Fatal("Expected initial version to not be nil")
+	}
+
+	t.Logf("Initial database version: %s, age: %v", initialVersion.String(), time.Since(initialVersion.Date()))
+
+	// Step 3: Wait for version to change (indicating download and hot swap completed)
+	timeout := time.After(30 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("Timeout waiting for database version to change - synchronous download and hot swap did not occur")
+
+		case <-ticker.C:
+			currentVersion := wrapper.GetVersion()
+			if currentVersion != nil && !currentVersion.Date().Equal(initialVersion.Date()) {
+				t.Logf("SUCCESS: Version changed from %s to %s - synchronous download and hot swap worked!",
+					initialVersion.String(), currentVersion.String())
+				return
+			}
+		}
+	}
+}

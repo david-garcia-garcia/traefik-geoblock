@@ -264,22 +264,22 @@ func (df *DatabaseFactory) startAutoUpdate() {
 func (df *DatabaseFactory) checkAndUpdate() {
 	currentVersion := df.wrapper.GetVersion()
 	if currentVersion == nil {
-		df.logger.Debug("no current version available, skipping update check")
+		df.logger.Debug("checkAndUpdate: no current version available, skipping update check")
 		return
 	}
 
 	// Only update if database is older than 1 month
 	if time.Since(currentVersion.Date()) < 30*24*time.Hour {
-		df.logger.Debug("database is recent, skipping update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
+		df.logger.Debug("checkAndUpdate: database is recent, skipping update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
 		return
 	}
 
-	df.logger.Info("database is old, attempting download update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
+	df.logger.Info("checkAndUpdate: database is old, attempting download update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
 
 	// Find current latest database
 	latest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
 	if err != nil {
-		df.logger.Debug("no existing database found during update check", "error", err)
+		df.logger.Debug("checkAndUpdate: no existing database found during update check", "error", err)
 		latest = ""
 	}
 
@@ -290,21 +290,26 @@ func (df *DatabaseFactory) checkAndUpdate() {
 		DatabaseAutoUpdateCode:  df.config.DatabaseAutoUpdateCode,
 	}
 
-	if err := UpdateIfNeeded(latest, false, df.logger, updateCfg); err != nil {
-		df.logger.Error("background database update failed", "error", err)
+	if err := UpdateIfNeeded(latest, true, df.logger, updateCfg); err != nil {
+		df.logger.Error("checkAndUpdate: background database update failed", "error", err)
 		return
 	}
 
 	// Check if we got a new database
 	newLatest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
-	if err != nil || newLatest == "" || newLatest == latest {
-		df.logger.Debug("no new database found after update attempt")
+	if err != nil {
+		df.logger.Error("checkAndUpdate: failed to find latest database after update attempt", "error", err)
+		return
+	}
+
+	if newLatest == "" || newLatest == latest {
+		df.logger.Debug("checkAndUpdate: no new database found after update attempt")
 		return
 	}
 
 	// Perform hot swap
 	if err := df.performHotSwap(newLatest); err != nil {
-		df.logger.Error("failed to perform hot swap", "error", err)
+		df.logger.Error("checkAndUpdate: failed to perform hot swap", "error", err)
 	}
 }
 
