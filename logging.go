@@ -3,20 +3,18 @@ package traefik_geoblock
 import (
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 )
 
-// traefikLogWriter implements io.Writer and uses fmt.Printf for output
+// traefikLogWriter implements io.Writer and writes directly to stdout
 type traefikLogWriter struct{}
 
 func (w *traefikLogWriter) Write(p []byte) (n int, err error) {
-	// https://github.com/traefik/traefik/issues/8204
-	// Since v2.5.5, fmt.Println()/fmt.Printf() are catched and transfered to the Traefik logs, it's not perfect but we will improve that.
-	log.Println(string(p))
-	return len(p), nil
+	// Write directly to stdout - let the consumer decide routing
+	return os.Stdout.Write(p)
 }
 
 // createBootstrapLogger creates a logger for initial plugin setup and configuration
@@ -27,9 +25,8 @@ func createBootstrapLogger(name string) *slog.Logger {
 		Level: logLevel,
 	}
 
-	// Create a custom writer that uses fmt.Printf
-	fmtWriter := &traefikLogWriter{}
-	var writer io.Writer = fmtWriter
+	// Create a writer that writes directly to stdout
+	writer := &traefikLogWriter{}
 	handler := slog.NewTextHandler(writer, opts)
 	return slog.New(handler).With("plugin", name)
 }
@@ -58,10 +55,9 @@ func createLogger(name, level, format, path string, bufferSizeBytes, timeoutSeco
 		Level: logLevel,
 	}
 
-	// Create a custom writer that uses fmt.Printf
-	fmtWriter := &traefikLogWriter{}
-	var writer io.Writer = fmtWriter
-	var destination string = "traefik"
+	// Create a writer that writes directly to stdout
+	var writer io.Writer = &traefikLogWriter{}
+	var destination string = "stdout"
 
 	// Only attempt file writing if explicitly specified
 	if path != "" {

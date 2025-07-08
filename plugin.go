@@ -178,7 +178,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 
 	if cfg.BanHtmlFilePath != "" {
 		var err error
-		cfg.BanHtmlFilePath, err = fileUtils.Search(cfg.BanHtmlFilePath, "geoblockban.html", bootstrapLogger)
+		cfg.BanHtmlFilePath, err = fileUtils.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to find ban HTML file: %w", name, err)
 		}
