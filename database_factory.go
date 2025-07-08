@@ -74,20 +74,26 @@ type DatabaseFactory struct {
 	sourceDbPath       string // Track the original database that was used for the current local copy
 	updateTicker       *time.Ticker
 	stopChan           chan struct{}
+	factoryID          string // Unique identifier for this factory instance
 }
 
 // NewDatabaseFactory creates a new database factory instance
 func NewDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseFactory, error) {
+	// Generate unique factory ID and create wrapped logger
+	factoryID := generateConfigHash(config)
+	wrappedLogger := logger.With("factory_id", factoryID)
+
 	factory := &DatabaseFactory{
-		config:   config,
-		logger:   logger,
-		wrapper:  &DatabaseWrapper{},
-		stopChan: make(chan struct{}),
+		config:    config,
+		logger:    wrappedLogger,
+		wrapper:   &DatabaseWrapper{},
+		stopChan:  make(chan struct{}),
+		factoryID: factoryID,
 	}
 
 	// Initialize the database
 	if err := factory.initialize(); err != nil {
-		return nil, fmt.Errorf("failed to initialize database factory: %w", err)
+		return nil, fmt.Errorf("NewDatabaseFactory: failed to initialize database factory: %w", err)
 	}
 
 	// Start auto-update ticker if enabled
@@ -106,6 +112,11 @@ func (df *DatabaseFactory) GetWrapper() *DatabaseWrapper {
 // GetSourceDbPath returns the original database path that was used for the current active database
 func (df *DatabaseFactory) GetSourceDbPath() string {
 	return df.sourceDbPath
+}
+
+// GetFactoryID returns the unique identifier for this factory instance
+func (df *DatabaseFactory) GetFactoryID() string {
+	return df.factoryID
 }
 
 // Close shuts down the factory and cleans up resources
@@ -243,7 +254,7 @@ func (df *DatabaseFactory) startAutoUpdate() {
 	df.updateTicker = time.NewTicker(24 * time.Hour)
 
 	go func() {
-		df.logger.Debug("starting auto-update ticker")
+		df.logger.Debug("startAutoUpdate: starting auto-update ticker")
 
 		// Run first check immediately
 		df.checkAndUpdate()
@@ -253,7 +264,7 @@ func (df *DatabaseFactory) startAutoUpdate() {
 			case <-df.updateTicker.C:
 				df.checkAndUpdate()
 			case <-df.stopChan:
-				df.logger.Debug("stopping auto-update ticker")
+				df.logger.Debug("startAutoUpdate: stopping auto-update ticker")
 				return
 			}
 		}
