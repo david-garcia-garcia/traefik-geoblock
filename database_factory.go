@@ -325,7 +325,7 @@ func (df *DatabaseFactory) performHotSwap(newDatabasePath string) error {
 	newDB, err := ip2location.OpenDB(newLocalCopy)
 	if err != nil {
 		os.Remove(newLocalCopy)
-		return fmt.Errorf("failed to open new database: %w", err)
+		return fmt.Errorf("performHotSwap: failed to open new database: %w", err)
 	}
 
 	// Get version
@@ -333,7 +333,7 @@ func (df *DatabaseFactory) performHotSwap(newDatabasePath string) error {
 	if err != nil {
 		newDB.Close()
 		os.Remove(newLocalCopy)
-		return fmt.Errorf("failed to read new database version: %w", err)
+		return fmt.Errorf("performHotSwap: failed to read new database version: %w", err)
 	}
 
 	// Perform the swap
@@ -346,12 +346,12 @@ func (df *DatabaseFactory) performHotSwap(newDatabasePath string) error {
 	// Close old database after brief delay for ongoing operations
 	if oldDB != nil {
 		go func() {
-			time.Sleep(1 * time.Second) // Brief delay, not the most elegant approach, but simple.
+			time.Sleep(10 * time.Second) // Brief delay, not the most elegant approach, but simple. And if it panics, not really a big deal.
 			oldDB.Close()
 		}()
 	}
 
-	df.logger.Info("database hot-swapped successfully",
+	df.logger.Info("performHotSwap: database hot-swapped successfully",
 		"new_version", newVersion.String(),
 		"new_path", newLocalCopy)
 
