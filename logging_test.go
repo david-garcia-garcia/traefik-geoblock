@@ -3,7 +3,6 @@ package traefik_geoblock
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"strings"
@@ -14,16 +13,24 @@ import (
 const testPluginName = "test-plugin"
 
 func TestTraefikLogWriter_Write(t *testing.T) {
-	// Capture log output by temporarily replacing the default logger
+	// Capture stdout output by temporarily replacing os.Stdout
 	var buf bytes.Buffer
-	oldOutput := log.Writer()
-	log.SetOutput(&buf)
-	defer log.SetOutput(oldOutput)
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	go func() {
+		buf.ReadFrom(r)
+	}()
 
 	writer := &traefikLogWriter{}
 	testMessage := "test log message"
 
 	n, err := writer.Write([]byte(testMessage))
+
+	// Restore stdout and close the pipe
+	w.Close()
+	os.Stdout = oldStdout
 
 	if err != nil {
 		t.Errorf("expected no error, but got: %v", err)
@@ -32,6 +39,9 @@ func TestTraefikLogWriter_Write(t *testing.T) {
 	if n != len(testMessage) {
 		t.Errorf("expected to write %d bytes, but wrote %d", len(testMessage), n)
 	}
+
+	// Give some time for the goroutine to read
+	time.Sleep(10 * time.Millisecond)
 
 	output := buf.String()
 	if !strings.Contains(output, testMessage) {
@@ -51,13 +61,24 @@ func TestCreateBootstrapLogger(t *testing.T) {
 	// We can't easily test the internal structure, but we can test that it works
 	testMessage := "bootstrap test message"
 
-	// Capture log output
+	// Capture stdout output
 	var buf bytes.Buffer
-	oldOutput := log.Writer()
-	log.SetOutput(&buf)
-	defer log.SetOutput(oldOutput)
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	go func() {
+		buf.ReadFrom(r)
+	}()
 
 	logger.Debug(testMessage)
+
+	// Restore stdout and close the pipe
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Give some time for the goroutine to read
+	time.Sleep(10 * time.Millisecond)
 
 	output := buf.String()
 	if !strings.Contains(output, testMessage) {
@@ -179,9 +200,13 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 
 		// Capture bootstrap logger output to verify error logging
 		var buf bytes.Buffer
-		oldOutput := log.Writer()
-		log.SetOutput(&buf)
-		defer log.SetOutput(oldOutput)
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+
+		go func() {
+			buf.ReadFrom(r)
+		}()
 
 		logger := createLogger(pluginName, "info", "text", invalidPath, 1024, 2, bootstrapLogger)
 
@@ -189,15 +214,22 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 			t.Fatal("expected logger to not be nil even with invalid path")
 		}
 
+		// Logger should still work (fallback to default)
+		logger.Info("test message after invalid path")
+
+		// Restore stdout and close the pipe
+		w.Close()
+		os.Stdout = oldStdout
+
+		// Give some time for the goroutine to read
+		time.Sleep(10 * time.Millisecond)
+
 		// Should have logged an error about the invalid path
 		output := buf.String()
 		if !strings.Contains(output, "Failed to create buffered file writer") {
 			// This might not always fail depending on the system, so we won't make this a hard requirement
 			t.Logf("Expected error about file writer creation, got: %s", output)
 		}
-
-		// Logger should still work (fallback to default)
-		logger.Info("test message after invalid path")
 	})
 }
 
@@ -205,11 +237,15 @@ func TestCreateLogger_Integration(t *testing.T) {
 	pluginName := "integration-test-plugin"
 	bootstrapLogger := createBootstrapLogger(pluginName)
 
-	// Capture output for integration test
+	// Capture stdout output for integration test
 	var buf bytes.Buffer
-	oldOutput := log.Writer()
-	log.SetOutput(&buf)
-	defer log.SetOutput(oldOutput)
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	go func() {
+		buf.ReadFrom(r)
+	}()
 
 	// Test complete logger creation and usage
 	logger := createLogger(pluginName, "debug", "text", "", 1024, 2, bootstrapLogger)
@@ -223,6 +259,13 @@ func TestCreateLogger_Integration(t *testing.T) {
 	logger.Info("info message")
 	logger.Warn("warn message")
 	logger.Error("error message")
+
+	// Restore stdout and close the pipe
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Give some time for the goroutine to read
+	time.Sleep(10 * time.Millisecond)
 
 	output := buf.String()
 
@@ -244,16 +287,27 @@ func TestCreateLogger_WithAttributes(t *testing.T) {
 	pluginName := "attr-test-plugin"
 	bootstrapLogger := createBootstrapLogger(pluginName)
 
-	// Capture output
+	// Capture stdout output
 	var buf bytes.Buffer
-	oldOutput := log.Writer()
-	log.SetOutput(&buf)
-	defer log.SetOutput(oldOutput)
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	go func() {
+		buf.ReadFrom(r)
+	}()
 
 	logger := createLogger(pluginName, "info", "text", "", 1024, 2, bootstrapLogger)
 
 	// Test logging with attributes
 	logger.Info("test message with attributes", "key1", "value1", "key2", 42)
+
+	// Restore stdout and close the pipe
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Give some time for the goroutine to read
+	time.Sleep(10 * time.Millisecond)
 
 	output := buf.String()
 
@@ -272,15 +326,26 @@ func TestCreateLogger_JSONFormat(t *testing.T) {
 	pluginName := "json-test-plugin"
 	bootstrapLogger := createBootstrapLogger(pluginName)
 
-	// Capture output
+	// Capture stdout output
 	var buf bytes.Buffer
-	oldOutput := log.Writer()
-	log.SetOutput(&buf)
-	defer log.SetOutput(oldOutput)
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	go func() {
+		buf.ReadFrom(r)
+	}()
 
 	logger := createLogger(pluginName, "info", "json", "", 1024, 2, bootstrapLogger)
 
 	logger.Info("json test message", "testKey", "testValue")
+
+	// Restore stdout and close the pipe
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Give some time for the goroutine to read
+	time.Sleep(10 * time.Millisecond)
 
 	output := buf.String()
 
@@ -300,16 +365,24 @@ func BenchmarkTraefikLogWriter_Write(b *testing.B) {
 	writer := &traefikLogWriter{}
 	message := []byte("benchmark test message")
 
-	// Capture output to avoid polluting test output
+	// Capture stdout output to avoid polluting test output
 	var buf bytes.Buffer
-	oldOutput := log.Writer()
-	log.SetOutput(&buf)
-	defer log.SetOutput(oldOutput)
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	go func() {
+		buf.ReadFrom(r)
+	}()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = writer.Write(message)
 	}
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
 }
 
 func BenchmarkCreateBootstrapLogger(b *testing.B) {

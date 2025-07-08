@@ -17,6 +17,16 @@ import (
 // Add this constant near the top of the file, after imports
 const PrivateIpCountryAlias = "PRIVATE"
 
+// Phase constants for logging and testing
+const (
+	PhaseAllowPrivate   = "allow_private"
+	PhaseBlockedIPBlock = "blocked_ip_block"
+	PhaseAllowedIPBlock = "allowed_ip_block"
+	PhaseAllowedCountry = "allowed_country"
+	PhaseBlockedCountry = "blocked_country"
+	PhaseDefaultAllow   = "default_allow"
+)
+
 // Config defines the plugin configuration.
 type Config struct {
 	// Core settings
@@ -353,9 +363,9 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, country string, phase strin
 
 	if ipAddr.IsPrivate() || ipAddr.IsLoopback() {
 		if p.allowPrivate {
-			return true, PrivateIpCountryAlias, "allow_private", nil
+			return true, PrivateIpCountryAlias, PhaseAllowPrivate, nil
 		} else {
-			return false, PrivateIpCountryAlias, "allow_private", nil
+			return false, PrivateIpCountryAlias, PhaseAllowPrivate, nil
 		}
 	}
 
@@ -378,32 +388,32 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, country string, phase strin
 	// NB: whichever matched prefix is longer has higher priority: more specific to less specific only if both matched.
 	if (allowedNetworkLength < blockedNetworkLength) && (allowedNetworkLength > 0) && (blockedNetworkLength > 0) {
 		if blocked {
-			return false, country, "blocked_ip_block", nil
+			return false, country, PhaseBlockedIPBlock, nil
 		}
 		if allowed {
-			return true, country, "allowed_ip_block", nil
+			return true, country, PhaseAllowedIPBlock, nil
 		}
 	} else {
 		if allowed {
-			return true, country, "allowed_ip_block", nil
+			return true, country, PhaseAllowedIPBlock, nil
 		}
 		if blocked {
-			return false, country, "blocked_ip_block", nil
+			return false, country, PhaseBlockedIPBlock, nil
 		}
 	}
 
 	if _, allowed := p.allowedCountries[country]; allowed {
-		return true, country, "allowed_country", nil
+		return true, country, PhaseAllowedCountry, nil
 	}
 
 	if _, blocked := p.blockedCountries[country]; blocked {
-		return false, country, "blocked_country", nil
+		return false, country, PhaseBlockedCountry, nil
 	}
 
 	if p.defaultAllow {
-		return true, country, "default_allow", nil
+		return true, country, PhaseDefaultAllow, nil
 	}
-	return false, country, "default_allow", nil
+	return false, country, PhaseDefaultAllow, nil
 }
 
 // Lookup queries the ip2location database for a given IP address.

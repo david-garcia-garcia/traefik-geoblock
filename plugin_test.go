@@ -978,8 +978,8 @@ func TestCheckAllowed_Localhost(t *testing.T) {
 			}
 
 			// Phase should be "allow_private" for private IPs
-			if phase != "allow_private" {
-				t.Errorf("IP %s should have phase='allow_private', but got '%s'", ip, phase)
+			if phase != PhaseAllowPrivate {
+				t.Errorf("IP %s should have phase='%s', but got '%s'", ip, PhaseAllowPrivate, phase)
 			}
 		})
 	}
