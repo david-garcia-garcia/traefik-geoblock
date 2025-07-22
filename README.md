@@ -257,10 +257,18 @@ http:
           # Response header settings
           #-------------------------------  
           countryHeader: "X-IPCountry"  
-          # Optional header to store the country code in
-          # you can use this to add the header to the access logs
-          # and see where all your trafik is coming from
-          # make sure to include the header in the logs: accesslog.fields.headers.names.X-IPCountry=keep
+          # Optional header to add the country code to the REQUEST (available in Traefik access logs)
+          # This header is added to the request that gets forwarded to your backend service
+          # You can use this to see where all your traffic is coming from in access logs
+          # Example access log config: accesslog.fields.headers.names.X-IPCountry=keep
+          
+          remediationHeadersCustomName: "X-Geoblock-Action"
+          # Optional header to add the blocking phase/reason to the RESPONSE when request is blocked
+          # This header is added to the HTTP response sent back to the client (available in Traefik access logs)
+          # Possible values: "allow_private", "blocked_ip_block", "allowed_ip_block", 
+          #                  "blocked_country", "allowed_country", "default_allow", "error"
+          # Example access log config: accesslog.fields.headers.names.X-Geoblock-Action=keep
+          # When empty, no header is added to blocked responses
 
 
 ```

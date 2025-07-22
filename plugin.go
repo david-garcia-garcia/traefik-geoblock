@@ -66,6 +66,9 @@ type Config struct {
 	// IP extraction settings
 	IPHeaders []string // List of headers to check for client IP addresses (cannot be empty)
 
+	// Remediation settings
+	RemediationHeadersCustomName string // Name of the header to add to blocked responses indicating the phase/reason
+
 	// Auto-update settings
 	DatabaseAutoUpdate      bool   `json:"databaseAutoUpdate,omitempty"`
 	DatabaseAutoUpdateDir   string `json:"databaseAutoUpdateDir,omitempty"`
@@ -76,42 +79,44 @@ type Config struct {
 // CreateConfig creates the default plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
-		DisallowedStatusCode:        http.StatusForbidden,
-		LogLevel:                    "info",                                   // Default to info logging
-		LogFormat:                   "text",                                   // Default to text format
-		LogPath:                     "",                                       // Default to traefik
-		BanIfError:                  true,                                     // Default to banning on errors
-		BypassHeaders:               make(map[string]string),                  // Initialize empty map
-		IPHeaders:                   []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
-		DatabaseAutoUpdateCode:      "DB1",                                    // Default database code
-		LogBannedRequests:           true,                                     // Default to logging blocked requests
-		CountryHeader:               "",                                       // Default to empty thus not setting the header
-		FileLogBufferSizeBytes:      1024,                                     // Default buffer size 1024 bytes
-		FileLogBufferTimeoutSeconds: 2,                                        // Default timeout 2 seconds
+		DisallowedStatusCode:         http.StatusForbidden,
+		LogLevel:                     "info",                                   // Default to info logging
+		LogFormat:                    "text",                                   // Default to text format
+		LogPath:                      "",                                       // Default to traefik
+		BanIfError:                   true,                                     // Default to banning on errors
+		BypassHeaders:                make(map[string]string),                  // Initialize empty map
+		IPHeaders:                    []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
+		DatabaseAutoUpdateCode:       "DB1",                                    // Default database code
+		LogBannedRequests:            true,                                     // Default to logging blocked requests
+		CountryHeader:                "",                                       // Default to empty thus not setting the header
+		RemediationHeadersCustomName: "",                                       // Default to empty thus not setting the header
+		FileLogBufferSizeBytes:       1024,                                     // Default buffer size 1024 bytes
+		FileLogBufferTimeoutSeconds:  2,                                        // Default timeout 2 seconds
 	}
 }
 
 // Update the Plugin struct to store the ban HTML content instead of template
 type Plugin struct {
-	next                 http.Handler
-	name                 string
-	databaseFile         string           // Just for testing purposes
-	db                   *DatabaseWrapper // Changed from ip2location.DB to DatabaseWrapper
-	enabled              bool
-	allowedCountries     map[string]struct{} // Instead of []string to improve lookup performance
-	blockedCountries     map[string]struct{} // Instead of []string to improve lookup performance
-	defaultAllow         bool
-	allowPrivate         bool
-	banIfError           bool
-	disallowedStatusCode int
-	allowedIPBlocks      *IpLookupFileMonitor // Fast radix tree-based allowed IP block lookups
-	blockedIPBlocks      *IpLookupFileMonitor // Fast radix tree-based blocked IP block lookups
-	banHtmlContent       string               // Changed from banHtmlTemplate
-	logger               *slog.Logger
-	bypassHeaders        map[string]string
-	ipHeaders            []string // List of headers to check for client IP addresses
-	logBannedRequests    bool
-	countryHeader        string
+	next                         http.Handler
+	name                         string
+	databaseFile                 string           // Just for testing purposes
+	db                           *DatabaseWrapper // Changed from ip2location.DB to DatabaseWrapper
+	enabled                      bool
+	allowedCountries             map[string]struct{} // Instead of []string to improve lookup performance
+	blockedCountries             map[string]struct{} // Instead of []string to improve lookup performance
+	defaultAllow                 bool
+	allowPrivate                 bool
+	banIfError                   bool
+	disallowedStatusCode         int
+	allowedIPBlocks              *IpLookupFileMonitor // Fast radix tree-based allowed IP block lookups
+	blockedIPBlocks              *IpLookupFileMonitor // Fast radix tree-based blocked IP block lookups
+	banHtmlContent               string               // Changed from banHtmlTemplate
+	logger                       *slog.Logger
+	bypassHeaders                map[string]string
+	ipHeaders                    []string // List of headers to check for client IP addresses
+	logBannedRequests            bool
+	countryHeader                string
+	remediationHeadersCustomName string // Name of the header to add to blocked responses
 }
 
 // New creates a new plugin instance.
@@ -212,25 +217,26 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 
 	plugin := &Plugin{
-		next:                 next,
-		name:                 name,
-		databaseFile:         databasePath,
-		db:                   db,
-		enabled:              cfg.Enabled,
-		allowedCountries:     allowedCountries,
-		blockedCountries:     blockedCountries,
-		defaultAllow:         cfg.DefaultAllow,
-		allowPrivate:         cfg.AllowPrivate,
-		banIfError:           cfg.BanIfError,
-		disallowedStatusCode: cfg.DisallowedStatusCode,
-		allowedIPBlocks:      allowedIPHelper,
-		blockedIPBlocks:      blockedIPHelper,
-		banHtmlContent:       banHtmlContent,
-		bypassHeaders:        cfg.BypassHeaders,
-		ipHeaders:            cfg.IPHeaders,
-		logger:               logger,
-		logBannedRequests:    cfg.LogBannedRequests,
-		countryHeader:        cfg.CountryHeader,
+		next:                         next,
+		name:                         name,
+		databaseFile:                 databasePath,
+		db:                           db,
+		enabled:                      cfg.Enabled,
+		allowedCountries:             allowedCountries,
+		blockedCountries:             blockedCountries,
+		defaultAllow:                 cfg.DefaultAllow,
+		allowPrivate:                 cfg.AllowPrivate,
+		banIfError:                   cfg.BanIfError,
+		disallowedStatusCode:         cfg.DisallowedStatusCode,
+		allowedIPBlocks:              allowedIPHelper,
+		blockedIPBlocks:              blockedIPHelper,
+		banHtmlContent:               banHtmlContent,
+		bypassHeaders:                cfg.BypassHeaders,
+		ipHeaders:                    cfg.IPHeaders,
+		logger:                       logger,
+		logBannedRequests:            cfg.LogBannedRequests,
+		countryHeader:                cfg.CountryHeader,
+		remediationHeadersCustomName: cfg.RemediationHeadersCustomName,
 	}
 
 	return plugin, nil
@@ -282,7 +288,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				"error", err)
 
 			if p.banIfError {
-				p.serveBanHtml(rw, ip, "Unknown")
+				p.serveBanHtml(rw, ip, "Unknown", "error", req.Method)
 				return
 			}
 			// keel looping
@@ -303,7 +309,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 					"phase", phase,
 					"path", req.URL.Path)
 			}
-			p.serveBanHtml(rw, ip, country)
+			p.serveBanHtml(rw, ip, country, phase, req.Method)
 			return
 		}
 	}
@@ -442,8 +448,13 @@ func (p Plugin) isBlockedIPBlocks(ipAddr net.IP) (bool, int, error) {
 }
 
 // Update the serveBanHtml function to use simple string replacement
-func (p Plugin) serveBanHtml(rw http.ResponseWriter, ip, country string) {
-	if p.banHtmlContent != "" {
+func (p Plugin) serveBanHtml(rw http.ResponseWriter, ip, country, phase string, requestMethod string) {
+	// Set remediation header if configured
+	if p.remediationHeadersCustomName != "" {
+		rw.Header().Set(p.remediationHeadersCustomName, phase)
+	}
+
+	if p.banHtmlContent != "" && requestMethod == http.MethodGet {
 		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 		rw.WriteHeader(p.disallowedStatusCode)
 
