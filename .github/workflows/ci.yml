@@ -57,7 +57,6 @@ jobs:
         
         # Download and install Microsoft signing key and repository
         wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
-        sudo dpkg -i packages-microsoft-prod.deb
         
         # Use dpkg with force-confdef and force-confold to handle config conflicts automatically
         sudo dpkg --force-confdef --force-confold -i packages-microsoft-prod.deb
