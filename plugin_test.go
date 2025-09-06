@@ -469,6 +469,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowPrivate:         true,
 			DisallowedStatusCode: http.StatusOK,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -495,6 +496,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowPrivate:         true,
 			DisallowedStatusCode: http.StatusOK,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -521,6 +523,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			DisallowedStatusCode: http.StatusForbidden,
 			BanHtmlFilePath:      "geoblockban.html",
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -554,6 +557,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			DisallowedStatusCode: http.StatusForbidden,
 			BanHtmlFilePath:      "geoblockban.html",
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -587,6 +591,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			DefaultAllow:         true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		testRequest(t, "US IP blocked", cfg, "8.8.8.8", http.StatusForbidden)
@@ -616,6 +621,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			DefaultAllow:         false,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		testRequest(t, "Whitelisted subnet allowed", cfg, "203.0.113.100", http.StatusTeapot)
@@ -718,6 +724,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			DisallowedStatusCode: http.StatusForbidden,
 			CountryHeader:        countryHeader,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		tests := []struct {
@@ -804,6 +811,7 @@ func TestPlugin_Lookup(t *testing.T) {
 			AllowPrivate:         false,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -828,6 +836,7 @@ func TestPlugin_Lookup(t *testing.T) {
 			AllowPrivate:         false,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -890,6 +899,7 @@ func TestPlugin_ServeHTTP_MalformedIP(t *testing.T) {
 				BanIfError:           tt.banIfError,
 				DatabaseFilePath:     dbFilePath,
 				IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+				IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 			}
 
 			// Initialize plugin
@@ -954,6 +964,7 @@ func TestCheckAllowed_Localhost(t *testing.T) {
 		DefaultAllow:         false,
 		DisallowedStatusCode: http.StatusForbidden,
 		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -1004,6 +1015,7 @@ func TestServeHTTP_LocalhostWithAllowPrivate(t *testing.T) {
 		DefaultAllow:         false,
 		DisallowedStatusCode: http.StatusForbidden,
 		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)

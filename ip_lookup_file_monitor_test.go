@@ -343,6 +343,7 @@ func TestIpLookupFileMonitor_PluginIntegration(t *testing.T) {
 			AllowedIPBlocksDir:   tempDir,
 			DisallowedStatusCode: 403,
 			IPHeaders:            []string{"x-forwarded-for"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		},
 		{
 			Enabled:              true,
@@ -350,6 +351,7 @@ func TestIpLookupFileMonitor_PluginIntegration(t *testing.T) {
 			AllowedIPBlocksDir:   tempDir, // Same directory
 			DisallowedStatusCode: 403,
 			IPHeaders:            []string{"x-forwarded-for"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		},
 		{
 			Enabled:              true,
@@ -357,6 +359,7 @@ func TestIpLookupFileMonitor_PluginIntegration(t *testing.T) {
 			BlockedIPBlocksDir:   tempDir, // Different usage of same directory
 			DisallowedStatusCode: 403,
 			IPHeaders:            []string{"x-forwarded-for"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		},
 	}
 

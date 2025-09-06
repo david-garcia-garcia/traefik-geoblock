@@ -442,6 +442,7 @@ func TestDatabaseFactory_Integration(t *testing.T) {
 		AllowedCountries:       []string{"US"},
 		DisallowedStatusCode:   403,
 		IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
+		IPHeaderStrategy:       IPHeaderStrategyCheckAll,
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, "test-plugin")
