@@ -245,6 +245,7 @@ func TestNew(t *testing.T) {
 			DatabaseFilePath:     badDBPath, // Bad path
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}, pluginName)
 
 		if err != nil {
@@ -294,6 +295,7 @@ func TestNew(t *testing.T) {
 			DatabaseFilePath:     badDBPath, // Bad path
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}, pluginName)
 
 		if err == nil {
@@ -326,6 +328,7 @@ func TestNew(t *testing.T) {
 			DatabaseFilePath:     "", // Empty - should fail without environment variable
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}, pluginName)
 
 		if err == nil {
@@ -418,6 +421,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 			DisallowedStatusCode:  http.StatusForbidden,
 			DatabaseFilePath:      dbFilePath, // Fall back to default database
 			IPHeaders:             []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -438,6 +442,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowedCountries:     []string{"AU"},
 			DisallowedStatusCode: http.StatusOK,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
