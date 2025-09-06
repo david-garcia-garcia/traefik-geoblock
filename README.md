@@ -11,6 +11,17 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 
 > 🌍 This project includes IP2Location LITE data available from [`lite.ip2location.com`](https://lite.ip2location.com/database/ip-country).
 
+> [!Tip]
+> 
+> **Traefik Security**
+> 
+> The basic middlewares you need to secure your Traefik ingress:
+> 
+> 🌍 **Geoblock**: david-garcia-garcia/traefik-geoblock - Block or allow requests based on IP geolocation  
+> 🛡️ **CrowdSec**: maxlerebourg/crowdsec-bouncer-traefik-plugin - Real-time threat intelligence and automated blocking  
+> 🔒 **ModSecurity CRS**: david-garcia-garcia/traefik-modsecurity - Web Application Firewall with OWASP Core Rule Set  
+> 🚦 **Ratelimit**: https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/ - Control request rates and prevent abuse
+
 ## Performance & Scalability
 
 **Designed for high-performance production environments:**
