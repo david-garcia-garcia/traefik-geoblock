@@ -27,6 +27,13 @@ const (
 	PhaseDefaultAllow   = "default_allow"
 )
 
+// IP header strategy constants
+const (
+	IPHeaderStrategyCheckAll              = "CheckAll"
+	IPHeaderStrategyCheckFirst            = "CheckFirst"
+	IPHeaderStrategyCheckFirstNonePrivate = "CheckFirstNonePrivate"
+)
+
 // Config defines the plugin configuration.
 type Config struct {
 	// Core settings
@@ -64,7 +71,11 @@ type Config struct {
 	BypassHeaders map[string]string
 
 	// IP extraction settings
-	IPHeaders []string // List of headers to check for client IP addresses (cannot be empty)
+	IPHeaders        []string // List of headers to check for client IP addresses (cannot be empty)
+	IPHeaderStrategy string   // Strategy for processing multiple IP addresses: "CheckAll", "CheckFirst", "CheckFirstNonePrivate"
+
+	// HTTP verb filtering
+	IgnoreVerbs []string // List of HTTP verbs to ignore for blocking (still enriched with GeoIP)
 
 	// Remediation settings
 	RemediationHeadersCustomName string // Name of the header to add to blocked responses indicating the phase/reason
@@ -86,6 +97,7 @@ func CreateConfig() *Config {
 		BanIfError:                   true,                                     // Default to banning on errors
 		BypassHeaders:                make(map[string]string),                  // Initialize empty map
 		IPHeaders:                    []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
+		IPHeaderStrategy:             IPHeaderStrategyCheckAll,                 // Default to checking all IPs
 		DatabaseAutoUpdateCode:       "DB1",                                    // Default database code
 		LogBannedRequests:            true,                                     // Default to logging blocked requests
 		CountryHeader:                "",                                       // Default to empty thus not setting the header
@@ -113,7 +125,9 @@ type Plugin struct {
 	banHtmlContent               string               // Changed from banHtmlTemplate
 	logger                       *slog.Logger
 	bypassHeaders                map[string]string
-	ipHeaders                    []string // List of headers to check for client IP addresses
+	ipHeaders                    []string            // List of headers to check for client IP addresses
+	ipHeaderStrategy             string              // Strategy for processing multiple IP addresses
+	ignoreVerbs                  map[string]struct{} // Set of HTTP verbs to ignore for blocking
 	logBannedRequests            bool
 	countryHeader                string
 	remediationHeadersCustomName string // Name of the header to add to blocked responses
@@ -156,6 +170,15 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	// Validate that IPHeaders is not empty
 	if len(cfg.IPHeaders) == 0 {
 		return nil, fmt.Errorf("%s: IPHeaders cannot be empty - at least one header must be specified for IP extraction", name)
+	}
+
+	// Validate IPHeaderStrategy
+	if cfg.IPHeaderStrategy != IPHeaderStrategyCheckAll &&
+		cfg.IPHeaderStrategy != IPHeaderStrategyCheckFirst &&
+		cfg.IPHeaderStrategy != IPHeaderStrategyCheckFirstNonePrivate {
+		return nil, fmt.Errorf("%s: invalid IPHeaderStrategy '%s', must be one of: %s, %s, %s",
+			name, cfg.IPHeaderStrategy,
+			IPHeaderStrategyCheckAll, IPHeaderStrategyCheckFirst, IPHeaderStrategyCheckFirstNonePrivate)
 	}
 
 	// Create database configuration
@@ -216,6 +239,12 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		blockedCountries[c] = struct{}{}
 	}
 
+	// Convert ignore verbs to map for O(1) lookup, normalize to uppercase
+	ignoreVerbs := make(map[string]struct{}, len(cfg.IgnoreVerbs))
+	for _, verb := range cfg.IgnoreVerbs {
+		ignoreVerbs[strings.ToUpper(verb)] = struct{}{}
+	}
+
 	plugin := &Plugin{
 		next:                         next,
 		name:                         name,
@@ -233,6 +262,8 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		banHtmlContent:               banHtmlContent,
 		bypassHeaders:                cfg.BypassHeaders,
 		ipHeaders:                    cfg.IPHeaders,
+		ipHeaderStrategy:             cfg.IPHeaderStrategy,
+		ignoreVerbs:                  ignoreVerbs,
 		logger:                       logger,
 		logBannedRequests:            cfg.LogBannedRequests,
 		countryHeader:                cfg.CountryHeader,
@@ -250,34 +281,71 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Get list of unique remote IPs
+	remoteIPs := p.GetRemoteIPs(req)
+	var ipChain string = strings.Join(remoteIPs, ", ")
+	var skipBlocking bool = false
+
+	// Check if this HTTP verb should be ignored for blocking (but still enriched)
+	if _, ignored := p.ignoreVerbs[strings.ToUpper(req.Method)]; ignored {
+		skipBlocking = true
+		p.logger.Debug("HTTP verb ignored for blocking",
+			"method", req.Method,
+			"remote_addr", req.RemoteAddr,
+			"ip_chain", ipChain)
+	}
+
 	// Check for bypass headers
-	// Optimize by avoiding multiple map lookups and method calls
 	for header, expectedValue := range p.bypassHeaders {
 		if actualValue := req.Header.Get(header); actualValue == expectedValue {
 			p.logger.Debug("bypassing geoblock due to bypass header match",
 				"header", header,
 				"value", expectedValue,
 				"remote_addr", req.RemoteAddr,
-				"x_real_ip", req.Header.Get("x-real-ip"),
-				"x_forwarded_for", req.Header.Get("x-forwarded-for"))
-			p.next.ServeHTTP(rw, req)
-			return
+				"ip_chain", ipChain)
+			skipBlocking = true
+			break
 		}
 	}
 
-	remoteIPs := p.GetRemoteIPs(req)
+	// Process IPs based on strategy
+	var foundPublicIP bool = false
+	var countryHeaderSet bool = false
 
-	for _, ip := range remoteIPs {
+	// Set country header to PRIVATE initially - will be overridden by real countries
+	if p.countryHeader != "" {
+		req.Header.Set(p.countryHeader, PrivateIpCountryAlias)
+	}
+
+	for i, ip := range remoteIPs {
+		// Apply strategy logic
+		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirst && i > 0 {
+			break // Only check first IP
+		}
+
+		// For CheckFirstNonePrivate, skip private IPs unless no public IP has been found
+		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirstNonePrivate {
+			ipAddr := net.ParseIP(ip)
+			isPrivate := ipAddr != nil && (ipAddr.IsPrivate() || ipAddr.IsLoopback())
+
+			if isPrivate && !foundPublicIP && i < len(remoteIPs)-1 {
+				// Skip this private IP, but continue looking for public IPs
+				continue
+			}
+			if !isPrivate {
+				foundPublicIP = true
+			}
+		}
+
 		allowed, country, phase, err := p.CheckAllowed(ip)
 
-		if p.countryHeader != "" && country != "" {
+		// Override country header only with the first real (non-private) country we encounter
+		if p.countryHeader != "" && country != "" && country != PrivateIpCountryAlias && !countryHeaderSet {
 			req.Header.Set(p.countryHeader, country)
+			countryHeaderSet = true
 		}
+
 		if err != nil {
-			var ipChain string = ""
-			if len(remoteIPs) > 1 {
-				ipChain = strings.Join(remoteIPs, ", ")
-			}
 			p.logger.Error("request check failed",
 				"ip", ip,
 				"ip_chain", ipChain,
@@ -285,20 +353,21 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				"method", req.Method,
 				"path", req.URL.Path,
 				"phase", phase,
-				"error", err)
+				"error", err,
+				"remote_addr", req.RemoteAddr)
 
-			if p.banIfError {
+			if p.banIfError && !skipBlocking {
 				p.serveBanHtml(rw, ip, "Unknown", "error", req.Method)
 				return
 			}
-			// keel looping
+			// For non-CheckAll strategies, continue to next IP on error
+			if p.ipHeaderStrategy != IPHeaderStrategyCheckAll {
+				continue
+			}
 			continue
 		}
-		if !allowed {
-			var ipChain string = ""
-			if len(remoteIPs) > 1 {
-				ipChain = strings.Join(remoteIPs, ", ")
-			}
+
+		if !allowed && !skipBlocking {
 			if p.logBannedRequests {
 				p.logger.Info("blocked request",
 					"ip", ip,
@@ -307,10 +376,16 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 					"host", req.Host,
 					"method", req.Method,
 					"phase", phase,
-					"path", req.URL.Path)
+					"path", req.URL.Path,
+					"remote_addr", req.RemoteAddr)
 			}
 			p.serveBanHtml(rw, ip, country, phase, req.Method)
 			return
+		}
+
+		// For CheckFirstNonePrivate, stop after processing first non-private IP
+		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirstNonePrivate && country != PrivateIpCountryAlias {
+			break
 		}
 	}
 
@@ -318,25 +393,40 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 }
 
 // GetRemoteIPs collects the remote IPs from the configured IP headers.
+// Headers are processed in the order defined in ipHeaders.
+// Within each header, IPs are processed left-to-right (leftmost IP first)
+// because the leftmost IP is typically the original client IP in proxy chains.
+//
+// Special synthetic header "remoteAddress" maps to req.RemoteAddr for direct access to the connection's remote address.
 func (p Plugin) GetRemoteIPs(req *http.Request) []string {
-	uniqIPs := make(map[string]struct{})
+	var ips []string
+	seenIPs := make(map[string]struct{}) // For deduplication
 
-	// Check each configured IP header
+	// Check each configured IP header in order
 	for _, headerName := range p.ipHeaders {
-		if headerValue := req.Header.Get(headerName); headerValue != "" {
+		var headerValue string
+
+		// Handle synthetic "remoteAddress" header
+		if headerName == "remoteAddress" {
+			headerValue = req.RemoteAddr
+		} else {
+			headerValue = req.Header.Get(headerName)
+		}
+
+		if headerValue != "" {
+			// Process IPs within this header left-to-right (leftmost is original client)
 			for _, ip := range strings.Split(headerValue, ",") {
 				ip = cleanIPAddress(ip)
 				if ip == "" {
 					continue
 				}
-				uniqIPs[ip] = struct{}{}
+				// Only add if we haven't seen this IP before
+				if _, seen := seenIPs[ip]; !seen {
+					seenIPs[ip] = struct{}{}
+					ips = append(ips, ip)
+				}
 			}
 		}
-	}
-
-	var ips []string
-	for ip := range uniqIPs {
-		ips = append(ips, ip)
 	}
 
 	return ips

@@ -218,7 +218,35 @@ http:
           # Custom examples:
           # - "cf-connecting-ip"          # Cloudflare
           # - "x-client-ip"               # Custom proxy
-          # - "x-original-forwarded-for"  # Load balancer
+          # - "remoteAddress"             # SYNTHETIC: Maps to req.RemoteAddr (direct connection IP)
+          # 
+          # IMPORTANT: Header order matters! IPs are processed in the order headers are defined.
+          # Within each header, IPs are processed left-to-right (leftmost = original client IP).
+          # Duplicate IPs are automatically removed, preserving the first occurrence.
+          #
+          # SYNTHETIC HEADERS:
+          # - "remoteAddress": Special synthetic header that maps to req.RemoteAddr field
+          #   This provides access to the actual network connection's remote address
+          #   Useful when you need to check the direct connection IP alongside proxy headers
+          #
+          # Example configurations:
+          # ipHeaders: ["x-forwarded-for", "remoteAddress"]  # Check proxy header first, then direct connection
+          # ipHeaders: ["remoteAddress"]                     # Only check direct connection IP
+          # ipHeaders: ["remoteAddress", "x-real-ip"]        # Check direct connection first, then proxy header
+          
+          ipHeaderStrategy: "CheckAll"    # Strategy for processing multiple IP addresses (default: CheckAll)
+                                          # Options:
+                                          # - "CheckAll": Check all IPs found in headers (original behavior)
+                                          # - "CheckFirst": Check only the first IP address found
+                                          # - "CheckFirstNonePrivate": Check first non-private IP, fallback to first private IP if no public IPs found
+          
+          ignoreVerbs:                    # List of HTTP verbs to ignore for blocking (still enriched with GeoIP)
+            - "OPTIONS"                   # Common for CORS preflight requests
+            - "HEAD"                      # Common for health checks
+          # Additional examples:
+          # - "TRACE"                     # HTTP TRACE method
+          # - "CONNECT"                   # HTTP CONNECT method
+          # Note: Verb matching is case-insensitive
           
           #-------------------------------
           # Bypass Configuration
@@ -281,6 +309,8 @@ http:
           # This header is added to the request that gets forwarded to your backend service
           # You can use this to see where all your traffic is coming from in access logs
           # Example access log config: accesslog.fields.headers.names.X-IPCountry=keep
+          # Note: Header is initially set to "PRIVATE" and only overridden by the first real country found
+          # This ensures private IPs processed later cannot override legitimate country information
           
           remediationHeadersCustomName: "X-Geoblock-Action"
           # Optional header to add the blocking phase/reason to the RESPONSE when request is blocked
@@ -299,15 +329,24 @@ The plugin processes requests in the following order:
 
 1. Check if plugin is enabled
 2. Check bypass headers
-3. Extract IP addresses from configured IP headers (ipHeaders)
-4. For each IP:
+3. Check if HTTP verb is in ignoreVerbs list (skip blocking but continue enrichment)
+4. Extract IP addresses from configured IP headers (ipHeaders) in the order they are defined
+5. Apply IP header strategy (ipHeaderStrategy) to determine which IPs to process:
+   - **CheckAll**: Process all found IP addresses (original behavior)
+   - **CheckFirst**: Process only the first IP address found
+   - **CheckFirstNonePrivate**: Process first non-private IP, fallback to first private IP if no public IPs found
+6. For each selected IP:
    - Check if it's in private network range [allowPrivate]
    - Check allowed/blocked IP blocks [allowedIPBlocks + allowedIPBlocksDir, blockedIPBlocks + blockedIPBlocksDir] (most specific match wins)
    - Look up country code 
    - Check allowed/blocked countries [allowedCountries, blockedCountries]
    - Apply default allow/deny if no rules match [defaultAllow]
 
-If any IP in the chain is blocked, the request is denied.
+**Important Notes:**
+- With `CheckAll` strategy: If any IP in the chain is blocked, the request is denied
+- With `CheckFirst` or `CheckFirstNonePrivate` strategies: Only the selected IP(s) are evaluated; the request is denied only if the selected IP is blocked
+- Country header behavior: Header is initially set to "PRIVATE" and only overridden by the first real country found, preventing private IPs from overriding legitimate geolocation information
+- Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
 
 ### 📝 Log Format
 
