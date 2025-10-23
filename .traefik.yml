@@ -1,6 +1,7 @@
 displayName: geoblock
 type: middleware
 import: github.com/david-garcia-garcia/traefik-geoblock
+useUnsafe: true
 summary: traefik plugin to block or allow requests based on geolocation
 testData:
   # It doesn't appear to be possible to get the pilot plugin analyzer

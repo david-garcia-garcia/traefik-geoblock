@@ -1,6 +1,6 @@
 services:
   traefik:
-    image: "traefik:v3.4.1"
+    image: "traefik:v3.5.3"
     container_name: "traefik"
     restart: unless-stopped
     command:
@@ -20,6 +20,7 @@ services:
       - "--entrypoints.web.forwardedHeaders.trustedIPs=172.16.0.0/12,192.168.0.0/16,10.0.0.0/8,127.0.0.1/32,::1/128"
       - "--entrypoints.web.forwardedHeaders.insecure=true"
       - "--experimental.localplugins.geoblock.modulename=github.com/david-garcia-garcia/traefik-geoblock"
+      - "--experimental.localplugins.geoblock.settings.useunsafe=true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - logs-local:/var/log/traefik
