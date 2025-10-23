@@ -95,20 +95,6 @@ experimental:
         allowunsafe: true
 ```
 
-### Plugin Configuration File
-
-The plugin also requires a `.traefik.yml` file in the plugin root directory with `useUnsafe: true`:
-
-```yaml
-displayName: geoblock
-type: middleware
-import: github.com/david-garcia-garcia/traefik-geoblock
-useUnsafe: true
-summary: traefik plugin to block or allow requests based on geolocation
-testData:
-  enabled: false
-```
-
 ## Network Requirements
 
 **For automatic database updates to function, ensure your firewall allows outbound HTTPS connections to:**
