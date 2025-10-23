@@ -1,5 +1,3 @@
-> **Warning**: This is a fork of [ip2location-go](https://github.com/ip2location/ip2location-go) that removes the usage of the `unsafe` package.
-
 [![Go Report Card](https://goreportcard.com/badge/github.com/ip2location/ip2location-go/v9)](https://goreportcard.com/report/github.com/ip2location/ip2location-go/v9)
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/ip2location/ip2location-go/v9)](https://pkg.go.dev/github.com/ip2location/ip2location-go/v9)
 

@@ -10,13 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"lukechampine.com/uint128"
 	"math"
 	"math/big"
 	"net"
 	"os"
 	"strconv"
-
-	"lukechampine.com/uint128"
+	"unsafe"
 )
 
 type DBReader interface {
@@ -628,9 +628,11 @@ func handleError(rec IP2Locationrecord, err error) IP2Locationrecord {
 	return rec
 }
 
-// convertBytesToString converts a byte slice to string efficiently
+// convertBytesToString provides a no-copy []byte to string conversion.
+// This implementation is adopted by official strings.Builder.
+// Reference: https://github.com/golang/go/issues/25484
 func convertBytesToString(b []byte) string {
-	return string(b)
+	return *(*string)(unsafe.Pointer(&b))
 }
 
 // Get_all will return all geolocation fields based on the queried IP address.

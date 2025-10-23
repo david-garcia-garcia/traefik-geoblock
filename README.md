@@ -46,6 +46,10 @@ This architecture ensures consistent response times and eliminates external serv
 
 ## 📥 Installation
 
+> **⚠️ IMPORTANT REQUIREMENTS:**
+> - **Traefik v3.5.0 or later** is required (unsafe operations support was introduced in v3.5.0)
+> - **Unsafe operations must be enabled** in Traefik configuration
+
 It is possible to install the [plugin locally](https://traefik.io/blog/using-private-plugins-in-traefik-proxy-2-5/) or to install it through [Traefik Plugins]([Plugins](https://plugins.traefik.io/plugins)).
 
 ### Local Plugin Installation
@@ -57,6 +61,13 @@ experimental:
   localPlugins:
     geoblock:
       moduleName: github.com/david-garcia-garcia/traefik-geoblock
+      settins:
+        allowunsafe: true
+  # REQUIRED: Enable unsafe operations for this plugin
+  plugins:
+    geoblock:
+      settings:
+        allowunsafe: true
 ```
 
 You should clone the plugin into the container, i.e
@@ -79,6 +90,9 @@ experimental:
     geoblock:
       moduleName: github.com/david-garcia-garcia/traefik-geoblock
       version: v1.0.1
+      # REQUIRED: Enable unsafe operations for this plugin
+      settings:
+        allowunsafe: true
 ```
 
 ## Network Requirements
@@ -137,7 +151,10 @@ version: "3.7"
 
 services:
   traefik:
-    image: traefik:latest
+    image: traefik:v3.5.3  # v3.5.0 or later required
+    command:
+      # REQUIRED: Enable unsafe operations for geoblock plugin
+      - "--experimental.plugins.geoblock.settings.allowunsafe=true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./traefik.yml:/etc/traefik/traefik.yml
