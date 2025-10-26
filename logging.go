@@ -19,14 +19,26 @@ func (w *traefikLogWriter) Write(p []byte) (n int, err error) {
 }
 
 // createBootstrapLogger creates a logger for initial plugin setup and configuration
-func createBootstrapLogger(name string) *slog.Logger {
-	var logLevel slog.Level = slog.LevelDebug
+func createBootstrapLogger(name string, level string) *slog.Logger {
+	var logLevel slog.Level
+	level = strings.ToLower(level)
+	switch level {
+	case "debug":
+		logLevel = slog.LevelDebug
+	case "info":
+		logLevel = slog.LevelInfo
+	case "warn":
+		logLevel = slog.LevelWarn
+	case "error":
+		logLevel = slog.LevelError
+	default:
+		logLevel = slog.LevelInfo
+	}
 
 	opts := &slog.HandlerOptions{
 		Level: logLevel,
 	}
 
-	// Create a writer that writes directly to stdout
 	writer := &traefikLogWriter{}
 	handler := slog.NewTextHandler(writer, opts)
 	return slog.New(handler).With("plugin", name)
