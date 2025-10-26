@@ -1,6 +1,7 @@
 package traefik_geoblock
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -32,7 +33,7 @@ func createBootstrapLogger(name string) *slog.Logger {
 }
 
 // createLogger creates a configured logger based on the provided settings
-func createLogger(name, level, format, path string, bufferSizeBytes, timeoutSeconds int, bootstrapLogger *slog.Logger) *slog.Logger {
+func createLogger(ctx context.Context, name, level, format, path string, bufferSizeBytes, timeoutSeconds int, bootstrapLogger *slog.Logger) *slog.Logger {
 	var logLevel slog.Level
 	level = strings.ToLower(level) // Convert level to lowercase
 	switch level {
@@ -62,7 +63,7 @@ func createLogger(name, level, format, path string, bufferSizeBytes, timeoutSeco
 	// Only attempt file writing if explicitly specified
 	if path != "" {
 		timeout := time.Duration(timeoutSeconds) * time.Second // Convert seconds to duration
-		bw, err := newBufferedFileWriter(path, bufferSizeBytes, timeout)
+		bw, err := newBufferedFileWriter(ctx, path, bufferSizeBytes, timeout, bootstrapLogger)
 		if err != nil {
 			bootstrapLogger.Error("Failed to create buffered file writer for path '%s': %v\n", path, err)
 		} else {

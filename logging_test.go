@@ -2,6 +2,7 @@ package traefik_geoblock
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -109,7 +110,7 @@ func TestCreateLogger_LogLevels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := createLogger(pluginName, tt.level, "text", "", 1024, 2, bootstrapLogger)
+			logger := createLogger(context.Background(), pluginName, tt.level, "text", "", 1024, 2, bootstrapLogger)
 
 			if logger == nil {
 				t.Fatal("expected logger to not be nil")
@@ -141,7 +142,7 @@ func TestCreateLogger_LogFormats(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := createLogger(pluginName, "info", tt.format, "", 1024, 2, bootstrapLogger)
+			logger := createLogger(context.Background(), pluginName, "info", tt.format, "", 1024, 2, bootstrapLogger)
 
 			if logger == nil {
 				t.Fatal("expected logger to not be nil")
@@ -158,7 +159,7 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 	bootstrapLogger := createBootstrapLogger(pluginName)
 
 	t.Run("empty path (default to traefik)", func(t *testing.T) {
-		logger := createLogger(pluginName, "info", "text", "", 1024, 2, bootstrapLogger)
+		logger := createLogger(context.Background(), pluginName, "info", "text", "", 1024, 2, bootstrapLogger)
 
 		if logger == nil {
 			t.Fatal("expected logger to not be nil")
@@ -177,7 +178,7 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 		defer os.Remove(tmpFile.Name())
 		tmpFile.Close()
 
-		logger := createLogger(pluginName, "info", "text", tmpFile.Name(), 1024, 2, bootstrapLogger)
+		logger := createLogger(context.Background(), pluginName, "info", "text", tmpFile.Name(), 1024, 2, bootstrapLogger)
 
 		if logger == nil {
 			t.Fatal("expected logger to not be nil")
@@ -208,7 +209,7 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 			_, _ = buf.ReadFrom(r)
 		}()
 
-		logger := createLogger(pluginName, "info", "text", invalidPath, 1024, 2, bootstrapLogger)
+		logger := createLogger(context.Background(), pluginName, "info", "text", invalidPath, 1024, 2, bootstrapLogger)
 
 		if logger == nil {
 			t.Fatal("expected logger to not be nil even with invalid path")
@@ -248,7 +249,7 @@ func TestCreateLogger_Integration(t *testing.T) {
 	}()
 
 	// Test complete logger creation and usage
-	logger := createLogger(pluginName, "debug", "text", "", 1024, 2, bootstrapLogger)
+	logger := createLogger(context.Background(), pluginName, "debug", "text", "", 1024, 2, bootstrapLogger)
 
 	if logger == nil {
 		t.Fatal("expected logger to not be nil")
@@ -297,7 +298,7 @@ func TestCreateLogger_WithAttributes(t *testing.T) {
 		_, _ = buf.ReadFrom(r)
 	}()
 
-	logger := createLogger(pluginName, "info", "text", "", 1024, 2, bootstrapLogger)
+	logger := createLogger(context.Background(), pluginName, "info", "text", "", 1024, 2, bootstrapLogger)
 
 	// Test logging with attributes
 	logger.Info("test message with attributes", "key1", "value1", "key2", 42)
@@ -336,7 +337,7 @@ func TestCreateLogger_JSONFormat(t *testing.T) {
 		_, _ = buf.ReadFrom(r)
 	}()
 
-	logger := createLogger(pluginName, "info", "json", "", 1024, 2, bootstrapLogger)
+	logger := createLogger(context.Background(), pluginName, "info", "json", "", 1024, 2, bootstrapLogger)
 
 	logger.Info("json test message", "testKey", "testValue")
 
@@ -398,7 +399,7 @@ func BenchmarkCreateLogger(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		logger := createLogger(fmt.Sprintf("plugin-%d", i), "info", "text", "", 1024, 2, bootstrapLogger)
+		logger := createLogger(context.Background(), fmt.Sprintf("plugin-%d", i), "info", "text", "", 1024, 2, bootstrapLogger)
 		_ = logger // Avoid compiler optimization
 	}
 }
