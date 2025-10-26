@@ -4,16 +4,21 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 )
 
 type bufferedFileWriter struct {
+	mu        sync.Mutex
 	file      *os.File
+	buffer    []byte
 	path      string
+	maxSize   int
 	timeout   time.Duration
+	lastFlush time.Time
 	ctx       context.Context
+	closed    bool
 	logger    *slog.Logger
-	writeChan chan []byte // Channel for writes (lock-free fast path)
 }
 
 func newBufferedFileWriter(ctx context.Context, path string, maxSize int, timeout time.Duration, logger *slog.Logger) (*bufferedFileWriter, error) {
@@ -25,89 +30,74 @@ func newBufferedFileWriter(ctx context.Context, path string, maxSize int, timeou
 	w := &bufferedFileWriter{
 		file:      file,
 		path:      path,
+		buffer:    make([]byte, 0, maxSize),
+		maxSize:   maxSize,
 		timeout:   timeout,
+		lastFlush: time.Now(),
 		ctx:       ctx,
+		closed:    false,
 		logger:    logger,
-		writeChan: make(chan []byte, 1000), // Buffered channel for high throughput
 	}
 
 	if logger != nil {
 		logger.Debug("bufferedFileWriter: starting flush timer goroutine", "path", path)
 	}
-	go w.flushTimer(maxSize)
+	go w.flushTimer()
 
 	return w, nil
 }
 
 func (w *bufferedFileWriter) Write(p []byte) (n int, err error) {
-	// Make a copy since caller might reuse the slice
-	data := make([]byte, len(p))
-	copy(data, p)
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
-	select {
-	case w.writeChan <- data:
-		return len(p), nil
-	case <-w.ctx.Done():
-		return 0, w.ctx.Err()
-	}
-}
+	w.buffer = append(w.buffer, p...)
 
-func (w *bufferedFileWriter) Close() error {
-	close(w.writeChan)
-	return w.file.Close()
-}
-
-func (w *bufferedFileWriter) flushTimer(maxSize int) {
-	ticker := time.NewTicker(w.timeout)
-	defer ticker.Stop()
-
-	buffer := make([]byte, 0, maxSize)
-
-	flush := func() {
-		if len(buffer) > 0 {
-			_, _ = w.file.Write(buffer)
-			buffer = buffer[:0]
+	if len(w.buffer) >= w.maxSize {
+		if err := w.flushLocked(); err != nil {
+			return 0, err
 		}
 	}
 
+	return len(p), nil
+}
+
+func (w *bufferedFileWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
+		return nil
+	}
+	w.closed = true
+
+	if err := w.flushLocked(); err != nil {
+		return err
+	}
+
+	return w.file.Close()
+}
+
+func (w *bufferedFileWriter) flushTimer() {
+	ticker := time.NewTicker(w.timeout)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case data, ok := <-w.writeChan:
-			if !ok {
-				// Channel closed, flush and exit
-				flush()
-				return
-			}
-
-			buffer = append(buffer, data...)
-
-			// Flush if buffer is full
-			if len(buffer) >= maxSize {
-				flush()
-			}
-
 		case <-ticker.C:
-			// Periodic flush
-			flush()
+			w.mu.Lock()
+			if !w.closed && time.Since(w.lastFlush) >= w.timeout && len(w.buffer) > 0 {
+				_ = w.flushLocked()
+			}
+			w.mu.Unlock()
 
 		case <-w.ctx.Done():
-			// Context cancelled - drain remaining writes from channel
-			draining := true
-			for draining {
-				select {
-				case data, ok := <-w.writeChan:
-					if !ok {
-						draining = false
-					} else {
-						buffer = append(buffer, data...)
-					}
-				default:
-					draining = false
-				}
+			w.mu.Lock()
+			bufferSize := len(w.buffer)
+			if !w.closed && bufferSize > 0 {
+				_ = w.flushLocked()
 			}
-
-			bufferSize := len(buffer)
-			flush()
+			w.mu.Unlock()
 
 			if w.logger != nil {
 				w.logger.Debug("bufferedFileWriter: flush timer goroutine exiting due to context cancellation",
@@ -118,4 +108,19 @@ func (w *bufferedFileWriter) flushTimer(maxSize int) {
 			return
 		}
 	}
+}
+
+func (w *bufferedFileWriter) flushLocked() error {
+	if len(w.buffer) == 0 {
+		return nil
+	}
+
+	_, err := w.file.Write(w.buffer)
+	if err != nil {
+		return err
+	}
+
+	w.buffer = w.buffer[:0]
+	w.lastFlush = time.Now()
+	return nil
 }
