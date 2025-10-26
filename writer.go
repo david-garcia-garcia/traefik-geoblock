@@ -91,23 +91,24 @@ func (w *bufferedFileWriter) flushTimer(maxSize int) {
 			flush()
 
 		case <-w.ctx.Done():
-			// Context cancelled - drain channel, flush and exit
-		drainLoop:
-			for {
+			// Context cancelled - drain remaining writes from channel
+			draining := true
+			for draining {
 				select {
 				case data, ok := <-w.writeChan:
 					if !ok {
-						break drainLoop
+						draining = false
+					} else {
+						buffer = append(buffer, data...)
 					}
-					buffer = append(buffer, data...)
 				default:
-					break drainLoop
+					draining = false
 				}
 			}
-
+			
 			bufferSize := len(buffer)
 			flush()
-
+			
 			if w.logger != nil {
 				w.logger.Debug("bufferedFileWriter: flush timer goroutine exiting due to context cancellation",
 					"path", w.path,
