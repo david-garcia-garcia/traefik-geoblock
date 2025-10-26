@@ -1,6 +1,8 @@
 package traefik_geoblock
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -14,9 +16,12 @@ type bufferedFileWriter struct {
 	maxSize   int
 	timeout   time.Duration
 	lastFlush time.Time
+	ctx       context.Context
+	closed    bool
+	logger    *slog.Logger
 }
 
-func newBufferedFileWriter(path string, maxSize int, timeout time.Duration) (*bufferedFileWriter, error) {
+func newBufferedFileWriter(ctx context.Context, path string, maxSize int, timeout time.Duration, logger *slog.Logger) (*bufferedFileWriter, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, err
@@ -29,9 +34,14 @@ func newBufferedFileWriter(path string, maxSize int, timeout time.Duration) (*bu
 		maxSize:   maxSize,
 		timeout:   timeout,
 		lastFlush: time.Now(),
+		ctx:       ctx,
+		closed:    false,
+		logger:    logger,
 	}
 
-	// Start background flush timer
+	if logger != nil {
+		logger.Debug("bufferedFileWriter: starting flush timer goroutine", "path", path)
+	}
 	go w.flushTimer()
 
 	return w, nil
@@ -56,9 +66,15 @@ func (w *bufferedFileWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	if w.closed {
+		return nil
+	}
+	w.closed = true
+
 	if err := w.flushLocked(); err != nil {
 		return err
 	}
+
 	return w.file.Close()
 }
 
@@ -66,12 +82,31 @@ func (w *bufferedFileWriter) flushTimer() {
 	ticker := time.NewTicker(w.timeout)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		w.mu.Lock()
-		if time.Since(w.lastFlush) >= w.timeout && len(w.buffer) > 0 {
-			_ = w.flushLocked() // Ignore error as this is a background routine
+	for {
+		select {
+		case <-ticker.C:
+			w.mu.Lock()
+			if !w.closed && time.Since(w.lastFlush) >= w.timeout && len(w.buffer) > 0 {
+				_ = w.flushLocked()
+			}
+			w.mu.Unlock()
+
+		case <-w.ctx.Done():
+			w.mu.Lock()
+			bufferSize := len(w.buffer)
+			if !w.closed && bufferSize > 0 {
+				_ = w.flushLocked()
+			}
+			w.mu.Unlock()
+
+			if w.logger != nil {
+				w.logger.Debug("bufferedFileWriter: flush timer goroutine exiting due to context cancellation",
+					"path", w.path,
+					"reason", w.ctx.Err(),
+					"final_buffer_size", bufferSize)
+			}
+			return
 		}
-		w.mu.Unlock()
 	}
 }
 
@@ -85,7 +120,7 @@ func (w *bufferedFileWriter) flushLocked() error {
 		return err
 	}
 
-	w.buffer = w.buffer[:0] // Clear buffer but keep capacity
+	w.buffer = w.buffer[:0]
 	w.lastFlush = time.Now()
 	return nil
 }

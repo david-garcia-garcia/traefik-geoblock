@@ -146,7 +146,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 
 	// Create logger first so we can use it for debugging
-	logger := createLogger(name, cfg.LogLevel, cfg.LogFormat, cfg.LogPath, cfg.FileLogBufferSizeBytes, cfg.FileLogBufferTimeoutSeconds, bootstrapLogger)
+	logger := createLogger(ctx, name, cfg.LogLevel, cfg.LogFormat, cfg.LogPath, cfg.FileLogBufferSizeBytes, cfg.FileLogBufferTimeoutSeconds, bootstrapLogger)
 	logger.Debug("initializing plugin",
 		"logLevel", cfg.LogLevel,
 		"logFormat", cfg.LogFormat,

@@ -34,7 +34,7 @@
 param(
     [switch]$SkipDockerCleanup,
     [switch]$SkipWait,
-    [string]$TestPath = "./scripts/integration-tests.Tests.ps1"
+    [string]$TestPath = "./scripts"
 )
 
 $ErrorActionPreference = "Stop"
