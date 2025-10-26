@@ -4,21 +4,16 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"sync"
 	"time"
 )
 
 type bufferedFileWriter struct {
-	mu        sync.Mutex
 	file      *os.File
-	buffer    []byte
 	path      string
-	maxSize   int
 	timeout   time.Duration
-	lastFlush time.Time
-	ctx       context.Context // Context from Traefik - Done() when config reloads
-	closed    bool            // Track if Close() has been called
-	logger    *slog.Logger    // Logger for debugging goroutine lifecycle
+	ctx       context.Context
+	logger    *slog.Logger
+	writeChan chan []byte // Channel for writes (lock-free fast path)
 }
 
 func newBufferedFileWriter(ctx context.Context, path string, maxSize int, timeout time.Duration, logger *slog.Logger) (*bufferedFileWriter, error) {
@@ -30,81 +25,89 @@ func newBufferedFileWriter(ctx context.Context, path string, maxSize int, timeou
 	w := &bufferedFileWriter{
 		file:      file,
 		path:      path,
-		buffer:    make([]byte, 0, maxSize),
-		maxSize:   maxSize,
 		timeout:   timeout,
-		lastFlush: time.Now(),
 		ctx:       ctx,
-		closed:    false,
 		logger:    logger,
+		writeChan: make(chan []byte, 1000), // Buffered channel for high throughput
 	}
 
-	// Start background flush timer - will exit when ctx.Done() (Traefik config reload)
 	if logger != nil {
 		logger.Debug("bufferedFileWriter: starting flush timer goroutine", "path", path)
 	}
-	go w.flushTimer()
+	go w.flushTimer(maxSize)
 
 	return w, nil
 }
 
 func (w *bufferedFileWriter) Write(p []byte) (n int, err error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	// Make a copy since caller might reuse the slice
+	data := make([]byte, len(p))
+	copy(data, p)
 
-	w.buffer = append(w.buffer, p...)
-
-	if len(w.buffer) >= w.maxSize {
-		if err := w.flushLocked(); err != nil {
-			return 0, err
-		}
+	select {
+	case w.writeChan <- data:
+		return len(p), nil
+	case <-w.ctx.Done():
+		return 0, w.ctx.Err()
 	}
-
-	return len(p), nil
 }
 
 func (w *bufferedFileWriter) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	// Prevent duplicate closes
-	if w.closed {
-		return nil
-	}
-	w.closed = true
-
-	// Flush any remaining data
-	if err := w.flushLocked(); err != nil {
-		return err
-	}
-
-	// Close the file
+	close(w.writeChan)
 	return w.file.Close()
 }
 
-func (w *bufferedFileWriter) flushTimer() {
+func (w *bufferedFileWriter) flushTimer(maxSize int) {
 	ticker := time.NewTicker(w.timeout)
 	defer ticker.Stop()
 
+	buffer := make([]byte, 0, maxSize)
+
+	flush := func() {
+		if len(buffer) > 0 {
+			_, _ = w.file.Write(buffer)
+			buffer = buffer[:0]
+		}
+	}
+
 	for {
 		select {
-		case <-ticker.C:
-			// Periodic flush check
-			w.mu.Lock()
-			if !w.closed && time.Since(w.lastFlush) >= w.timeout && len(w.buffer) > 0 {
-				_ = w.flushLocked() // Ignore error as this is a background routine
+		case data, ok := <-w.writeChan:
+			if !ok {
+				// Channel closed, flush and exit
+				flush()
+				return
 			}
-			w.mu.Unlock()
-		case <-w.ctx.Done():
-			// Traefik context cancelled (config reload) - perform final flush and exit
-			w.mu.Lock()
-			bufferSize := len(w.buffer)
-			if !w.closed && bufferSize > 0 {
-				_ = w.flushLocked()
-			}
-			w.mu.Unlock()
 
-			// Log goroutine exit for debugging/verification
+			buffer = append(buffer, data...)
+
+			// Flush if buffer is full
+			if len(buffer) >= maxSize {
+				flush()
+			}
+
+		case <-ticker.C:
+			// Periodic flush
+			flush()
+
+		case <-w.ctx.Done():
+			// Context cancelled - drain channel, flush and exit
+		drainLoop:
+			for {
+				select {
+				case data, ok := <-w.writeChan:
+					if !ok {
+						break drainLoop
+					}
+					buffer = append(buffer, data...)
+				default:
+					break drainLoop
+				}
+			}
+
+			bufferSize := len(buffer)
+			flush()
+
 			if w.logger != nil {
 				w.logger.Debug("bufferedFileWriter: flush timer goroutine exiting due to context cancellation",
 					"path", w.path,
@@ -114,19 +117,4 @@ func (w *bufferedFileWriter) flushTimer() {
 			return
 		}
 	}
-}
-
-func (w *bufferedFileWriter) flushLocked() error {
-	if len(w.buffer) == 0 {
-		return nil
-	}
-
-	_, err := w.file.Write(w.buffer)
-	if err != nil {
-		return err
-	}
-
-	w.buffer = w.buffer[:0] // Clear buffer but keep capacity
-	w.lastFlush = time.Now()
-	return nil
 }
