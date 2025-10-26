@@ -27,7 +27,10 @@ func TestBufferedFileWriter_ContextCancellation(t *testing.T) {
 	}
 
 	testData := []byte("test data\n")
-	writer.Write(testData)
+	_, err = writer.Write(testData)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	afterCreate := runtime.NumGoroutine()
 	if afterCreate <= initial {
