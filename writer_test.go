@@ -16,7 +16,7 @@ func TestBufferedFileWriter_BasicWrite(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
-	logger := createBootstrapLogger("test")
+	logger := createBootstrapLogger("test", "debug")
 	ctx := context.Background()
 
 	writer, err := newBufferedFileWriter(ctx, tmpFile.Name(), 1024, 100*time.Millisecond, logger)
@@ -53,7 +53,7 @@ func TestBufferedFileWriter_ContextCancellation(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
-	logger := createBootstrapLogger("test")
+	logger := createBootstrapLogger("test", "debug")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	initial := runtime.NumGoroutine()
