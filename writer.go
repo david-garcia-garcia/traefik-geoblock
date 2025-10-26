@@ -105,10 +105,10 @@ func (w *bufferedFileWriter) flushTimer(maxSize int) {
 					draining = false
 				}
 			}
-			
+
 			bufferSize := len(buffer)
 			flush()
-			
+
 			if w.logger != nil {
 				w.logger.Debug("bufferedFileWriter: flush timer goroutine exiting due to context cancellation",
 					"path", w.path,
