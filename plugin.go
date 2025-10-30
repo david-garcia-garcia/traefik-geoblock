@@ -4,12 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"log/slog"
+
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/bufferedwriter"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/geodb"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookupmonitor"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
 )
 
 //go:generate go run ./tools/dbdownload/main.go -o ./IP2LOCATION-LITE-DB1.IPV6.BIN
@@ -111,8 +119,8 @@ func CreateConfig() *Config {
 type Plugin struct {
 	next                         http.Handler
 	name                         string
-	databaseFile                 string           // Just for testing purposes
-	db                           *DatabaseWrapper // Changed from ip2location.DB to DatabaseWrapper
+	databaseFile                 string    // Just for testing purposes
+	db                           *geodb.DB // Geo database with reference counting
 	enabled                      bool
 	allowedCountries             map[string]struct{} // Instead of []string to improve lookup performance
 	blockedCountries             map[string]struct{} // Instead of []string to improve lookup performance
@@ -120,9 +128,9 @@ type Plugin struct {
 	allowPrivate                 bool
 	banIfError                   bool
 	disallowedStatusCode         int
-	allowedIPBlocks              *IpLookupFileMonitor // Fast radix tree-based allowed IP block lookups
-	blockedIPBlocks              *IpLookupFileMonitor // Fast radix tree-based blocked IP block lookups
-	banHtmlContent               string               // Changed from banHtmlTemplate
+	allowedIPBlocks              *iplookupmonitor.Monitor // Fast radix tree-based allowed IP block lookups
+	blockedIPBlocks              *iplookupmonitor.Monitor // Fast radix tree-based blocked IP block lookups
+	banHtmlContent               string                   // Changed from banHtmlTemplate
 	logger                       *slog.Logger
 	bypassHeaders                map[string]string
 	ipHeaders                    []string            // List of headers to check for client IP addresses
@@ -143,10 +151,15 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		return nil, fmt.Errorf("%s: no config provided", name)
 	}
 
-	bootstrapLogger := createBootstrapLogger(name, cfg.LogLevel)
+	bootstrapLogger := logging.CreateBootstrapLogger(name, cfg.LogLevel)
 
 	// Create logger first so we can use it for debugging
-	logger := createLogger(ctx, name, cfg.LogLevel, cfg.LogFormat, cfg.LogPath, cfg.FileLogBufferSizeBytes, cfg.FileLogBufferTimeoutSeconds, bootstrapLogger)
+	// Wrapper function to adapt bufferedwriter.New to the logging package signature
+	var writerFactory func(ctx context.Context, path string, maxSize int, timeout time.Duration, logger *slog.Logger) (io.WriteCloser, error)
+	if cfg.LogPath != "" {
+		writerFactory = bufferedwriter.New
+	}
+	logger := logging.CreateLogger(ctx, name, cfg.LogLevel, cfg.LogFormat, cfg.LogPath, cfg.FileLogBufferSizeBytes, cfg.FileLogBufferTimeoutSeconds, bootstrapLogger, writerFactory)
 	logger.Debug("initializing plugin",
 		"logLevel", cfg.LogLevel,
 		"logFormat", cfg.LogFormat,
@@ -182,7 +195,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 
 	// Create database configuration
-	dbConfig := &DatabaseConfig{
+	dbConfig := &geodb.Config{
 		DatabaseFilePath:        cfg.DatabaseFilePath,
 		DatabaseAutoUpdate:      cfg.DatabaseAutoUpdate,
 		DatabaseAutoUpdateDir:   cfg.DatabaseAutoUpdateDir,
@@ -190,24 +203,23 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		DatabaseAutoUpdateCode:  cfg.DatabaseAutoUpdateCode,
 	}
 
-	// Get database factory - uses singleton pattern per database path
-	// Using the bootstrap logger here because the database factory is shared between all plugins
-	factory, err := GetDatabaseFactory(dbConfig, bootstrapLogger)
+	// Get geo database instance - uses singleton pattern per database path with context awareness
+	// Using the bootstrap logger here because the database is shared between all plugins
+	// The database will be automatically cleaned up when all plugin contexts using it are cancelled
+	db, err := geodb.Get(ctx, dbConfig, bootstrapLogger)
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to get database factory: %w", name, err)
+		return nil, fmt.Errorf("%s: failed to get geo database: %w", name, err)
 	}
 
-	// Get the database wrapper
-	db := factory.GetWrapper()
 	databasePath := db.GetPath()
 
 	// Create separate IP lookup file monitors with radix trees for fast lookups and file monitoring
-	allowedIPHelper, err := NewIpLookupFileMonitor(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
+	allowedIPHelper, err := iplookupmonitor.New(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading allowed IP blocks: %w", name, err)
 	}
 
-	blockedIPHelper, err := NewIpLookupFileMonitor(cfg.BlockedIPBlocks, cfg.BlockedIPBlocksDir, logger)
+	blockedIPHelper, err := iplookupmonitor.New(cfg.BlockedIPBlocks, cfg.BlockedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading blocked IP blocks: %w", name, err)
 	}
@@ -216,7 +228,8 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 
 	if cfg.BanHtmlFilePath != "" {
 		var err error
-		cfg.BanHtmlFilePath, err = fileUtils.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
+		fu := fileutils.New()
+		cfg.BanHtmlFilePath, err = fu.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to find ban HTML file: %w", name, err)
 		}

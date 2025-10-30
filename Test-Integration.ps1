@@ -157,7 +157,7 @@ try {
     # Check if Docker Compose is available
     Write-Step "Checking Docker Compose availability..."
     try {
-        $dockerComposeVersion = docker compose version 2>$null
+        $null = docker compose version 2>$null
         if ($LASTEXITCODE -eq 0) {
             Write-Success "Docker Compose is available"
         } else {

@@ -1,26 +1,27 @@
-package traefik_geoblock
+package iplookupmonitor
 
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"log/slog"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 )
 
-// IpLookupFileMonitor is a simple wrapper that reads IP blocks from a directory once
-type IpLookupFileMonitor struct {
-	helper *IpLookupHelper
+// Monitor is a simple wrapper that reads IP blocks from a directory once
+type Monitor struct {
+	helper *iplookup.Helper
 	logger *slog.Logger
 }
 
-// NewIpLookupFileMonitor creates a new IP lookup monitor by reading all .txt files in the directory once
-func NewIpLookupFileMonitor(cidrBlocks []string, directoryPath string, logger *slog.Logger) (*IpLookupFileMonitor, error) {
+// New creates a new IP lookup monitor by reading all .txt files in the directory once
+func New(cidrBlocks []string, directoryPath string, logger *slog.Logger) (*Monitor, error) {
 	// Create empty helper and insert CIDRs directly to save memory
-	helper := NewEmptyIpLookupHelper()
+	helper := iplookup.NewEmptyHelper()
 
 	// Add static blocks first
 	for _, cidr := range cidrBlocks {
@@ -46,19 +47,19 @@ func NewIpLookupFileMonitor(cidrBlocks []string, directoryPath string, logger *s
 
 	logger.Debug("loaded IP blocks", "total_count", helper.Count(), "static_count", staticCount, "directory_count", helper.Count()-staticCount)
 
-	return &IpLookupFileMonitor{
+	return &Monitor{
 		helper: helper,
 		logger: logger,
 	}, nil
 }
 
 // IsContained checks if an IP is contained in any of the CIDR blocks
-func (m *IpLookupFileMonitor) IsContained(ipAddr net.IP) (bool, int, error) {
+func (m *Monitor) IsContained(ipAddr net.IP) (bool, int, error) {
 	return m.helper.IsContained(ipAddr)
 }
 
 // insertBlocksFromDirectory reads CIDR blocks from all .txt files in the directory and inserts them into the helper
-func insertBlocksFromDirectory(helper *IpLookupHelper, directoryPath string, logger *slog.Logger) (int, error) {
+func insertBlocksFromDirectory(helper *iplookup.Helper, directoryPath string, logger *slog.Logger) (int, error) {
 	if _, err := os.Stat(directoryPath); err != nil {
 		return 0, err
 	}

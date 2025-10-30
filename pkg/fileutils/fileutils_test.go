@@ -1,4 +1,4 @@
-package traefik_geoblock
+package fileutils
 
 import (
 	"log/slog"
@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-func TestFileUtils_Exists(t *testing.T) {
-	fu := NewFileUtils()
+func TestUtils_Exists(t *testing.T) {
+	fu := New()
 
 	t.Run("existing file or path", func(t *testing.T) {
 		// Create a temporary file
@@ -39,8 +39,8 @@ func TestFileUtils_Exists(t *testing.T) {
 	})
 }
 
-func TestFileUtils_ExistsAndIsFile(t *testing.T) {
-	fu := NewFileUtils()
+func TestUtils_ExistsAndIsFile(t *testing.T) {
+	fu := New()
 
 	t.Run("existing file", func(t *testing.T) {
 		// Create a temporary file
@@ -70,8 +70,8 @@ func TestFileUtils_ExistsAndIsFile(t *testing.T) {
 	})
 }
 
-func TestFileUtils_Copy(t *testing.T) {
-	fu := NewFileUtils()
+func TestUtils_Copy(t *testing.T) {
+	fu := New()
 
 	t.Run("successful copy", func(t *testing.T) {
 		// Create source file
@@ -191,8 +191,8 @@ func TestFileUtils_Copy(t *testing.T) {
 	})
 }
 
-func TestFileUtils_Search(t *testing.T) {
-	fu := NewFileUtils()
+func TestUtils_Search(t *testing.T) {
+	fu := New()
 	logger := slog.Default()
 
 	t.Run("direct file path exists", func(t *testing.T) {
@@ -347,69 +347,6 @@ func TestFileUtils_Search(t *testing.T) {
 		// Should get an error since file not found anywhere
 		if err == nil {
 			t.Error("expected error when file not found in environment variable path")
-		}
-	})
-}
-
-func TestFileUtils_BackwardCompatibility(t *testing.T) {
-	// Test that the global convenience functions work
-	t.Run("fileExists function", func(t *testing.T) {
-		tmpFile, err := os.CreateTemp("", "test-*.txt")
-		if err != nil {
-			t.Fatalf("failed to create temp file: %v", err)
-		}
-		defer os.Remove(tmpFile.Name())
-		tmpFile.Close()
-
-		if !fileExists(tmpFile.Name()) {
-			t.Error("fileExists should return true for existing file")
-		}
-
-		if fileExists("/non/existing/file") {
-			t.Error("fileExists should return false for non-existing file")
-		}
-	})
-
-	t.Run("copyFile function", func(t *testing.T) {
-		// Create source file
-		srcFile, err := os.CreateTemp("", "src-*.txt")
-		if err != nil {
-			t.Fatalf("failed to create source file: %v", err)
-		}
-		defer os.Remove(srcFile.Name())
-
-		testContent := "test content"
-		if _, err := srcFile.WriteString(testContent); err != nil {
-			t.Fatalf("failed to write to source file: %v", err)
-		}
-		srcFile.Close()
-
-		// Copy using global function
-		dstFile := filepath.Join(t.TempDir(), "dst.txt")
-		if err := copyFile(srcFile.Name(), dstFile, false); err != nil {
-			t.Fatalf("copyFile failed: %v", err)
-		}
-
-		// Verify
-		if !fileExists(dstFile) {
-			t.Error("destination file should exist")
-		}
-	})
-
-	t.Run("searchFile function", func(t *testing.T) {
-		logger := slog.Default()
-
-		// Create test file
-		tmpFile, err := os.CreateTemp("", "test-*.txt")
-		if err != nil {
-			t.Fatalf("failed to create temp file: %v", err)
-		}
-		defer os.Remove(tmpFile.Name())
-		tmpFile.Close()
-
-		result := searchFile(tmpFile.Name(), "default.txt", logger)
-		if result != tmpFile.Name() {
-			t.Errorf("expected %q, got %q", tmpFile.Name(), result)
 		}
 	})
 }

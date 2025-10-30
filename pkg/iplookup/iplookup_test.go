@@ -1,11 +1,11 @@
-package traefik_geoblock
+package iplookup
 
 import (
 	"net"
 	"testing"
 )
 
-func TestIpLookupHelper_IPv4(t *testing.T) {
+func TestHelper_IPv4(t *testing.T) {
 	cidrBlocks := []string{
 		"192.168.1.0/24",  // Private network
 		"10.0.0.0/8",      // Large private network
@@ -14,9 +14,9 @@ func TestIpLookupHelper_IPv4(t *testing.T) {
 		"192.168.1.10/32", // Single IP (more specific than /24)
 	}
 
-	helper, err := NewIpLookupHelper(cidrBlocks)
+	helper, err := NewHelper(cidrBlocks)
 	if err != nil {
-		t.Fatalf("Failed to create IpLookupHelper: %v", err)
+		t.Fatalf("Failed to create Helper: %v", err)
 	}
 
 	tests := []struct {
@@ -58,7 +58,7 @@ func TestIpLookupHelper_IPv4(t *testing.T) {
 	}
 }
 
-func TestIpLookupHelper_IPv6(t *testing.T) {
+func TestHelper_IPv6(t *testing.T) {
 	cidrBlocks := []string{
 		"2001:db8::/32",          // Test network
 		"fe80::/10",              // Link-local
@@ -67,9 +67,9 @@ func TestIpLookupHelper_IPv6(t *testing.T) {
 		"2001:db8:85a3:8d3::/64", // Even more specific
 	}
 
-	helper, err := NewIpLookupHelper(cidrBlocks)
+	helper, err := NewHelper(cidrBlocks)
 	if err != nil {
-		t.Fatalf("Failed to create IpLookupHelper: %v", err)
+		t.Fatalf("Failed to create Helper: %v", err)
 	}
 
 	tests := []struct {
@@ -110,7 +110,7 @@ func TestIpLookupHelper_IPv6(t *testing.T) {
 	}
 }
 
-func TestIpLookupHelper_MixedIPv4AndIPv6(t *testing.T) {
+func TestHelper_MixedIPv4AndIPv6(t *testing.T) {
 	cidrBlocks := []string{
 		"192.168.1.0/24", // IPv4
 		"2001:db8::/32",  // IPv6
@@ -118,9 +118,9 @@ func TestIpLookupHelper_MixedIPv4AndIPv6(t *testing.T) {
 		"::1/128",        // IPv6 localhost
 	}
 
-	helper, err := NewIpLookupHelper(cidrBlocks)
+	helper, err := NewHelper(cidrBlocks)
 	if err != nil {
-		t.Fatalf("Failed to create IpLookupHelper: %v", err)
+		t.Fatalf("Failed to create Helper: %v", err)
 	}
 
 	tests := []struct {
@@ -154,10 +154,10 @@ func TestIpLookupHelper_MixedIPv4AndIPv6(t *testing.T) {
 	}
 }
 
-func TestIpLookupHelper_EmptyHelper(t *testing.T) {
-	helper, err := NewIpLookupHelper([]string{})
+func TestHelper_EmptyHelper(t *testing.T) {
+	helper, err := NewHelper([]string{})
 	if err != nil {
-		t.Fatalf("Failed to create empty IpLookupHelper: %v", err)
+		t.Fatalf("Failed to create empty Helper: %v", err)
 	}
 
 	testIPs := []string{"192.168.1.1", "8.8.8.8", "::1", "2001:db8::1"}
@@ -181,7 +181,7 @@ func TestIpLookupHelper_EmptyHelper(t *testing.T) {
 	}
 }
 
-func TestIpLookupHelper_InvalidCIDR(t *testing.T) {
+func TestHelper_InvalidCIDR(t *testing.T) {
 	invalidCIDRs := []string{
 		"invalid-cidr",
 		"192.168.1.0/33", // Invalid prefix for IPv4
@@ -192,7 +192,7 @@ func TestIpLookupHelper_InvalidCIDR(t *testing.T) {
 
 	for _, cidr := range invalidCIDRs {
 		t.Run("Invalid_CIDR_"+cidr, func(t *testing.T) {
-			_, err := NewIpLookupHelper([]string{cidr})
+			_, err := NewHelper([]string{cidr})
 			if err == nil {
 				t.Errorf("Expected error for invalid CIDR %s, but got none", cidr)
 			}
@@ -200,7 +200,7 @@ func TestIpLookupHelper_InvalidCIDR(t *testing.T) {
 	}
 }
 
-func TestIpLookupHelper_OverlappingRanges(t *testing.T) {
+func TestHelper_OverlappingRanges(t *testing.T) {
 	cidrBlocks := []string{
 		"192.168.0.0/16",  // Large network
 		"192.168.1.0/24",  // Subnet of above
@@ -209,9 +209,9 @@ func TestIpLookupHelper_OverlappingRanges(t *testing.T) {
 		"10.1.0.0/16",     // Subnet of above
 	}
 
-	helper, err := NewIpLookupHelper(cidrBlocks)
+	helper, err := NewHelper(cidrBlocks)
 	if err != nil {
-		t.Fatalf("Failed to create IpLookupHelper: %v", err)
+		t.Fatalf("Failed to create Helper: %v", err)
 	}
 
 	tests := []struct {
@@ -249,16 +249,16 @@ func TestIpLookupHelper_OverlappingRanges(t *testing.T) {
 	}
 }
 
-func TestIpLookupHelper_EdgeCases(t *testing.T) {
+func TestHelper_EdgeCases(t *testing.T) {
 	cidrBlocks := []string{
 		"0.0.0.0/0",          // All IPv4
 		"255.255.255.255/32", // Single IP at edge
 		"::/0",               // All IPv6
 	}
 
-	helper, err := NewIpLookupHelper(cidrBlocks)
+	helper, err := NewHelper(cidrBlocks)
 	if err != nil {
-		t.Fatalf("Failed to create IpLookupHelper: %v", err)
+		t.Fatalf("Failed to create Helper: %v", err)
 	}
 
 	tests := []struct {
@@ -291,7 +291,7 @@ func TestIpLookupHelper_EdgeCases(t *testing.T) {
 	}
 }
 
-func TestIpLookupHelper_PrefixLengthAccuracy(t *testing.T) {
+func TestHelper_PrefixLengthAccuracy(t *testing.T) {
 	tests := []struct {
 		name       string
 		cidrBlocks []string
@@ -395,9 +395,9 @@ func TestIpLookupHelper_PrefixLengthAccuracy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			helper, err := NewIpLookupHelper(tt.cidrBlocks)
+			helper, err := NewHelper(tt.cidrBlocks)
 			if err != nil {
-				t.Fatalf("Failed to create IpLookupHelper: %v", err)
+				t.Fatalf("Failed to create Helper: %v", err)
 			}
 
 			for _, tc := range tt.testCases {
@@ -430,7 +430,7 @@ func TestIpLookupHelper_PrefixLengthAccuracy(t *testing.T) {
 	}
 }
 
-func TestIpLookupHelper_PrefixLengthConsistency(t *testing.T) {
+func TestHelper_PrefixLengthConsistency(t *testing.T) {
 	// Test that the same CIDR block always returns the same prefix length
 	cidrBlocks := []string{
 		"10.0.0.0/8",
@@ -443,9 +443,9 @@ func TestIpLookupHelper_PrefixLengthConsistency(t *testing.T) {
 		"::1/128",
 	}
 
-	helper, err := NewIpLookupHelper(cidrBlocks)
+	helper, err := NewHelper(cidrBlocks)
 	if err != nil {
-		t.Fatalf("Failed to create IpLookupHelper: %v", err)
+		t.Fatalf("Failed to create Helper: %v", err)
 	}
 
 	testCases := []struct {
@@ -489,16 +489,16 @@ func TestIpLookupHelper_PrefixLengthConsistency(t *testing.T) {
 }
 
 // Benchmark to compare radix tree performance
-func BenchmarkIpLookupHelper_IPv4_Small(b *testing.B) {
+func BenchmarkHelper_IPv4_Small(b *testing.B) {
 	cidrBlocks := []string{
 		"192.168.1.0/24",
 		"10.0.0.0/8",
 		"203.0.113.0/24",
 	}
 
-	helper, err := NewIpLookupHelper(cidrBlocks)
+	helper, err := NewHelper(cidrBlocks)
 	if err != nil {
-		b.Fatalf("Failed to create IpLookupHelper: %v", err)
+		b.Fatalf("Failed to create Helper: %v", err)
 	}
 
 	ip := net.ParseIP("192.168.1.100")
@@ -515,7 +515,7 @@ func BenchmarkIpLookupHelper_IPv4_Small(b *testing.B) {
 	}
 }
 
-func BenchmarkIpLookupHelper_IPv4_Large(b *testing.B) {
+func BenchmarkHelper_IPv4_Large(b *testing.B) {
 	// Create many CIDR blocks to test scalability
 	var cidrBlocks []string
 	for i := 0; i < 1000; i++ {
@@ -523,9 +523,9 @@ func BenchmarkIpLookupHelper_IPv4_Large(b *testing.B) {
 		cidrBlocks = append(cidrBlocks, "192.168.0.0/16") // Different networks
 	}
 
-	helper, err := NewIpLookupHelper(cidrBlocks)
+	helper, err := NewHelper(cidrBlocks)
 	if err != nil {
-		b.Fatalf("Failed to create IpLookupHelper: %v", err)
+		b.Fatalf("Failed to create Helper: %v", err)
 	}
 
 	ip := net.ParseIP("192.168.1.100")

@@ -1,4 +1,4 @@
-package traefik_geoblock
+package logging
 
 import (
 	"context"
@@ -10,16 +10,16 @@ import (
 	"time"
 )
 
-// traefikLogWriter implements io.Writer and writes directly to stdout
-type traefikLogWriter struct{}
+// TraefikLogWriter implements io.Writer and writes directly to stdout
+type TraefikLogWriter struct{}
 
-func (w *traefikLogWriter) Write(p []byte) (n int, err error) {
+func (w *TraefikLogWriter) Write(p []byte) (n int, err error) {
 	// Write directly to stdout - let the consumer decide routing
 	return os.Stdout.Write(p)
 }
 
-// createBootstrapLogger creates a logger for initial plugin setup and configuration
-func createBootstrapLogger(name string, level string) *slog.Logger {
+// CreateBootstrapLogger creates a logger for initial plugin setup and configuration
+func CreateBootstrapLogger(name string, level string) *slog.Logger {
 	var logLevel slog.Level
 	level = strings.ToLower(level)
 	switch level {
@@ -39,13 +39,13 @@ func createBootstrapLogger(name string, level string) *slog.Logger {
 		Level: logLevel,
 	}
 
-	writer := &traefikLogWriter{}
+	writer := &TraefikLogWriter{}
 	handler := slog.NewTextHandler(writer, opts)
 	return slog.New(handler).With("plugin", name)
 }
 
-// createLogger creates a configured logger based on the provided settings
-func createLogger(ctx context.Context, name, level, format, path string, bufferSizeBytes, timeoutSeconds int, bootstrapLogger *slog.Logger) *slog.Logger {
+// CreateLogger creates a configured logger based on the provided settings
+func CreateLogger(ctx context.Context, name, level, format, path string, bufferSizeBytes, timeoutSeconds int, bootstrapLogger *slog.Logger, writerFactory func(ctx context.Context, path string, maxSize int, timeout time.Duration, logger *slog.Logger) (io.WriteCloser, error)) *slog.Logger {
 	var logLevel slog.Level
 	level = strings.ToLower(level) // Convert level to lowercase
 	switch level {
@@ -69,13 +69,13 @@ func createLogger(ctx context.Context, name, level, format, path string, bufferS
 	}
 
 	// Create a writer that writes directly to stdout
-	var writer io.Writer = &traefikLogWriter{}
+	var writer io.Writer = &TraefikLogWriter{}
 	var destination string = "stdout"
 
 	// Only attempt file writing if explicitly specified
-	if path != "" {
+	if path != "" && writerFactory != nil {
 		timeout := time.Duration(timeoutSeconds) * time.Second // Convert seconds to duration
-		bw, err := newBufferedFileWriter(ctx, path, bufferSizeBytes, timeout, bootstrapLogger)
+		bw, err := writerFactory(ctx, path, bufferSizeBytes, timeout, bootstrapLogger)
 		if err != nil {
 			bootstrapLogger.Error("Failed to create buffered file writer for path '%s': %v\n", path, err)
 		} else {

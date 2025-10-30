@@ -1,9 +1,11 @@
-package traefik_geoblock
+package dbutils
 
 import (
 	"testing"
 	"time"
 )
+
+const testDbFilePath = "../../IP2LOCATION-LITE-DB1.IPV6.BIN"
 
 func TestGetDateFromName(t *testing.T) {
 	tests := []struct {
@@ -102,7 +104,7 @@ func TestGetDateFromName(t *testing.T) {
 
 func TestGetDBVersion(t *testing.T) {
 	// Test successful case
-	version, err := GetDatabaseVersion(dbFilePath)
+	version, err := GetDatabaseVersion(testDbFilePath)
 	if err != nil {
 		t.Errorf("Expected no error for valid database, got: %v", err)
 	}

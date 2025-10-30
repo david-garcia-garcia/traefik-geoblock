@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/geodb"
 )
 
 const (
@@ -153,8 +156,8 @@ func TestNew(t *testing.T) {
 	// NEW: Test environment variable fallback when no filepath is provided
 	t.Run("EnvironmentVariableFallback_NoFilePath", func(t *testing.T) {
 		// Cleanup any existing factories to avoid conflicts
-		CleanupFactories()
-		defer CleanupFactories()
+		geodb.CleanupAll()
+		defer geodb.CleanupAll()
 
 		// Create a temporary directory and database file for the environment variable
 		envDir := t.TempDir()
@@ -211,8 +214,8 @@ func TestNew(t *testing.T) {
 	// NEW: Test environment variable fallback when bad filepath is provided
 	t.Run("BadFilePath_FallbackToEnvironmentVariable", func(t *testing.T) {
 		// Cleanup any existing factories to avoid conflicts
-		CleanupFactories()
-		defer CleanupFactories()
+		geodb.CleanupAll()
+		defer geodb.CleanupAll()
 
 		// Create a temporary directory and database file for the environment variable
 		envDir := t.TempDir()
@@ -257,13 +260,13 @@ func TestNew(t *testing.T) {
 
 		// Verify the plugin is using the database from the environment variable
 		if plugin != nil {
-			factory, err := GetDatabaseFactory(&DatabaseConfig{
+			db, err := geodb.Get(context.Background(), &geodb.Config{
 				DatabaseFilePath: badDBPath,
 			}, plugin.(*Plugin).logger)
 			if err != nil {
-				t.Errorf("failed to get database factory: %v", err)
+				t.Errorf("failed to get database: %v", err)
 			} else {
-				actualPath := factory.GetWrapper().GetPath()
+				actualPath := db.GetPath()
 				if !filepath.IsAbs(actualPath) || !strings.Contains(actualPath, envDir) {
 					t.Errorf("expected database path to be from environment directory, got: %s", actualPath)
 				}
@@ -274,8 +277,8 @@ func TestNew(t *testing.T) {
 	// NEW: Test error when both filepath and environment variable are bad
 	t.Run("BadFilePath_BadEnvironmentVariable_ShouldError", func(t *testing.T) {
 		// Cleanup any existing factories to avoid conflicts
-		CleanupFactories()
-		defer CleanupFactories()
+		geodb.CleanupAll()
+		defer geodb.CleanupAll()
 
 		// Set a bad environment variable
 		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
@@ -309,8 +312,8 @@ func TestNew(t *testing.T) {
 	// NEW: Test error when no filepath and no environment variable are provided
 	t.Run("NoFilePath_NoEnvironmentVariable_ShouldError", func(t *testing.T) {
 		// Cleanup any existing factories to avoid conflicts
-		CleanupFactories()
-		defer CleanupFactories()
+		geodb.CleanupAll()
+		defer geodb.CleanupAll()
 
 		// Ensure no environment variable is set
 		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
@@ -354,7 +357,8 @@ func TestNew_AutoUpdate(t *testing.T) {
 
 	// Copy the test database to the temp directory with a versioned name
 	versionedDbPath := filepath.Join(tmpDir, "20240301_IP2LOCATION-LITE-DB1.IPV6.BIN")
-	if err := copyFile(dbFilePath, versionedDbPath, true); err != nil {
+	fu := fileutils.New()
+	if err := fu.Copy(dbFilePath, versionedDbPath, true); err != nil {
 		t.Fatalf("Failed to copy test database: %v", err)
 	}
 

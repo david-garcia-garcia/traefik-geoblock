@@ -1,28 +1,24 @@
-package traefik_geoblock
+package iplookupmonitor
 
 import (
-	"context"
 	"fmt"
+	"log/slog"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-
-	"log/slog"
 )
 
-// TestIpLookupFileMonitor_BasicDirectoryMonitoring tests basic directory monitoring functionality
-func TestIpLookupFileMonitor_BasicDirectoryMonitoring(t *testing.T) {
+// TestMonitor_BasicDirectoryMonitoring tests basic directory monitoring functionality
+func TestMonitor_BasicDirectoryMonitoring(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	t.Run("EmptyDirectory", func(t *testing.T) {
 		tempDir := t.TempDir()
 
-		monitor, err := NewIpLookupFileMonitor(nil, tempDir, logger)
+		monitor, err := New(nil, tempDir, logger)
 		if err != nil {
 			t.Fatalf("Failed to create monitor: %v", err)
 		}
@@ -49,7 +45,7 @@ func TestIpLookupFileMonitor_BasicDirectoryMonitoring(t *testing.T) {
 		}
 		writeBlocksFile(t, blockFile, blocks)
 
-		monitor, err := NewIpLookupFileMonitor(nil, tempDir, logger)
+		monitor, err := New(nil, tempDir, logger)
 		if err != nil {
 			t.Fatalf("Failed to create monitor: %v", err)
 		}
@@ -93,7 +89,7 @@ func TestIpLookupFileMonitor_BasicDirectoryMonitoring(t *testing.T) {
 			"1.1.1.0/24",
 		})
 
-		monitor, err := NewIpLookupFileMonitor(nil, tempDir, logger)
+		monitor, err := New(nil, tempDir, logger)
 		if err != nil {
 			t.Fatalf("Failed to create monitor: %v", err)
 		}
@@ -123,8 +119,8 @@ func TestIpLookupFileMonitor_BasicDirectoryMonitoring(t *testing.T) {
 	})
 }
 
-// TestIpLookupFileMonitor_StaticBlocksAndDirectory tests combination of static blocks and directory
-func TestIpLookupFileMonitor_StaticBlocksAndDirectory(t *testing.T) {
+// TestMonitor_StaticBlocksAndDirectory tests combination of static blocks and directory
+func TestMonitor_StaticBlocksAndDirectory(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	tempDir := t.TempDir()
 
@@ -139,7 +135,7 @@ func TestIpLookupFileMonitor_StaticBlocksAndDirectory(t *testing.T) {
 		"172.16.0.0/12",
 	}
 
-	monitor, err := NewIpLookupFileMonitor(staticBlocks, tempDir, logger)
+	monitor, err := New(staticBlocks, tempDir, logger)
 	if err != nil {
 		t.Fatalf("Failed to create monitor: %v", err)
 	}
@@ -166,8 +162,8 @@ func TestIpLookupFileMonitor_StaticBlocksAndDirectory(t *testing.T) {
 	}
 }
 
-// TestIpLookupFileMonitor_ConcurrentAccess tests concurrent access to monitors
-func TestIpLookupFileMonitor_ConcurrentAccess(t *testing.T) {
+// TestMonitor_ConcurrentAccess tests concurrent access to monitors
+func TestMonitor_ConcurrentAccess(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	tempDir := t.TempDir()
@@ -179,7 +175,7 @@ func TestIpLookupFileMonitor_ConcurrentAccess(t *testing.T) {
 	})
 
 	// Create monitor
-	monitor, err := NewIpLookupFileMonitor(nil, tempDir, logger)
+	monitor, err := New(nil, tempDir, logger)
 	if err != nil {
 		t.Fatalf("Failed to create monitor: %v", err)
 	}
@@ -236,12 +232,12 @@ func TestIpLookupFileMonitor_ConcurrentAccess(t *testing.T) {
 		numGoroutines*lookupsPerGoroutine, numGoroutines)
 }
 
-// TestIpLookupFileMonitor_ErrorHandling tests various error conditions
-func TestIpLookupFileMonitor_ErrorHandling(t *testing.T) {
+// TestMonitor_ErrorHandling tests various error conditions
+func TestMonitor_ErrorHandling(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	t.Run("NonexistentDirectory", func(t *testing.T) {
-		monitor, err := NewIpLookupFileMonitor(nil, "/nonexistent/directory", logger)
+		monitor, err := New(nil, "/nonexistent/directory", logger)
 		if err != nil {
 			t.Fatalf("Monitor creation should not fail for nonexistent directory: %v", err)
 		}
@@ -279,7 +275,7 @@ completely-malformed-entry
 			t.Fatalf("Failed to create test file: %v", err)
 		}
 
-		monitor, err := NewIpLookupFileMonitor(nil, tempDir, logger)
+		monitor, err := New(nil, tempDir, logger)
 		if err != nil {
 			t.Fatalf("Monitor creation should not fail with invalid CIDRs: %v", err)
 		}
@@ -306,7 +302,7 @@ completely-malformed-entry
 		tempDir := t.TempDir()
 		writeBlocksFile(t, filepath.Join(tempDir, "blocks.txt"), []string{"192.168.0.0/16"})
 
-		monitor, err := NewIpLookupFileMonitor(nil, tempDir, logger)
+		monitor, err := New(nil, tempDir, logger)
 		if err != nil {
 			t.Fatalf("Failed to create monitor: %v", err)
 		}
@@ -323,72 +319,6 @@ completely-malformed-entry
 			t.Errorf("Expected prefix length 0 for nil IP, got %d", prefixLen)
 		}
 	})
-}
-
-// TestIpLookupFileMonitor_PluginIntegration tests integration with plugin system
-func TestIpLookupFileMonitor_PluginIntegration(t *testing.T) {
-	tempDir := t.TempDir()
-
-	// Create test IP blocks
-	writeBlocksFile(t, filepath.Join(tempDir, "allowed.txt"), []string{
-		"192.168.0.0/16",
-		"10.0.0.0/8",
-	})
-
-	// Create multiple plugin instances
-	configs := []*Config{
-		{
-			Enabled:              true,
-			DatabaseFilePath:     "./IP2LOCATION-LITE-DB1.IPV6.BIN",
-			AllowedIPBlocksDir:   tempDir,
-			DisallowedStatusCode: 403,
-			IPHeaders:            []string{"x-forwarded-for"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
-		},
-		{
-			Enabled:              true,
-			DatabaseFilePath:     "./IP2LOCATION-LITE-DB1.IPV6.BIN",
-			AllowedIPBlocksDir:   tempDir, // Same directory
-			DisallowedStatusCode: 403,
-			IPHeaders:            []string{"x-forwarded-for"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
-		},
-		{
-			Enabled:              true,
-			DatabaseFilePath:     "./IP2LOCATION-LITE-DB1.IPV6.BIN",
-			BlockedIPBlocksDir:   tempDir, // Different usage of same directory
-			DisallowedStatusCode: 403,
-			IPHeaders:            []string{"x-forwarded-for"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
-		},
-	}
-
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-	})
-
-	// Create multiple plugin instances
-	plugins := make([]http.Handler, len(configs))
-	for i, config := range configs {
-		ctx := context.Background()
-		plugin, err := New(ctx, nextHandler, config, fmt.Sprintf("test-plugin-%d", i))
-		if err != nil {
-			t.Fatalf("Failed to create plugin %d: %v", i, err)
-		}
-		plugins[i] = plugin
-	}
-
-	// Test that all plugins work correctly
-	for i, plugin := range plugins {
-		req := httptest.NewRequest("GET", "/test", nil)
-		req.Header.Set("X-Forwarded-For", "192.168.1.1") // Should be allowed/blocked based on config
-
-		rr := httptest.NewRecorder()
-		plugin.ServeHTTP(rr, req)
-
-		// All should process the request (specific behavior depends on config)
-		t.Logf("Plugin %d response status: %d", i, rr.Code)
-	}
 }
 
 func writeBlocksFile(t *testing.T, filename string, blocks []string) {

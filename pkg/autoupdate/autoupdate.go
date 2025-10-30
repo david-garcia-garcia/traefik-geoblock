@@ -1,4 +1,4 @@
-package traefik_geoblock
+package autoupdate
 
 import (
 	"archive/zip"
@@ -9,12 +9,22 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
 const (
 	liteDownloadURL  = "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
 	tokenDownloadURL = "https://www.ip2location.com/download?token=%s&file=%s" // #nosec G101
 )
+
+// Config contains the configuration needed for auto-update functionality
+type Config struct {
+	DatabaseAutoUpdateDir   string
+	DatabaseAutoUpdateToken string
+	DatabaseAutoUpdateCode  string
+}
 
 // UpdateIfNeeded checks if the database needs updating and performs the update if necessary.
 // If runSync is true, the update will be performed synchronously, otherwise it runs in background.
@@ -25,7 +35,7 @@ func UpdateIfNeeded(dbPath string, runSync bool, logger *slog.Logger, config *Co
 		logger.Info("no database path provided, update needed")
 		performUpdate = true
 	} else {
-		dbDate, err := GetDateFromName(dbPath)
+		dbDate, err := dbutils.GetDateFromName(dbPath)
 		if err != nil {
 			logger.Warn("cannot determine database age", "error", err)
 			performUpdate = true
@@ -54,8 +64,8 @@ func UpdateIfNeeded(dbPath string, runSync bool, logger *slog.Logger, config *Co
 	return nil
 }
 
-// findLatestDatabase finds the most recent database file in the specified directory
-func findLatestDatabase(dir string, dbCode string) (string, error) {
+// FindLatestDatabase finds the most recent database file in the specified directory
+func FindLatestDatabase(dir string, dbCode string) (string, error) {
 	if dbCode == "" {
 		dbCode = "DB1"
 	}
@@ -73,7 +83,7 @@ func findLatestDatabase(dir string, dbCode string) (string, error) {
 	var latestDate time.Time
 
 	for _, f := range files {
-		date, err := GetDateFromName(f)
+		date, err := dbutils.GetDateFromName(f)
 		if err != nil {
 			continue
 		}
@@ -92,6 +102,8 @@ func downloadAndUpdateDatabase(cfg *Config, logger *slog.Logger) error {
 	if dbCode == "" {
 		dbCode = "DB1"
 	}
+
+	fu := fileutils.New()
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(cfg.DatabaseAutoUpdateDir, 0755); err != nil {
@@ -185,7 +197,7 @@ func downloadAndUpdateDatabase(cfg *Config, logger *slog.Logger) error {
 			}
 
 			// Add size limit to prevent zip bombs (200MB should be more than enough for the database)
-			limited := io.LimitReader(rc, 200*1024*1024) // 100MB limit
+			limited := io.LimitReader(rc, 200*1024*1024) // 200MB limit
 			_, err = io.Copy(dbFile, limited)            // #nosec G110
 			rc.Close()
 			if err != nil {
@@ -203,7 +215,7 @@ func downloadAndUpdateDatabase(cfg *Config, logger *slog.Logger) error {
 
 	// Verify database and get version for naming
 	tmpDBPath := filepath.Join(tmpDir, "database.bin")
-	version, err := GetDatabaseVersion(tmpDBPath)
+	version, err := dbutils.GetDatabaseVersion(tmpDBPath)
 	if err != nil {
 		return fmt.Errorf("invalid database file: %w", err)
 	}
@@ -212,7 +224,7 @@ func downloadAndUpdateDatabase(cfg *Config, logger *slog.Logger) error {
 	finalName := fmt.Sprintf("%s_IP2LOCATION-LITE-%s.IPV6.BIN", version.Date().Format("20060102"), dbCode)
 	finalPath := filepath.Join(cfg.DatabaseAutoUpdateDir, finalName)
 
-	if err := copyFile(tmpDBPath, finalPath, false); err != nil {
+	if err := fu.Copy(tmpDBPath, finalPath, false); err != nil {
 		return fmt.Errorf("failed to copy database to final location: %w", err)
 	}
 

@@ -1,9 +1,10 @@
-package traefik_geoblock
+package logging
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -24,7 +25,7 @@ func TestTraefikLogWriter_Write(t *testing.T) {
 		_, _ = buf.ReadFrom(r)
 	}()
 
-	writer := &traefikLogWriter{}
+	writer := &TraefikLogWriter{}
 	testMessage := "test log message"
 
 	n, err := writer.Write([]byte(testMessage))
@@ -52,7 +53,7 @@ func TestTraefikLogWriter_Write(t *testing.T) {
 
 func TestCreateBootstrapLogger(t *testing.T) {
 	pluginName := testPluginName
-	logger := createBootstrapLogger(pluginName, "debug")
+	logger := CreateBootstrapLogger(pluginName, "debug")
 
 	if logger == nil {
 		t.Fatal("expected logger to not be nil")
@@ -92,7 +93,7 @@ func TestCreateBootstrapLogger(t *testing.T) {
 
 func TestCreateLogger_LogLevels(t *testing.T) {
 	pluginName := testPluginName
-	bootstrapLogger := createBootstrapLogger(pluginName, "info")
+	bootstrapLogger := CreateBootstrapLogger(pluginName, "info")
 
 	tests := []struct {
 		name          string
@@ -113,7 +114,7 @@ func TestCreateLogger_LogLevels(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			logger := createLogger(ctx, pluginName, tt.level, "text", "", 1024, 2, bootstrapLogger)
+			logger := CreateLogger(ctx, pluginName, tt.level, "text", "", 1024, 2, bootstrapLogger, nil)
 
 			if logger == nil {
 				t.Fatal("expected logger to not be nil")
@@ -126,7 +127,7 @@ func TestCreateLogger_LogLevels(t *testing.T) {
 
 func TestCreateLogger_LogFormats(t *testing.T) {
 	pluginName := testPluginName
-	bootstrapLogger := createBootstrapLogger(pluginName, "info")
+	bootstrapLogger := CreateBootstrapLogger(pluginName, "info")
 
 	tests := []struct {
 		name   string
@@ -145,7 +146,7 @@ func TestCreateLogger_LogFormats(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
-			logger := createLogger(ctx, pluginName, "info", tt.format, "", 1024, 2, bootstrapLogger)
+			logger := CreateLogger(ctx, pluginName, "info", tt.format, "", 1024, 2, bootstrapLogger, nil)
 
 			if logger == nil {
 				t.Fatal("expected logger to not be nil")
@@ -159,12 +160,12 @@ func TestCreateLogger_LogFormats(t *testing.T) {
 
 func TestCreateLogger_LogPaths(t *testing.T) {
 	pluginName := testPluginName
-	bootstrapLogger := createBootstrapLogger(pluginName, "info")
+	bootstrapLogger := CreateBootstrapLogger(pluginName, "info")
 
 	t.Run("empty path (default to traefik)", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		logger := createLogger(ctx, pluginName, "info", "text", "", 1024, 2, bootstrapLogger)
+		logger := CreateLogger(ctx, pluginName, "info", "text", "", 1024, 2, bootstrapLogger, nil)
 
 		if logger == nil {
 			t.Fatal("expected logger to not be nil")
@@ -185,7 +186,13 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		logger := createLogger(ctx, pluginName, "info", "text", tmpFile.Name(), 1024, 2, bootstrapLogger)
+
+		// Mock writer factory for testing
+		mockFactory := func(ctx context.Context, path string, maxSize int, timeout time.Duration, logger *slog.Logger) (io.WriteCloser, error) {
+			return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		}
+
+		logger := CreateLogger(ctx, pluginName, "info", "text", tmpFile.Name(), 1024, 2, bootstrapLogger, mockFactory)
 
 		if logger == nil {
 			t.Fatal("expected logger to not be nil")
@@ -218,7 +225,13 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		logger := createLogger(ctx, pluginName, "info", "text", invalidPath, 1024, 2, bootstrapLogger)
+
+		// Mock writer factory that fails
+		mockFactory := func(ctx context.Context, path string, maxSize int, timeout time.Duration, logger *slog.Logger) (io.WriteCloser, error) {
+			return nil, fmt.Errorf("permission denied")
+		}
+
+		logger := CreateLogger(ctx, pluginName, "info", "text", invalidPath, 1024, 2, bootstrapLogger, mockFactory)
 
 		if logger == nil {
 			t.Fatal("expected logger to not be nil even with invalid path")
@@ -237,7 +250,6 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 		// Should have logged an error about the invalid path
 		output := buf.String()
 		if !strings.Contains(output, "Failed to create buffered file writer") {
-			// This might not always fail depending on the system, so we won't make this a hard requirement
 			t.Logf("Expected error about file writer creation, got: %s", output)
 		}
 	})
@@ -245,7 +257,7 @@ func TestCreateLogger_LogPaths(t *testing.T) {
 
 func TestCreateLogger_Integration(t *testing.T) {
 	pluginName := "integration-test-plugin"
-	bootstrapLogger := createBootstrapLogger(pluginName, "info")
+	bootstrapLogger := CreateBootstrapLogger(pluginName, "info")
 
 	// Capture stdout output for integration test
 	var buf bytes.Buffer
@@ -260,7 +272,7 @@ func TestCreateLogger_Integration(t *testing.T) {
 	// Test complete logger creation and usage
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	logger := createLogger(ctx, pluginName, "debug", "text", "", 1024, 2, bootstrapLogger)
+	logger := CreateLogger(ctx, pluginName, "debug", "text", "", 1024, 2, bootstrapLogger, nil)
 
 	if logger == nil {
 		t.Fatal("expected logger to not be nil")
@@ -297,7 +309,7 @@ func TestCreateLogger_Integration(t *testing.T) {
 
 func TestCreateLogger_WithAttributes(t *testing.T) {
 	pluginName := "attr-test-plugin"
-	bootstrapLogger := createBootstrapLogger(pluginName, "info")
+	bootstrapLogger := CreateBootstrapLogger(pluginName, "info")
 
 	// Capture stdout output
 	var buf bytes.Buffer
@@ -311,7 +323,7 @@ func TestCreateLogger_WithAttributes(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	logger := createLogger(ctx, pluginName, "info", "text", "", 1024, 2, bootstrapLogger)
+	logger := CreateLogger(ctx, pluginName, "info", "text", "", 1024, 2, bootstrapLogger, nil)
 
 	// Test logging with attributes
 	logger.Info("test message with attributes", "key1", "value1", "key2", 42)
@@ -338,7 +350,7 @@ func TestCreateLogger_WithAttributes(t *testing.T) {
 
 func TestCreateLogger_JSONFormat(t *testing.T) {
 	pluginName := "json-test-plugin"
-	bootstrapLogger := createBootstrapLogger(pluginName, "info")
+	bootstrapLogger := CreateBootstrapLogger(pluginName, "info")
 
 	// Capture stdout output
 	var buf bytes.Buffer
@@ -352,7 +364,7 @@ func TestCreateLogger_JSONFormat(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	logger := createLogger(ctx, pluginName, "info", "json", "", 1024, 2, bootstrapLogger)
+	logger := CreateLogger(ctx, pluginName, "info", "json", "", 1024, 2, bootstrapLogger, nil)
 
 	logger.Info("json test message", "testKey", "testValue")
 
@@ -378,7 +390,7 @@ func TestCreateLogger_JSONFormat(t *testing.T) {
 
 // Benchmark tests to ensure logging performance is reasonable
 func BenchmarkTraefikLogWriter_Write(b *testing.B) {
-	writer := &traefikLogWriter{}
+	writer := &TraefikLogWriter{}
 	message := []byte("benchmark test message")
 
 	// Capture stdout output to avoid polluting test output
@@ -404,18 +416,18 @@ func BenchmarkTraefikLogWriter_Write(b *testing.B) {
 func BenchmarkCreateBootstrapLogger(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		logger := createBootstrapLogger(fmt.Sprintf("plugin-%d", i), "info")
+		logger := CreateBootstrapLogger(fmt.Sprintf("plugin-%d", i), "info")
 		_ = logger // Avoid compiler optimization
 	}
 }
 
 func BenchmarkCreateLogger(b *testing.B) {
-	bootstrapLogger := createBootstrapLogger("benchmark-plugin", "info")
+	bootstrapLogger := CreateBootstrapLogger("benchmark-plugin", "info")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
-		logger := createLogger(ctx, fmt.Sprintf("plugin-%d", i), "info", "text", "", 1024, 2, bootstrapLogger)
+		logger := CreateLogger(ctx, fmt.Sprintf("plugin-%d", i), "info", "text", "", 1024, 2, bootstrapLogger, nil)
 		_ = logger
 		cancel() // Cancel immediately to clean up goroutine
 	}

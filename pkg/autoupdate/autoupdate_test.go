@@ -1,4 +1,4 @@
-package traefik_geoblock
+package autoupdate
 
 import (
 	"log/slog"
@@ -10,92 +10,6 @@ import (
 
 	"github.com/ip2location/ip2location-go/v9"
 )
-
-func TestPlugin_DatabaseDownloadAndUpdate(t *testing.T) {
-	// Create a temporary directory for testing
-	err := os.MkdirAll("./testdata/autoupdate", 0755)
-	if err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
-	defer os.RemoveAll("./testdata/autoupdate")
-
-	tests := []struct {
-		name        string
-		config      *Config
-		setupFiles  func(t *testing.T, dir string) // Setup test files if needed
-		wantErr     bool
-		errContains string
-		checkResult func(t *testing.T, dir string) // Verify results if needed
-	}{
-		{
-			name: "find latest database",
-			config: &Config{
-				Enabled:                true,
-				DatabaseAutoUpdate:     true,
-				DatabaseAutoUpdateDir:  "./testdata/autoupdate",
-				DatabaseAutoUpdateCode: "DB1",
-				IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
-			},
-			setupFiles: func(t *testing.T, dir string) {
-				// Create some test database files with different dates
-				files := []string{
-					"20230101_IP2LOCATION-LITE-DB1.IPV6.BIN",
-					"20230201_IP2LOCATION-LITE-DB1.IPV6.BIN",
-					"20230301_IP2LOCATION-LITE-DB1.IPV6.BIN",
-				}
-				for _, f := range files {
-					path := filepath.Join(dir, f)
-					if err := os.WriteFile(path, []byte("test"), 0600); err != nil {
-						t.Fatalf("Failed to create test file %s: %v", f, err)
-					}
-				}
-			},
-			checkResult: func(t *testing.T, dir string) {
-				latestDB, err := findLatestDatabase(dir, "DB1")
-				if err != nil {
-					t.Errorf("expected to find updated database file, but got error: %v", err)
-					return
-				}
-				if latestDB == "" {
-					t.Errorf("expected updated database file, but found none in %s", dir)
-					return
-				}
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup test files if needed
-			if tt.setupFiles != nil {
-				tt.setupFiles(t, tt.config.DatabaseAutoUpdateDir)
-			}
-
-			// Create logger for testing
-			logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-				Level: slog.LevelDebug,
-			})).With("plugin", "test")
-
-			// Test database update
-			err := downloadAndUpdateDatabase(tt.config, logger)
-
-			// Check error conditions
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error, but got none")
-				} else if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("expected error containing %q, got %v", tt.errContains, err)
-				}
-				return
-			}
-
-			// Check results if needed
-			if tt.checkResult != nil {
-				tt.checkResult(t, tt.config.DatabaseAutoUpdateDir)
-			}
-		})
-	}
-}
 
 func TestUpdateIfNeeded(t *testing.T) {
 	// Create a temporary directory for testing
@@ -144,7 +58,7 @@ func TestUpdateIfNeeded(t *testing.T) {
 			dbPath: filepath.Join(tmpDir, time.Now().Format("20060102")+"_IP2LOCATION-LITE-DB1.IPV6.BIN"),
 			setupFunc: func(path string) {
 				// Copy an existing valid database to this location
-				source := "IP2LOCATION-LITE-DB1.IPV6.BIN" // assuming this exists in test data
+				source := "../../IP2LOCATION-LITE-DB1.IPV6.BIN" // relative to pkg/autoupdate
 				content, err := os.ReadFile(source)
 				if err == nil {
 					_ = os.WriteFile(path, content, 0600)
@@ -159,7 +73,7 @@ func TestUpdateIfNeeded(t *testing.T) {
 			},
 			validateFunc: func(t *testing.T, dir string) {
 				// Verify we got a new database file
-				latest, err := findLatestDatabase(dir, "DB1")
+				latest, err := FindLatestDatabase(dir, "DB1")
 				if err != nil || latest == "" {
 					t.Errorf("expected updated database file, but found none in %s", dir)
 					return
@@ -196,7 +110,6 @@ func TestUpdateIfNeeded(t *testing.T) {
 			cfg := &Config{
 				DatabaseAutoUpdateDir:  tmpDir,
 				DatabaseAutoUpdateCode: "DB1",
-				IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 			}
 
 			_ = os.RemoveAll(tmpDir)
@@ -243,9 +156,9 @@ func TestFindLatestDatabase(t *testing.T) {
 	}
 
 	// Test finding the latest database
-	latest, err := findLatestDatabase(testDir, "DB1")
+	latest, err := FindLatestDatabase(testDir, "DB1")
 	if err != nil {
-		t.Errorf("findLatestDatabase failed: %v", err)
+		t.Errorf("FindLatestDatabase failed: %v", err)
 	}
 	if !strings.Contains(latest, "20230301") {
 		t.Errorf("Expected latest database to be from March 2023, got %s", latest)
@@ -262,11 +175,8 @@ func TestDatabaseDirectoryIsCreatedAndDatabaseDownloaded(t *testing.T) {
 	})).With("plugin", "test")
 
 	cfg := &Config{
-		Enabled:                true,
-		DatabaseAutoUpdate:     true,
 		DatabaseAutoUpdateDir:  targetDir,
 		DatabaseAutoUpdateCode: "DB1",
-		IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 	}
 
 	// Verify directory doesn't exist before test
@@ -285,7 +195,7 @@ func TestDatabaseDirectoryIsCreatedAndDatabaseDownloaded(t *testing.T) {
 	}
 
 	// Find the latest database file
-	latestDB, err := findLatestDatabase(targetDir, "DB1")
+	latestDB, err := FindLatestDatabase(targetDir, "DB1")
 	if err != nil {
 		t.Errorf("failed to find latest database: %v", err)
 		return

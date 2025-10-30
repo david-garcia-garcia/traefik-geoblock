@@ -1,4 +1,4 @@
-package traefik_geoblock
+package dbutils
 
 import (
 	"encoding/binary"
@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// DBVersion represents the version and structure of an IP2Location database file
 type DBVersion struct {
 	Type         byte
 	ColumnWidth4 byte
