@@ -2068,10 +2068,10 @@ func TestExcludedPathsRegex_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 	cfg := &Config{
 		Enabled:              true,
 		DatabaseFilePath:     dbFilePath,
-		AllowedCountries:     []string{"AU"},    // Only AU allowed
-		BlockedCountries:     []string{"US"},    // US blocked
-		DefaultAllow:         false,             // Block by default
-		AllowPrivate:         false,             // Block private IPs to test regex properly
+		AllowedCountries:     []string{"AU"}, // Only AU allowed
+		BlockedCountries:     []string{"US"}, // US blocked
+		DefaultAllow:         false,          // Block by default
+		AllowPrivate:         false,          // Block private IPs to test regex properly
 		DisallowedStatusCode: http.StatusForbidden,
 		IPHeaders:            []string{"x-forwarded-for"},
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -2294,7 +2294,7 @@ func TestExcludedPathsRegex_DomainBasedMatching(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://"+tt.host+tt.path, nil)
-			req.Host = tt.host // Explicitly set Host header
+			req.Host = tt.host                           // Explicitly set Host header
 			req.Header.Set("X-Forwarded-For", "8.8.8.8") // US IP (blocked)
 
 			rr := httptest.NewRecorder()
