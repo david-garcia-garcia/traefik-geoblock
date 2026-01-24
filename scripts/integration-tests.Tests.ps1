@@ -9,6 +9,7 @@ BeforeAll {
         German_IP = "85.214.132.117"
         Private_IP = "192.168.1.100"
         Localhost = "127.0.0.1"
+        Japanese_IP = "126.0.0.1"  # JP - for testing default_allow scenarios
     }
     
     # Helper function to make HTTP requests with proper error handling
@@ -763,14 +764,37 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:ignore_verb"
         }
         
-        It "Should log pass:regex for excluded path in access log" {
+        It "Should log pass:excluded_regex for excluded path in access log" {
             # US IP is blocked, but /logheaders/api/* paths are excluded via excludedPathsRegex
             curl -s -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" "$script:BaseUrl/logheaders/api/endpoint" | Out-Null
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
             $logEntry.'request_X-Geoblock-Status' | Should -Be "pass"
-            $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:regex"
+            $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:excluded_regex"
+        }
+        
+        It "Should log pass:bypass_header when bypass header matches" {
+            # US IP would be blocked, but bypass header allows it through
+            curl -s -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" -H "X-Geoblock-Bypass: secret-bypass-token" "$script:BaseUrl/logheaders/test" | Out-Null
+            
+            $logEntry = Get-LastAccessLogEntry
+            $logEntry | Should -Not -BeNullOrEmpty
+            $logEntry.'request_X-Geoblock-Status' | Should -Be "pass"
+            $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:bypass_header"
+        }
+        
+        It "Should log block:default_allow for unlisted country when defaultAllow=false" {
+            # Japanese IP is not in allowedCountries (DE, AU) or blockedCountries (US)
+            # With defaultAllow=false, it should be blocked
+            $headers = @{ "X-Real-IP" = $script:TestIPs.Japanese_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/logheaders/test" -Headers $headers
+            $result.StatusCode | Should -Be 403
+            
+            $logEntry = Get-LastAccessLogEntry
+            $logEntry | Should -Not -BeNullOrEmpty
+            $logEntry.'request_X-Geoblock-Status' | Should -Be "block"
+            $logEntry.'request_X-Geoblock-Decision' | Should -Be "block:default_allow"
         }
         
         It "Should log block:blocked_country for US IP in access log" {
