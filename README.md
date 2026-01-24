@@ -43,32 +43,13 @@ This architecture ensures consistent response times and eliminates external serv
 - Customizable error responses
 - Flexible logging options
 - Hot-swap database updates - automatic IP2Location database updates with zero downtime
+- Path exclusion via regex - exclude specific paths from geoblocking while maintaining GeoIP enrichment
 
 ## 📥 Installation
 
-> ⚠️ IMPORTANT REQUIREMENTS
->
-> - **Traefik v3.5.0 or later** is required (unsafe support was introduced in v3.5.0)
->
+> **⚠️ IMPORTANT REQUIREMENTS:**
+> - **Traefik v3.5.0 or later** is required (unsafe operations support was introduced in v3.5.0)
 > - **Unsafe operations must be enabled** in Traefik configuration
->
->   ### Why "Unsafe" Mode is Required
->
->   Traefik may display this plugin as "unsafe", which can be misleading. **This does not mean the plugin is dangerous or insecure.**
->
->   **What "unsafe" actually means:**
->
->   Traefik plugins run inside [Yaegi](https://github.com/traefik/yaegi), a Go interpreter that sandboxes plugin code for security. By default, Yaegi restricts access to Go's [`unsafe`](https://pkg.go.dev/unsafe) package - a low-level Go standard library package used for memory operations and performance optimizations.
->
->   **Why this plugin needs it:**
->
->   This plugin depends on the [ip2location-go](https://github.com/ip2location/ip2location-go) library, which uses `unsafe.Pointer` for efficient byte-to-string conversions when reading the binary database file. This is a common Go performance optimization pattern that avoids unnecessary memory allocations during IP lookups.
->
->   ```go
->   // Example from ip2location library - efficient string conversion
->   return *(*string)(unsafe.Pointer(&b))
->   ```
->
 
 It is possible to install the [plugin locally](https://traefik.io/blog/using-private-plugins-in-traefik-proxy-2-5/) or to install it through [Traefik Plugins]([Plugins](https://plugins.traefik.io/plugins)).
 
@@ -407,9 +388,9 @@ http:
 The plugin processes requests in the following order:
 
 1. Check if plugin is enabled
-2. Check if HTTP verb is in ignoreVerbs list (skip blocking but continue enrichment)
-3. Check if path matches excludedPathsRegex (skip blocking but continue enrichment)
-4. Check bypass headers
+2. Check bypass headers
+3. Check if HTTP verb is in ignoreVerbs list (skip blocking but continue enrichment)
+4. Check if request matches excludedPathsRegex (skip blocking but continue enrichment)
 5. Extract IP addresses from configured IP headers (ipHeaders) in the order they are defined
 6. Apply IP header strategy (ipHeaderStrategy) to determine which IPs to process:
    - **CheckAll**: Process all found IP addresses (original behavior)
@@ -427,7 +408,7 @@ The plugin processes requests in the following order:
 - With `CheckFirst` or `CheckFirstNonePrivate` strategies: Only the selected IP(s) are evaluated; the request is denied only if the selected IP is blocked
 - Country header behavior: Header is initially set to "PRIVATE" and only overridden by the first real country found, preventing private IPs from overriding legitimate geolocation information
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
-- Excluded paths: Requests with paths matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment
+- Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment
 
 ### 📝 Log Format
 
