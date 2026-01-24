@@ -1,6 +1,7 @@
 package traefik_geoblock
 
 import (
+	"bytes"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -249,6 +250,70 @@ func TestFindLatestDatabase(t *testing.T) {
 	}
 	if !strings.Contains(latest, "20230301") {
 		t.Errorf("Expected latest database to be from March 2023, got %s", latest)
+	}
+}
+
+func TestDownloadTwiceReturnsNoError(t *testing.T) {
+	// This test verifies that calling downloadAndUpdateDatabase twice
+	// (simulating a restart when IP2Location hasn't released a newer database)
+	// does not return an error on the second call.
+	// See: https://github.com/david-garcia-garcia/traefik-geoblock/issues/40
+
+	targetDir := t.TempDir()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})).With("plugin", "test")
+
+	cfg := &Config{
+		Enabled:                true,
+		DatabaseAutoUpdate:     true,
+		DatabaseAutoUpdateDir:  targetDir,
+		DatabaseAutoUpdateCode: "DB1",
+		IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
+	}
+
+	// First download - should succeed and create the database file
+	err := downloadAndUpdateDatabase(cfg, logger)
+	if err != nil {
+		t.Fatalf("first download failed: %v", err)
+	}
+
+	// Verify database was downloaded
+	latestDB, err := findLatestDatabase(targetDir, "DB1")
+	if err != nil {
+		t.Fatalf("failed to find database after first download: %v", err)
+	}
+	if latestDB == "" {
+		t.Fatal("no database file found after first download")
+	}
+
+	// Second download - capture log output to verify specific warning message
+	// This simulates a container restart when IP2Location hasn't released a newer database
+	var logBuffer bytes.Buffer
+	loggerWithCapture := slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})).With("plugin", "test")
+
+	err = downloadAndUpdateDatabase(cfg, loggerWithCapture)
+	if err != nil {
+		t.Errorf("second download should not return error when database already exists, got: %v", err)
+	}
+
+	// Verify the specific warning message was logged
+	logOutput := logBuffer.String()
+	expectedWarning := "the available IP2Location database is not newer than the one already available"
+	if !strings.Contains(logOutput, expectedWarning) {
+		t.Errorf("expected log to contain warning %q, got: %s", expectedWarning, logOutput)
+	}
+
+	// Verify only one database file exists (no duplicates created)
+	files, err := filepath.Glob(filepath.Join(targetDir, "*_IP2LOCATION-LITE-DB1.IPV6.BIN"))
+	if err != nil {
+		t.Fatalf("failed to list database files: %v", err)
+	}
+	if len(files) != 1 {
+		t.Errorf("expected exactly 1 database file, got %d: %v", len(files), files)
 	}
 }
 

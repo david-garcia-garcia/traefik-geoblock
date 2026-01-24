@@ -212,6 +212,12 @@ func downloadAndUpdateDatabase(cfg *Config, logger *slog.Logger) error {
 	finalName := fmt.Sprintf("%s_IP2LOCATION-LITE-%s.IPV6.BIN", version.Date().Format("20060102"), dbCode)
 	finalPath := filepath.Join(cfg.DatabaseAutoUpdateDir, finalName)
 
+	// Check if the database file already exists (same version already downloaded)
+	if fileExists(finalPath) {
+		logger.Warn("the available IP2Location database is not newer than the one already available, database did not update", "path", finalPath)
+		return nil
+	}
+
 	if err := copyFile(tmpDBPath, finalPath, false); err != nil {
 		return fmt.Errorf("failed to copy database to final location: %w", err)
 	}
