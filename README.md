@@ -1,7 +1,5 @@
 # 🛡️ Traefik Geoblock Plugin
 
-This plugin was forked from [nscuro/traefik-plugin-geoblock: traefik plugin to whitelist requests based on geolocation](https://github.com/nscuro/traefik-plugin-geoblock) and remains compatible with the original plugin.
-
 [![Build Status](https://github.com/david-garcia-garcia/traefik-geoblock/actions/workflows/ci.yml/badge.svg)](https://github.com/david-garcia-garcia/traefik-geoblock/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/david-garcia-garcia/traefik-geoblock)](https://goreportcard.com/report/github.com/david-garcia-garcia/traefik-geoblock)
 [![Latest GitHub release](https://img.shields.io/github/v/release/david-garcia-garcia/traefik-geoblock?sort=semver)](https://github.com/david-garcia-garcia/traefik-geoblock/releases/latest)
@@ -17,10 +15,10 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 > 
 > The basic middlewares you need to secure your Traefik ingress:
 > 
-> 🌍 **Geoblock**: david-garcia-garcia/traefik-geoblock - Block or allow requests based on IP geolocation  
-> 🛡️ **CrowdSec**: maxlerebourg/crowdsec-bouncer-traefik-plugin - Real-time threat intelligence and automated blocking  
-> 🔒 **ModSecurity CRS**: david-garcia-garcia/traefik-modsecurity - Web Application Firewall with OWASP Core Rule Set  
-> 🚦 **Ratelimit**: https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/ - Control request rates and prevent abuse
+> 🌍 **Geoblock**: [david-garcia-garcia/traefik-geoblock](https://github.com/david-garcia-garcia/traefik-geoblock) - Block or allow requests based on IP geolocation  
+> 🛡️ **CrowdSec**: [maxlerebourg/crowdsec-bouncer-traefik-plugin](https://github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin) - Real-time threat intelligence and automated blocking  
+> 🔒 **ModSecurity CRS**: [david-garcia-garcia/traefik-modsecurity](https://github.com/david-garcia-garcia/traefik-modsecurity) - Web Application Firewall with OWASP Core Rule Set  
+> 🚦 **Ratelimit**: [Traefik Rate Limit](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/) - Control request rates and prevent abuse
 
 ## Performance & Scalability
 
@@ -33,7 +31,7 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
-## ✨ Features
+## Features
 
 - Block or allow requests based on country of origin (using ISO 3166-1 alpha-2 country codes)
 - Whitelist specific IP ranges (CIDR notation) - supports both inline configuration and directory-based files
@@ -45,7 +43,7 @@ This architecture ensures consistent response times and eliminates external serv
 - Hot-swap database updates - automatic IP2Location database updates with zero downtime
 - Path exclusion via regex - exclude specific paths from geoblocking while maintaining GeoIP enrichment
 
-## 📥 Installation
+## Installation
 
 > ⚠️ IMPORTANT REQUIREMENTS
 >
@@ -125,7 +123,7 @@ experimental:
 
 > **Note:** If automatic updates are disabled (`databaseAutoUpdate: false`), no external network access is required and the plugin operates entirely offline.
 
-## 🧪 Testing and development
+## Testing and development
 
 You can spin up a fully working environment with docker compose:
 
@@ -142,7 +140,7 @@ go test
 .\Test-Integration.ps
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -404,7 +402,7 @@ http:
 
 ```
 
-### 🔄 Processing Order
+### Processing Order
 
 The plugin processes requests in the following order:
 
@@ -431,7 +429,7 @@ The plugin processes requests in the following order:
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
 - Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment
 
-### 📝 Log Format
+### Log Format
 
 When using JSON logging, the following fields are included in **blocked request** log entries (note: allowed requests are not logged):
 
