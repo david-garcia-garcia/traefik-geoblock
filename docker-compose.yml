@@ -252,8 +252,7 @@ services:
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.logStatusDetailHeader=X-Geoblock-Decision"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.ignoreVerbs=OPTIONS"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.excludedPathsRegex=/logheaders/api/.*"
-      - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.bypassHeader=X-Geoblock-Bypass"
-      - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.bypassHeaderValue=secret-bypass-token"
+      - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.bypassHeaders.X-Geoblock-Bypass=secret-bypass-token"
 
 volumes:
   logs-local:
