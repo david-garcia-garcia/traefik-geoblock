@@ -292,10 +292,11 @@ http:
           #   but may include port for non-standard ports (e.g., "example.com:8080")
           #
           # This is useful for:
-          # - Health check endpoints that need to be accessible from anywhere
           # - API endpoints that have their own authentication/authorization
-          # - Metrics endpoints for monitoring systems
           # - Domain-specific exclusions
+          # - Public endpoints that should bypass geoblocking
+          # Note: For health checks, using bypassHeaders is recommended as it's more secure
+          # (requires a secret header value rather than just matching a public URL path)
           #
           # Note: Go's regexp uses RE2 which guarantees linear time complexity,
           # making it inherently safe from ReDoS (Regular Expression Denial of Service) attacks.
