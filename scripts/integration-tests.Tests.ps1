@@ -763,6 +763,16 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:ignore_verb"
         }
         
+        It "Should log pass:regex for excluded path in access log" {
+            # US IP is blocked, but /logheaders/api/* paths are excluded via excludedPathsRegex
+            curl -s -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" "$script:BaseUrl/logheaders/api/endpoint" | Out-Null
+            
+            $logEntry = Get-LastAccessLogEntry
+            $logEntry | Should -Not -BeNullOrEmpty
+            $logEntry.'request_X-Geoblock-Status' | Should -Be "pass"
+            $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:regex"
+        }
+        
         It "Should log block:blocked_country for US IP in access log" {
             # US is in blockedCountries - request should be blocked
             $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }

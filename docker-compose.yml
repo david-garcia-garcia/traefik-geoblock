@@ -251,6 +251,7 @@ services:
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.logStatusHeader=X-Geoblock-Status"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.logStatusDetailHeader=X-Geoblock-Decision"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.ignoreVerbs=OPTIONS"
+      - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.excludedPathsRegex=/logheaders/api/.*"
 
 volumes:
   logs-local:
