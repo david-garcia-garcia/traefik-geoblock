@@ -43,6 +43,7 @@ This architecture ensures consistent response times and eliminates external serv
 - Customizable error responses
 - Flexible logging options
 - Hot-swap database updates - automatic IP2Location database updates with zero downtime
+- Path exclusion via regex - exclude specific paths from geoblocking while maintaining GeoIP enrichment
 
 ## 📥 Installation
 
@@ -297,6 +298,38 @@ http:
           # Note: Verb matching is case-insensitive
           
           #-------------------------------
+          # Path Exclusion
+          #-------------------------------
+          excludedPathsRegex: "^[^/]*/api/.*"
+          # Regular expression to match requests that should skip geoblocking
+          # Matching requests will NOT be blocked but will still receive GeoIP enrichment (countryHeader)
+          #
+          # MATCHING FORMAT: The regex matches against "{host}{path}"
+          # - host: The Host header value from the request
+          # - path: The URL path starting with / (no query string)
+          # - Example: request to example.com/api/users -> matches "example.com/api/users"
+          # - Note: Host header typically excludes port for standard ports (80/443)
+          #   but may include port for non-standard ports (e.g., "example.com:8080")
+          #
+          # This is useful for:
+          # - API endpoints that have their own authentication/authorization
+          # - Domain-specific exclusions
+          # - Public endpoints that should bypass geoblocking
+          # Note: For health checks, using bypassHeaders is recommended as it's more secure
+          # (requires a secret header value rather than just matching a public URL path)
+          #
+          # Note: Go's regexp uses RE2 which guarantees linear time complexity,
+          # making it inherently safe from ReDoS (Regular Expression Denial of Service) attacks.
+          #
+          # Examples:
+          # - "^[^/]*/health$"                   # /health on any domain
+          # - "^[^/]*/(health|ready|live)$"      # Health check paths on any domain
+          # - "^[^/]*/api/.*"                    # All /api/* paths on any domain
+          # - "^api\\.example\\.com/.*"          # All paths on api.example.com
+          # - "^internal\\..*/(health|metrics)$" # /health or /metrics on internal.* subdomains
+          # - "/health$"                         # /health path (partial match, any domain)
+          
+          #-------------------------------
           # Bypass Configuration
           #-------------------------------
           bypassHeaders:                  # Headers that skip geoblocking entirely
@@ -378,12 +411,13 @@ The plugin processes requests in the following order:
 1. Check if plugin is enabled
 2. Check bypass headers
 3. Check if HTTP verb is in ignoreVerbs list (skip blocking but continue enrichment)
-4. Extract IP addresses from configured IP headers (ipHeaders) in the order they are defined
-5. Apply IP header strategy (ipHeaderStrategy) to determine which IPs to process:
+4. Check if request matches excludedPathsRegex (skip blocking but continue enrichment)
+5. Extract IP addresses from configured IP headers (ipHeaders) in the order they are defined
+6. Apply IP header strategy (ipHeaderStrategy) to determine which IPs to process:
    - **CheckAll**: Process all found IP addresses (original behavior)
    - **CheckFirst**: Process only the first IP address found
    - **CheckFirstNonePrivate**: Process first non-private IP, fallback to first private IP if no public IPs found
-6. For each selected IP:
+7. For each selected IP:
    - Check if it's in private network range [allowPrivate]
    - Check allowed/blocked IP blocks [allowedIPBlocks + allowedIPBlocksDir, blockedIPBlocks + blockedIPBlocksDir] (most specific match wins)
    - Look up country code 
@@ -395,6 +429,7 @@ The plugin processes requests in the following order:
 - With `CheckFirst` or `CheckFirstNonePrivate` strategies: Only the selected IP(s) are evaluated; the request is denied only if the selected IP is blocked
 - Country header behavior: Header is initially set to "PRIVATE" and only overridden by the first real country found, preventing private IPs from overriding legitimate geolocation information
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
+- Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment
 
 ### 📝 Log Format
 

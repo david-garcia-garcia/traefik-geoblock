@@ -675,6 +675,73 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         }
     }
     
+    Context "Excluded Paths Regex" {
+        # The /excludedpaths endpoint has excludedPathsRegex=^/excludedpaths/(api/.*|health)$
+        # This means paths matching that pattern should skip blocking but still get GeoIP enrichment
+        
+        It "Should block US IP on non-excluded path" {
+            # /excludedpaths/blocked does NOT match the exclusion regex
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/excludedpaths/blocked" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+        
+        It "Should allow US IP on excluded /api/* path" {
+            # /excludedpaths/api/users MATCHES the exclusion regex, so blocking is skipped
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/excludedpaths/api/users" -Headers $headers
+            $result.StatusCode | Should -Be 200
+        }
+        
+        It "Should allow US IP on excluded /api/nested/path" {
+            # /excludedpaths/api/nested/path MATCHES the exclusion regex
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/excludedpaths/api/nested/path" -Headers $headers
+            $result.StatusCode | Should -Be 200
+        }
+        
+        It "Should allow US IP on excluded /health path" {
+            # /excludedpaths/health MATCHES the exclusion regex
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/excludedpaths/health" -Headers $headers
+            $result.StatusCode | Should -Be 200
+        }
+        
+        It "Should still enrich country header on excluded paths" {
+            # Even though blocking is skipped, GeoIP enrichment should still happen
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            
+            # Use curl to see the response from whoami which echoes headers
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" "$script:BaseUrl/excludedpaths/api/test") -join "`n"
+            
+            # The whoami service echoes back headers, so we should see X-Ipcountry: US
+            $response | Should -Match "X-Ipcountry:\s*US"
+        }
+        
+        It "Should block German IP on non-excluded path (not in allowed countries for this test)" {
+            # German IP is normally allowed, but let's verify non-excluded paths are still processed
+            # Actually DE is in allowedCountries for this endpoint, so it should be allowed
+            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/excludedpaths/somepath" -Headers $headers
+            $result.StatusCode | Should -Be 200  # DE is in allowedCountries
+        }
+        
+        It "Should block US IP on path that looks similar but doesn't match regex" {
+            # /excludedpaths/apiversion does NOT match ^/excludedpaths/(api/.*|health)$
+            # because it's "apiversion" not "api/"
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/excludedpaths/apiversion" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+        
+        It "Should block US IP on /healthcheck (doesn't match /health exactly)" {
+            # /excludedpaths/healthcheck does NOT match the regex (health vs healthcheck)
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/excludedpaths/healthcheck" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+    }
+    
     Context "Performance and Reliability" {
         It "Should respond within reasonable time" {
             $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()

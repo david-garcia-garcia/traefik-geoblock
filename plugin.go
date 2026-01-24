@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"log/slog"
@@ -77,6 +78,9 @@ type Config struct {
 	// HTTP verb filtering
 	IgnoreVerbs []string // List of HTTP verbs to ignore for blocking (still enriched with GeoIP)
 
+	// Path exclusion
+	ExcludedPathsRegex string // Regular expression to match paths that should skip blocking (still enriched with GeoIP)
+
 	// Remediation settings
 	RemediationHeadersCustomName string // Name of the header to add to blocked responses indicating the phase/reason
 
@@ -128,6 +132,7 @@ type Plugin struct {
 	ipHeaders                    []string            // List of headers to check for client IP addresses
 	ipHeaderStrategy             string              // Strategy for processing multiple IP addresses
 	ignoreVerbs                  map[string]struct{} // Set of HTTP verbs to ignore for blocking
+	excludedPathsRegex           *regexp.Regexp      // Compiled regex for excluded paths
 	logBannedRequests            bool
 	countryHeader                string
 	remediationHeadersCustomName string // Name of the header to add to blocked responses
@@ -245,6 +250,17 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		ignoreVerbs[strings.ToUpper(verb)] = struct{}{}
 	}
 
+	// Compile excluded paths regex if provided
+	var excludedPathsRegex *regexp.Regexp
+	if cfg.ExcludedPathsRegex != "" {
+		var err error
+		excludedPathsRegex, err = regexp.Compile(cfg.ExcludedPathsRegex)
+		if err != nil {
+			return nil, fmt.Errorf("%s: invalid excludedPathsRegex pattern %q: %w", name, cfg.ExcludedPathsRegex, err)
+		}
+		logger.Debug("compiled excludedPathsRegex", "pattern", cfg.ExcludedPathsRegex)
+	}
+
 	plugin := &Plugin{
 		next:                         next,
 		name:                         name,
@@ -264,6 +280,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		ipHeaders:                    cfg.IPHeaders,
 		ipHeaderStrategy:             cfg.IPHeaderStrategy,
 		ignoreVerbs:                  ignoreVerbs,
+		excludedPathsRegex:           excludedPathsRegex,
 		logger:                       logger,
 		logBannedRequests:            cfg.LogBannedRequests,
 		countryHeader:                cfg.CountryHeader,
@@ -271,6 +288,17 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 
 	return plugin, nil
+}
+
+// isExcludedByRegex checks if the request matches the excluded paths regex.
+// The regex is matched against "{host}{path}" (e.g., "example.com/api/users").
+// Go's regexp package uses RE2 which guarantees linear time complexity,
+// making it inherently safe from ReDoS attacks.
+func (p Plugin) isExcludedByRegex(host, path string) bool {
+	if p.excludedPathsRegex == nil {
+		return false
+	}
+	return p.excludedPathsRegex.MatchString(host + path)
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -291,6 +319,17 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		skipBlocking = true
 		p.logger.Debug("HTTP verb ignored for blocking",
 			"method", req.Method,
+			"remote_addr", req.RemoteAddr,
+			"ip_chain", ipChain)
+	}
+
+	// Check if request matches excluded paths regex (skip blocking but still enrich)
+	// Matches against "{host}{path}" (e.g., "example.com/api/users")
+	if !skipBlocking && p.isExcludedByRegex(req.Host, req.URL.Path) {
+		skipBlocking = true
+		p.logger.Debug("request excluded from blocking by regex",
+			"host", req.Host,
+			"path", req.URL.Path,
 			"remote_addr", req.RemoteAddr,
 			"ip_chain", ipChain)
 	}

@@ -2063,3 +2063,247 @@ func TestIgnoreVerbs_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 		})
 	}
 }
+
+func TestExcludedPathsRegex_ShouldSkipBlockingButStillEnrich(t *testing.T) {
+	cfg := &Config{
+		Enabled:              true,
+		DatabaseFilePath:     dbFilePath,
+		AllowedCountries:     []string{"AU"}, // Only AU allowed
+		BlockedCountries:     []string{"US"}, // US blocked
+		DefaultAllow:         false,          // Block by default
+		AllowPrivate:         false,          // Block private IPs to test regex properly
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		CountryHeader:        "x-country-code",
+		// Regex matches against "{host}{path}" - httptest uses "example.com" as default host
+		// Pattern matches: example.com/api/*, example.com/health, example.com/metrics
+		ExcludedPathsRegex: "^[^/]*/(api/.*|health|metrics)$",
+	}
+
+	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	if err != nil {
+		t.Fatalf("Failed to create plugin: %v", err)
+	}
+
+	tests := []struct {
+		name            string
+		path            string
+		ip              string
+		expectedStatus  int
+		expectedCountry string
+		description     string
+	}{
+		{
+			name:            "Excluded_api_path_US_IP_Should_Be_Allowed",
+			path:            "/api/users",
+			ip:              "8.8.8.8", // US IP (normally blocked)
+			expectedStatus:  http.StatusTeapot,
+			expectedCountry: "US", // Still enriched
+			description:     "US IP should be allowed on excluded /api/* path",
+		},
+		{
+			name:            "Excluded_api_nested_path_US_IP_Should_Be_Allowed",
+			path:            "/api/v1/users/123",
+			ip:              "8.8.8.8", // US IP (normally blocked)
+			expectedStatus:  http.StatusTeapot,
+			expectedCountry: "US",
+			description:     "US IP should be allowed on excluded nested /api/* path",
+		},
+		{
+			name:            "Excluded_health_path_US_IP_Should_Be_Allowed",
+			path:            "/health",
+			ip:              "8.8.8.8", // US IP (normally blocked)
+			expectedStatus:  http.StatusTeapot,
+			expectedCountry: "US",
+			description:     "US IP should be allowed on excluded /health path",
+		},
+		{
+			name:            "Excluded_metrics_path_US_IP_Should_Be_Allowed",
+			path:            "/metrics",
+			ip:              "8.8.8.8", // US IP (normally blocked)
+			expectedStatus:  http.StatusTeapot,
+			expectedCountry: "US",
+			description:     "US IP should be allowed on excluded /metrics path",
+		},
+		{
+			name:            "NonExcluded_path_US_IP_Should_Be_Blocked",
+			path:            "/other",
+			ip:              "8.8.8.8", // US IP (blocked)
+			expectedStatus:  http.StatusForbidden,
+			expectedCountry: "US",
+			description:     "US IP should be blocked on non-excluded path",
+		},
+		{
+			name:            "Similar_but_not_matching_apiversion_Should_Be_Blocked",
+			path:            "/apiversion",
+			ip:              "8.8.8.8", // US IP (blocked)
+			expectedStatus:  http.StatusForbidden,
+			expectedCountry: "US",
+			description:     "US IP should be blocked on /apiversion (doesn't match /api/*)",
+		},
+		{
+			name:            "Similar_but_not_matching_healthcheck_Should_Be_Blocked",
+			path:            "/healthcheck",
+			ip:              "8.8.8.8", // US IP (blocked)
+			expectedStatus:  http.StatusForbidden,
+			expectedCountry: "US",
+			description:     "US IP should be blocked on /healthcheck (doesn't match /health exactly)",
+		},
+		{
+			name:            "Excluded_path_AU_IP_Should_Be_Allowed",
+			path:            "/api/test",
+			ip:              "1.1.1.1", // AU IP (allowed)
+			expectedStatus:  http.StatusTeapot,
+			expectedCountry: "AU",
+			description:     "AU IP should be allowed on excluded path (would be allowed anyway)",
+		},
+		{
+			name:            "NonExcluded_path_AU_IP_Should_Be_Allowed",
+			path:            "/other",
+			ip:              "1.1.1.1", // AU IP (allowed)
+			expectedStatus:  http.StatusTeapot,
+			expectedCountry: "AU",
+			description:     "AU IP should be allowed on non-excluded path (allowed country)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req.Header.Set("X-Forwarded-For", tt.ip)
+
+			rr := httptest.NewRecorder()
+			plugin.ServeHTTP(rr, req)
+
+			// Check response status
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+
+			// Check country header enrichment (should always be set)
+			countryHeader := req.Header.Get("x-country-code")
+			if countryHeader != tt.expectedCountry {
+				t.Errorf("Expected country header '%s', got '%s'", tt.expectedCountry, countryHeader)
+			}
+
+			t.Logf("SUCCESS: %s - Path: %s, IP: %s -> Status: %d, Country: %s",
+				tt.description, tt.path, tt.ip, rr.Code, countryHeader)
+		})
+	}
+}
+
+func TestExcludedPathsRegex_InvalidRegex(t *testing.T) {
+	cfg := &Config{
+		Enabled:              true,
+		DatabaseFilePath:     dbFilePath,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		ExcludedPathsRegex:   "[invalid(regex", // Invalid regex pattern
+	}
+
+	_, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	if err == nil {
+		t.Error("Expected error for invalid regex, but got none")
+	}
+	if !strings.Contains(err.Error(), "invalid excludedPathsRegex pattern") {
+		t.Errorf("Expected error message to mention invalid regex, got: %v", err)
+	}
+}
+
+func TestExcludedPathsRegex_EmptyRegex(t *testing.T) {
+	cfg := &Config{
+		Enabled:              true,
+		DatabaseFilePath:     dbFilePath,
+		BlockedCountries:     []string{"US"},
+		DefaultAllow:         false,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		ExcludedPathsRegex:   "", // Empty regex - should not affect blocking
+	}
+
+	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	if err != nil {
+		t.Fatalf("Failed to create plugin: %v", err)
+	}
+
+	// US IP should still be blocked when regex is empty
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	req.Header.Set("X-Forwarded-For", "8.8.8.8")
+
+	rr := httptest.NewRecorder()
+	plugin.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("Expected status %d with empty regex, got %d", http.StatusForbidden, rr.Code)
+	}
+}
+
+func TestExcludedPathsRegex_DomainBasedMatching(t *testing.T) {
+	// Test that regex can match specific domains
+	// Pattern: only exclude paths on "api.example.com" domain
+	cfg := &Config{
+		Enabled:              true,
+		DatabaseFilePath:     dbFilePath,
+		BlockedCountries:     []string{"US"},
+		DefaultAllow:         false,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		// Only exclude /api/* on api.example.com, not on other domains
+		ExcludedPathsRegex: "^api\\.example\\.com/api/.*",
+	}
+
+	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	if err != nil {
+		t.Fatalf("Failed to create plugin: %v", err)
+	}
+
+	tests := []struct {
+		name           string
+		host           string
+		path           string
+		expectedStatus int
+		description    string
+	}{
+		{
+			name:           "Matching_domain_should_be_excluded",
+			host:           "api.example.com",
+			path:           "/api/users",
+			expectedStatus: http.StatusTeapot, // Excluded, passes through
+			description:    "api.example.com/api/* should be excluded",
+		},
+		{
+			name:           "Different_domain_should_be_blocked",
+			host:           "www.example.com",
+			path:           "/api/users",
+			expectedStatus: http.StatusForbidden, // Not excluded, blocked
+			description:    "www.example.com/api/* should NOT be excluded",
+		},
+		{
+			name:           "Default_host_should_be_blocked",
+			host:           "example.com",
+			path:           "/api/users",
+			expectedStatus: http.StatusForbidden, // Not excluded, blocked
+			description:    "example.com/api/* should NOT be excluded",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://"+tt.host+tt.path, nil)
+			req.Host = tt.host                           // Explicitly set Host header
+			req.Header.Set("X-Forwarded-For", "8.8.8.8") // US IP (blocked)
+
+			rr := httptest.NewRecorder()
+			plugin.ServeHTTP(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("%s: Expected status %d, got %d", tt.description, tt.expectedStatus, rr.Code)
+			}
+			t.Logf("SUCCESS: %s - Host: %s, Path: %s -> Status: %d", tt.description, tt.host, tt.path, rr.Code)
+		})
+	}
+}
