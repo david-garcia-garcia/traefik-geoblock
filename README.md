@@ -39,6 +39,8 @@ The plugin is designed to provide detailed observability through **Traefik acces
 - You can track geolocation and blocking decisions for all traffic
 - Useful for security analysis, debugging, and compliance reporting
 
+> **Recommended Approach**: Using `logStatusHeader` and `logStatusDetailHeader` with Traefik access logs is the recommended way to observe plugin behavior. This provides complete visibility into both allowed and blocked requests with detailed decision reasons. The built-in `logBannedRequests` feature only logs blocked requests and is considered a legacy approach.
+
 ### Available Headers
 
 | Config Setting | Purpose | Example Values |
@@ -432,6 +434,9 @@ http:
           logFormat: "json"                 # Available: json, text
           logPath: "/var/log/geoblock.log"  # Empty for Traefik's standard output
           logBannedRequests: true           # Log blocked requests. They will be logged at info level.
+          # NOTE: logBannedRequests is not the recommended way to observe plugin behavior.
+          # Use logStatusHeader and logStatusDetailHeader with Traefik access logs instead,
+          # which provides visibility into both allowed AND blocked requests with detailed reasons.
           fileLogBufferSizeBytes: 1024      # Buffer size for file logging in bytes (default: 1024)
           fileLogBufferTimeoutSeconds: 2    # Buffer timeout for file logging in seconds (default: 2)
           # File logging uses buffered writes for better performance. The buffer is flushed when:
@@ -512,7 +517,9 @@ The plugin processes requests in the following order:
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
 - Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment
 
-### Log Format
+### Log Format (Legacy)
+
+> **Note**: This section documents the built-in `logBannedRequests` feature which only logs blocked requests. For comprehensive observability of both allowed and blocked requests, use `logStatusHeader` and `logStatusDetailHeader` with Traefik access logs instead. See the [Observability](#observability) section for details.
 
 When using JSON logging, the following fields are included in **blocked request** log entries (note: allowed requests are not logged):
 

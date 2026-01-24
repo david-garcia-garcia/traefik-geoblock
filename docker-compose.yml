@@ -253,6 +253,7 @@ services:
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.ignoreVerbs=OPTIONS"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.excludedPathsRegex=/logheaders/api/.*"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.bypassHeaders.X-Geoblock-Bypass=secret-bypass-token"
+      - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.blockedIPBlocks=3.5.140.0/24"
 
 volumes:
   logs-local:

@@ -10,6 +10,7 @@ BeforeAll {
         Private_IP = "192.168.1.100"
         Localhost = "127.0.0.1"
         Japanese_IP = "126.0.0.1"  # JP - for testing default_allow scenarios
+        AWS_Blocked_IP = "3.5.140.1"  # AWS IP in blocked IP block range (3.5.140.0/24)
     }
     
     # Helper function to make HTTP requests with proper error handling
@@ -795,6 +796,18 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $logEntry | Should -Not -BeNullOrEmpty
             $logEntry.'request_X-Geoblock-Status' | Should -Be "block"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "block:default_allow"
+        }
+        
+        It "Should log block:blocked_ip_block for IP in blocked CIDR range" {
+            # 3.5.140.1 is in the blockedIPBlocks CIDR range (3.5.140.0/24)
+            $headers = @{ "X-Real-IP" = $script:TestIPs.AWS_Blocked_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/logheaders/test" -Headers $headers
+            $result.StatusCode | Should -Be 403
+            
+            $logEntry = Get-LastAccessLogEntry
+            $logEntry | Should -Not -BeNullOrEmpty
+            $logEntry.'request_X-Geoblock-Status' | Should -Be "block"
+            $logEntry.'request_X-Geoblock-Decision' | Should -Be "block:blocked_ip_block"
         }
         
         It "Should log block:blocked_country for US IP in access log" {
