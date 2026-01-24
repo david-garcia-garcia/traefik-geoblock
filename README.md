@@ -479,7 +479,8 @@ http:
           
           # DEPRECATED - use logStatusHeader/logStatusDetailHeader instead
           # remediationHeadersCustomName: "X-Geoblock-Action"
-          # This added a header to the RESPONSE, but the new headers add to the REQUEST which is more useful for logging
+          # This added a header to the RESPONSE which exposed internal details to clients.
+          # The new headers add to the REQUEST so they're visible in access logs but not sent to clients.
 
 
 ```
