@@ -18,8 +18,15 @@ import (
 // Add this constant near the top of the file, after imports
 const PrivateIpCountryAlias = "PRIVATE"
 
+// Log status constants for observability headers
+const (
+	LogStatusPass  = "pass"
+	LogStatusBlock = "block"
+)
+
 // Phase constants for logging and testing
 const (
+	PhaseNone           = "none" // No specific rule matched (e.g., no IPs found)
 	PhaseAllowPrivate   = "allow_private"
 	PhaseBlockedIPBlock = "blocked_ip_block"
 	PhaseAllowedIPBlock = "allowed_ip_block"
@@ -332,30 +339,39 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Get list of unique remote IPs
 	remoteIPs := p.GetRemoteIPs(req)
 	var ipChain string = strings.Join(remoteIPs, ", ")
-	var skipReason string = "" // Reason for skipping blocking (empty means don't skip)
+
+	// passReason tracks why the request is allowed to pass.
+	// If set early (by bypass conditions), blocking is skipped but enrichment still happens.
+	// Otherwise, geo-blocking rules are evaluated and passReason is set from CheckAllowed.
+	// Initialized to PhaseNone in case no IPs are found to process.
+	passReason := PhaseNone
 
 	// Check if this HTTP verb should be ignored for blocking (but still enriched)
-	if _, ignored := p.ignoreVerbs[strings.ToUpper(req.Method)]; ignored {
-		skipReason = PhaseIgnoreVerb
-		p.logger.Debug("HTTP verb ignored for blocking",
-			"method", req.Method,
-			"remote_addr", req.RemoteAddr,
-			"ip_chain", ipChain)
+	if passReason == PhaseNone {
+		if _, ignored := p.ignoreVerbs[strings.ToUpper(req.Method)]; ignored {
+			passReason = PhaseIgnoreVerb
+			p.logger.Debug("HTTP verb ignored for blocking",
+				"method", req.Method,
+				"remote_addr", req.RemoteAddr,
+				"ip_chain", ipChain)
+		}
 	}
 
 	// Check if request matches excluded paths regex (skip blocking but still enrich)
 	// Matches against "{host}{path}" (e.g., "example.com/api/users")
-	if skipReason == "" && p.isExcludedByRegex(req.Host, req.URL.Path) {
-		skipReason = PhaseExcludedRegex
-		p.logger.Debug("request excluded from blocking by regex",
-			"host", req.Host,
-			"path", req.URL.Path,
-			"remote_addr", req.RemoteAddr,
-			"ip_chain", ipChain)
+	if passReason == PhaseNone {
+		if p.isExcludedByRegex(req.Host, req.URL.Path) {
+			passReason = PhaseExcludedRegex
+			p.logger.Debug("request excluded from blocking by regex",
+				"host", req.Host,
+				"path", req.URL.Path,
+				"remote_addr", req.RemoteAddr,
+				"ip_chain", ipChain)
+		}
 	}
 
 	// Check for bypass headers
-	if skipReason == "" {
+	if passReason == PhaseNone {
 		for header, expectedValue := range p.bypassHeaders {
 			if actualValue := req.Header.Get(header); actualValue == expectedValue {
 				p.logger.Debug("bypassing geoblock due to bypass header match",
@@ -363,7 +379,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 					"value", expectedValue,
 					"remote_addr", req.RemoteAddr,
 					"ip_chain", ipChain)
-				skipReason = PhaseBypassHeader
+				passReason = PhaseBypassHeader
 				break
 			}
 		}
@@ -372,7 +388,6 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Process IPs based on strategy
 	var foundPublicIP bool = false
 	var countryHeaderSet bool = false
-	var lastPhase string = "" // Track the last decision phase for logHeader
 
 	// Set country header to PRIVATE initially - will be overridden by real countries
 	if p.countryHeader != "" {
@@ -400,7 +415,6 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 
 		allowed, country, phase, err := p.CheckAllowed(ip)
-		lastPhase = phase // Track for logHeader
 
 		// Override country header only with the first real (non-private) country we encounter
 		if p.countryHeader != "" && country != "" && country != PrivateIpCountryAlias && !countryHeaderSet {
@@ -419,8 +433,8 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				"error", err,
 				"remote_addr", req.RemoteAddr)
 
-			if p.banIfError && skipReason == "" {
-				p.setLogHeaders(req, "block", "error")
+			if p.banIfError && passReason == PhaseNone {
+				p.setLogHeaders(req, LogStatusBlock, "error")
 				p.serveBanHtml(rw, ip, "Unknown", "error", req.Method)
 				return
 			}
@@ -431,7 +445,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
-		if !allowed && skipReason == "" {
+		if !allowed && passReason == PhaseNone {
 			if p.logBannedRequests {
 				p.logger.Info("blocked request",
 					"ip", ip,
@@ -443,9 +457,14 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 					"path", req.URL.Path,
 					"remote_addr", req.RemoteAddr)
 			}
-			p.setLogHeaders(req, "block", phase)
+			p.setLogHeaders(req, LogStatusBlock, phase)
 			p.serveBanHtml(rw, ip, country, phase, req.Method)
 			return
+		}
+
+		// Update passReason from geo-check only if no bypass is active and request was allowed
+		if passReason == PhaseNone && allowed {
+			passReason = phase
 		}
 
 		// For CheckFirstNonePrivate, stop after processing first non-private IP
@@ -455,12 +474,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	// Set log headers for allowed request
-	// Use skipReason if blocking was skipped, otherwise use the phase from CheckAllowed
-	if skipReason != "" {
-		p.setLogHeaders(req, "pass", skipReason)
-	} else if lastPhase != "" {
-		p.setLogHeaders(req, "pass", lastPhase)
-	}
+	p.setLogHeaders(req, LogStatusPass, passReason)
 
 	p.next.ServeHTTP(rw, req)
 }

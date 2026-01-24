@@ -57,27 +57,37 @@ Simple status indicating whether the request was allowed or blocked:
 
 Detailed status with format `{action}:{reason}`:
 
-**Pass reasons (request allowed):**
+**Bypass reasons (blocking skipped, checked first):**
 
-| Value | Description |
-|-------|-------------|
-| `pass:allow_private` | IP is private/internal (RFC 1918) and `allowPrivate` is true |
-| `pass:allowed_ip_block` | IP matched a CIDR range in `allowedIPBlocks` or `allowedIPBlocksDir` |
-| `pass:allowed_country` | Country code is in `allowedCountries` list |
-| `pass:default_allow` | No rules matched and `defaultAllow` is true |
-| `pass:ignore_verb` | HTTP method is in `ignoreVerbs` list (e.g., OPTIONS, HEAD) |
-| `pass:excluded_regex` | Request matched `excludedPathsRegex` pattern |
-| `pass:bypass_header` | Request contained a matching `bypassHeaders` header/value |
+These are evaluated before geo-blocking rules. If any match, the request passes without geo evaluation:
+
+| Value | Description | Example Scenario |
+|-------|-------------|------------------|
+| `pass:ignore_verb` | HTTP method is in `ignoreVerbs` list | OPTIONS request for CORS preflight |
+| `pass:excluded_regex` | Request matched `excludedPathsRegex` pattern | Health check endpoint `/health` |
+| `pass:bypass_header` | Request had matching `bypassHeaders` header/value | Internal service with secret header |
+
+**Geo-rule pass reasons (request allowed by geo-blocking rules):**
+
+These indicate why the geo-blocking logic allowed the request:
+
+| Value | Description | Example Scenario |
+|-------|-------------|------------------|
+| `pass:allow_private` | IP is private/internal (RFC 1918) and `allowPrivate` is true | Request from `192.168.1.100` |
+| `pass:allowed_ip_block` | IP matched a CIDR range in `allowedIPBlocks` or `allowedIPBlocksDir` | Trusted partner IP `203.0.113.50` |
+| `pass:allowed_country` | Country code is in `allowedCountries` list | US user when `allowedCountries: ["US"]` |
+| `pass:default_allow` | No rules matched and `defaultAllow` is true | Unknown country with permissive config |
+| `pass:none` | No IP addresses found to evaluate | Misconfigured `ipHeaders` |
 
 **Block reasons (request denied):**
 
-| Value | Description |
-|-------|-------------|
-| `block:allow_private` | IP is private/internal but `allowPrivate` is false |
-| `block:blocked_ip_block` | IP matched a CIDR range in `blockedIPBlocks` or `blockedIPBlocksDir` |
-| `block:blocked_country` | Country code is in `blockedCountries` list |
-| `block:default_allow` | No rules matched and `defaultAllow` is false |
-| `block:error` | IP lookup failed and `banIfError` is true |
+| Value | Description | Example Scenario |
+|-------|-------------|------------------|
+| `block:allow_private` | IP is private/internal but `allowPrivate` is false | Internal IP blocked by strict config |
+| `block:blocked_ip_block` | IP matched a CIDR range in `blockedIPBlocks` or `blockedIPBlocksDir` | Known bad actor IP range |
+| `block:blocked_country` | Country code is in `blockedCountries` list | Request from blocked region |
+| `block:default_allow` | No rules matched and `defaultAllow` is false | Unknown country with strict config |
+| `block:error` | IP lookup failed and `banIfError` is true | Database lookup failure |
 
 ### Traefik Access Log Configuration
 
