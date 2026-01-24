@@ -165,6 +165,32 @@ services:
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.blockedCountries="
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.defaultAllow=false"
 
+  whoami-excludedpaths:
+    image: traefik/whoami
+    container_name: "simple-service-excludedpaths"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-excludedpaths.rule=PathPrefix(`/excludedpaths`)"
+      - "traefik.http.routers.router-excludedpaths.entrypoints=web"
+      - "traefik.http.routers.router-excludedpaths.middlewares=geoblock-excludedpaths@docker"
+      - "traefik.http.services.service-excludedpaths.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.logLevel=DEBUG"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.logPath="
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.logFormat=JSON"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.logBannedRequests=true"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.blockedCountries=US,CN,RU"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.allowedCountries=DE,FR,GB"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.defaultAllow=false"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.countryHeader=X-Ipcountry"
+      # Exclude paths matching {host}/excludedpaths/api/.* or {host}/excludedpaths/health
+      # Pattern: ^[^/]* matches any host, then /excludedpaths/(api/.*|health)
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.excludedPathsRegex=^[^/]*/excludedpaths/(api/.*|health)$$"
+
   # NEW: Additional routes sharing existing middleware definitions
   whoami-shared1:
     image: traefik/whoami
