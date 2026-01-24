@@ -31,6 +31,82 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
+## Observability
+
+The plugin is designed to provide detailed observability through **Traefik access logs** by adding headers to the **request** (not the response). This means:
+
+- Headers are visible in Traefik access logs but **not sent back to clients**
+- You can track geolocation and blocking decisions for all traffic
+- Useful for security analysis, debugging, and compliance reporting
+
+> **Recommended Approach**: Using `logStatusHeader` and `logStatusDetailHeader` with Traefik access logs is the recommended way to observe plugin behavior. This provides complete visibility into both allowed and blocked requests with detailed decision reasons. The built-in `logBannedRequests` feature only logs blocked requests and is considered a legacy approach.
+
+### Available Headers
+
+| Config Setting | Purpose | Example Values |
+|----------------|---------|----------------|
+| `countryHeader` | Country code of the request origin | `US`, `DE`, `PRIVATE` |
+| `logStatusHeader` | Simple pass/block status | `pass`, `block` |
+| `logStatusDetailHeader` | Detailed decision with reason | `pass:allowed_country`, `block:blocked_country` |
+
+### logStatusHeader Values
+
+Simple status indicating whether the request was allowed or blocked:
+- `pass` - Request was allowed through
+- `block` - Request was blocked
+
+### logStatusDetailHeader Values
+
+Detailed status with format `{action}:{reason}`:
+
+**Bypass reasons (blocking skipped, checked first):**
+
+These are evaluated before geo-blocking rules. If any match, the request passes without geo evaluation:
+
+| Value | Description | Example Scenario |
+|-------|-------------|------------------|
+| `pass:ignore_verb` | HTTP method is in `ignoreVerbs` list | OPTIONS request for CORS preflight |
+| `pass:excluded_regex` | Request matched `excludedPathsRegex` pattern | Health check endpoint `/health` |
+| `pass:bypass_header` | Request had matching `bypassHeaders` header/value | Internal service with secret header |
+
+**Geo-rule pass reasons (request allowed by geo-blocking rules):**
+
+These indicate why the geo-blocking logic allowed the request:
+
+| Value | Description | Example Scenario |
+|-------|-------------|------------------|
+| `pass:allow_private` | IP is private/internal (RFC 1918) and `allowPrivate` is true | Request from `192.168.1.100` |
+| `pass:allowed_ip_block` | IP matched a CIDR range in `allowedIPBlocks` or `allowedIPBlocksDir` | Trusted partner IP `203.0.113.50` |
+| `pass:allowed_country` | Country code is in `allowedCountries` list | US user when `allowedCountries: ["US"]` |
+| `pass:default_allow` | No rules matched and `defaultAllow` is true | Unknown country with permissive config |
+| `pass:none` | No IP addresses found to evaluate | Misconfigured `ipHeaders` |
+
+**Block reasons (request denied):**
+
+| Value | Description | Example Scenario |
+|-------|-------------|------------------|
+| `block:allow_private` | IP is private/internal but `allowPrivate` is false | Internal IP blocked by strict config |
+| `block:blocked_ip_block` | IP matched a CIDR range in `blockedIPBlocks` or `blockedIPBlocksDir` | Known bad actor IP range |
+| `block:blocked_country` | Country code is in `blockedCountries` list | Request from blocked region |
+| `block:default_allow` | No rules matched and `defaultAllow` is false | Unknown country with strict config |
+| `block:error` | IP lookup failed and `banIfError` is true | Database lookup failure |
+
+### Traefik Access Log Configuration
+
+```yaml
+accessLog:
+  filePath: "/var/log/traefik/access.log"
+  format: json
+  fields:
+    headers:
+      names:
+        X-IPCountry: keep
+        X-Geoblock-Status: keep
+        X-Geoblock-Decision: keep
+```
+
+This gives you full visibility into geoblocking decisions without exposing internal logic to clients.
+
 ## Features
 
 - Block or allow requests based on country of origin (using ISO 3166-1 alpha-2 country codes)
@@ -358,6 +434,9 @@ http:
           logFormat: "json"                 # Available: json, text
           logPath: "/var/log/geoblock.log"  # Empty for Traefik's standard output
           logBannedRequests: true           # Log blocked requests. They will be logged at info level.
+          # NOTE: logBannedRequests is not the recommended way to observe plugin behavior.
+          # Use logStatusHeader and logStatusDetailHeader with Traefik access logs instead,
+          # which provides visibility into both allowed AND blocked requests with detailed reasons.
           fileLogBufferSizeBytes: 1024      # Buffer size for file logging in bytes (default: 1024)
           fileLogBufferTimeoutSeconds: 2    # Buffer timeout for file logging in seconds (default: 2)
           # File logging uses buffered writes for better performance. The buffer is flushed when:
@@ -381,7 +460,7 @@ http:
           databaseAutoUpdateCode: "DB1"              # Database product code to download (if using premium)
 
           #-------------------------------
-          # Response header settings
+          # Request header settings
           #-------------------------------  
           countryHeader: "X-IPCountry"  
           # Optional header to add the country code to the REQUEST (available in Traefik access logs)
@@ -391,13 +470,22 @@ http:
           # Note: Header is initially set to "PRIVATE" and only overridden by the first real country found
           # This ensures private IPs processed later cannot override legitimate country information
           
-          remediationHeadersCustomName: "X-Geoblock-Action"
-          # Optional header to add the blocking phase/reason to the RESPONSE when request is blocked
-          # This header is added to the HTTP response sent back to the client (available in Traefik access logs)
-          # Possible values: "allow_private", "blocked_ip_block", "allowed_ip_block", 
-          #                  "blocked_country", "allowed_country", "default_allow", "error"
-          # Example access log config: accesslog.fields.headers.names.X-Geoblock-Action=keep
-          # When empty, no header is added to blocked responses
+          logStatusHeader: "X-Geoblock-Status"
+          # Optional header to add simple pass/block status to the REQUEST
+          # Values: "pass" or "block"
+          # Useful for quick filtering in logs without parsing the detailed reason
+          # Example access log config: accesslog.fields.headers.names.X-Geoblock-Status=keep
+          
+          logStatusDetailHeader: "X-Geoblock-Decision"
+          # Optional header to add detailed decision result to the REQUEST
+          # Format: "pass:{reason}" or "block:{reason}"
+          # See the Observability section for all possible values
+          # Example access log config: accesslog.fields.headers.names.X-Geoblock-Decision=keep
+          
+          # DEPRECATED - use logStatusHeader/logStatusDetailHeader instead
+          # remediationHeadersCustomName: "X-Geoblock-Action"
+          # This added a header to the RESPONSE which exposed internal details to clients.
+          # The new headers add to the REQUEST so they're visible in access logs but not sent to clients.
 
 
 ```
@@ -429,7 +517,9 @@ The plugin processes requests in the following order:
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
 - Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment
 
-### Log Format
+### Log Format (Legacy)
+
+> **Note**: This section documents the built-in `logBannedRequests` feature which only logs blocked requests. For comprehensive observability of both allowed and blocked requests, use `logStatusHeader` and `logStatusDetailHeader` with Traefik access logs instead. See the [Observability](#observability) section for details.
 
 When using JSON logging, the following fields are included in **blocked request** log entries (note: allowed requests are not logged):
 
