@@ -46,9 +46,29 @@ This architecture ensures consistent response times and eliminates external serv
 
 ## 📥 Installation
 
-> **⚠️ IMPORTANT REQUIREMENTS:**
-> - **Traefik v3.5.0 or later** is required (unsafe operations support was introduced in v3.5.0)
+> ⚠️ IMPORTANT REQUIREMENTS
+>
+> - **Traefik v3.5.0 or later** is required (unsafe support was introduced in v3.5.0)
+>
 > - **Unsafe operations must be enabled** in Traefik configuration
+>
+>   ### Why "Unsafe" Mode is Required
+>
+>   Traefik may display this plugin as "unsafe", which can be misleading. **This does not mean the plugin is dangerous or insecure.**
+>
+>   **What "unsafe" actually means:**
+>
+>   Traefik plugins run inside [Yaegi](https://github.com/traefik/yaegi), a Go interpreter that sandboxes plugin code for security. By default, Yaegi restricts access to Go's [`unsafe`](https://pkg.go.dev/unsafe) package - a low-level Go standard library package used for memory operations and performance optimizations.
+>
+>   **Why this plugin needs it:**
+>
+>   This plugin depends on the [ip2location-go](https://github.com/ip2location/ip2location-go) library, which uses `unsafe.Pointer` for efficient byte-to-string conversions when reading the binary database file. This is a common Go performance optimization pattern that avoids unnecessary memory allocations during IP lookups.
+>
+>   ```go
+>   // Example from ip2location library - efficient string conversion
+>   return *(*string)(unsafe.Pointer(&b))
+>   ```
+>
 
 It is possible to install the [plugin locally](https://traefik.io/blog/using-private-plugins-in-traefik-proxy-2-5/) or to install it through [Traefik Plugins]([Plugins](https://plugins.traefik.io/plugins)).
 
