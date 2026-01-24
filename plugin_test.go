@@ -2307,3 +2307,236 @@ func TestExcludedPathsRegex_DomainBasedMatching(t *testing.T) {
 		})
 	}
 }
+
+func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
+	// Track the log header values that were set on the request
+	var capturedLogStatus string
+	var capturedLogStatusDetail string
+	captureHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedLogStatus = r.Header.Get("X-Geoblock-Status")
+		capturedLogStatusDetail = r.Header.Get("X-Geoblock-Decision")
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	cfg := &Config{
+		Enabled:               true,
+		DatabaseFilePath:      dbFilePath,
+		AllowedCountries:      []string{"AU"},
+		BlockedCountries:      []string{"US"},
+		DefaultAllow:          false,
+		AllowPrivate:          true,
+		DisallowedStatusCode:  http.StatusForbidden,
+		IPHeaders:             []string{"x-forwarded-for"},
+		IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+		CountryHeader:         "X-Country",
+		LogStatusHeader:       "X-Geoblock-Status",
+		LogStatusDetailHeader: "X-Geoblock-Decision",
+	}
+
+	plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+	if err != nil {
+		t.Fatalf("Failed to create plugin: %v", err)
+	}
+
+	tests := []struct {
+		name              string
+		ip                string
+		expectedStatus    int
+		expectedLogStatus string
+		expectedLogDetail string
+		description       string
+	}{
+		{
+			name:              "Allowed_AU_IP_should_have_pass_header",
+			ip:                "1.1.1.1", // AU IP
+			expectedStatus:    http.StatusTeapot,
+			expectedLogStatus: "pass",
+			expectedLogDetail: "pass:allowed_country",
+			description:       "AU IP should set headers to pass and pass:allowed_country",
+		},
+		{
+			name:              "Blocked_US_IP_should_have_block_header",
+			ip:                "8.8.8.8", // US IP
+			expectedStatus:    http.StatusForbidden,
+			expectedLogStatus: "block",
+			expectedLogDetail: "block:blocked_country",
+			description:       "US IP should set headers to block and block:blocked_country",
+		},
+		{
+			name:              "Allowed_private_IP_should_have_pass_header",
+			ip:                "192.168.1.1", // Private IP
+			expectedStatus:    http.StatusTeapot,
+			expectedLogStatus: "pass",
+			expectedLogDetail: "pass:allow_private",
+			description:       "Private IP should set headers to pass and pass:allow_private",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			capturedLogStatus = ""       // Reset
+			capturedLogStatusDetail = "" // Reset
+
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			req.Header.Set("X-Forwarded-For", tt.ip)
+
+			rr := httptest.NewRecorder()
+			plugin.ServeHTTP(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rr.Code)
+			}
+
+			// For allowed requests, check the headers on the forwarded request
+			if tt.expectedStatus == http.StatusTeapot {
+				if capturedLogStatus != tt.expectedLogStatus {
+					t.Errorf("Expected logStatusHeader '%s', got '%s'", tt.expectedLogStatus, capturedLogStatus)
+				}
+				if capturedLogStatusDetail != tt.expectedLogDetail {
+					t.Errorf("Expected logStatusDetailHeader '%s', got '%s'", tt.expectedLogDetail, capturedLogStatusDetail)
+				}
+			} else {
+				// For blocked requests, check the headers were set on the request
+				if req.Header.Get("X-Geoblock-Status") != tt.expectedLogStatus {
+					t.Errorf("Expected logStatusHeader '%s', got '%s'", tt.expectedLogStatus, req.Header.Get("X-Geoblock-Status"))
+				}
+				if req.Header.Get("X-Geoblock-Decision") != tt.expectedLogDetail {
+					t.Errorf("Expected logStatusDetailHeader '%s', got '%s'", tt.expectedLogDetail, req.Header.Get("X-Geoblock-Decision"))
+				}
+			}
+
+			t.Logf("SUCCESS: %s - IP: %s -> Status: %d, LogStatus: %s, LogDetail: %s",
+				tt.description, tt.ip, rr.Code, tt.expectedLogStatus, tt.expectedLogDetail)
+		})
+	}
+}
+
+func TestLogHeader_SkipReasons(t *testing.T) {
+	// Track the log header values that were set on the request
+	var capturedLogStatus string
+	var capturedLogStatusDetail string
+	captureHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedLogStatus = r.Header.Get("X-Geoblock-Status")
+		capturedLogStatusDetail = r.Header.Get("X-Geoblock-Decision")
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	t.Run("IgnoreVerb_should_set_pass_ignore_verb", func(t *testing.T) {
+		cfg := &Config{
+			Enabled:               true,
+			DatabaseFilePath:      dbFilePath,
+			BlockedCountries:      []string{"US"},
+			DefaultAllow:          false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusHeader:       "X-Geoblock-Status",
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			IgnoreVerbs:           []string{"OPTIONS"},
+		}
+
+		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		if err != nil {
+			t.Fatalf("Failed to create plugin: %v", err)
+		}
+
+		capturedLogStatus = ""
+		capturedLogStatusDetail = ""
+		req := httptest.NewRequest(http.MethodOptions, "/test", nil)
+		req.Header.Set("X-Forwarded-For", "8.8.8.8") // US IP (normally blocked)
+
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusTeapot {
+			t.Errorf("Expected status %d, got %d", http.StatusTeapot, rr.Code)
+		}
+		if capturedLogStatus != "pass" {
+			t.Errorf("Expected logStatusHeader 'pass', got '%s'", capturedLogStatus)
+		}
+		if capturedLogStatusDetail != "pass:ignore_verb" {
+			t.Errorf("Expected logStatusDetailHeader 'pass:ignore_verb', got '%s'", capturedLogStatusDetail)
+		}
+		t.Logf("SUCCESS: OPTIONS verb sets headers to pass and pass:ignore_verb")
+	})
+
+	t.Run("ExcludedRegex_should_set_pass_excluded_regex", func(t *testing.T) {
+		cfg := &Config{
+			Enabled:               true,
+			DatabaseFilePath:      dbFilePath,
+			BlockedCountries:      []string{"US"},
+			DefaultAllow:          false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusHeader:       "X-Geoblock-Status",
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			ExcludedPathsRegex:    "^[^/]*/api/.*",
+		}
+
+		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		if err != nil {
+			t.Fatalf("Failed to create plugin: %v", err)
+		}
+
+		capturedLogStatus = ""
+		capturedLogStatusDetail = ""
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/api/users", nil)
+		req.Host = "example.com"
+		req.Header.Set("X-Forwarded-For", "8.8.8.8") // US IP (normally blocked)
+
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusTeapot {
+			t.Errorf("Expected status %d, got %d", http.StatusTeapot, rr.Code)
+		}
+		if capturedLogStatus != "pass" {
+			t.Errorf("Expected logStatusHeader 'pass', got '%s'", capturedLogStatus)
+		}
+		if capturedLogStatusDetail != "pass:excluded_regex" {
+			t.Errorf("Expected logStatusDetailHeader 'pass:excluded_regex', got '%s'", capturedLogStatusDetail)
+		}
+		t.Logf("SUCCESS: Excluded regex path sets headers to pass and pass:excluded_regex")
+	})
+
+	t.Run("BypassHeader_should_set_pass_bypass_header", func(t *testing.T) {
+		cfg := &Config{
+			Enabled:               true,
+			DatabaseFilePath:      dbFilePath,
+			BlockedCountries:      []string{"US"},
+			DefaultAllow:          false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusHeader:       "X-Geoblock-Status",
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			BypassHeaders:         map[string]string{"X-Bypass": "secret123"},
+		}
+
+		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		if err != nil {
+			t.Fatalf("Failed to create plugin: %v", err)
+		}
+
+		capturedLogStatus = ""
+		capturedLogStatusDetail = ""
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("X-Forwarded-For", "8.8.8.8") // US IP (normally blocked)
+		req.Header.Set("X-Bypass", "secret123")
+
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusTeapot {
+			t.Errorf("Expected status %d, got %d", http.StatusTeapot, rr.Code)
+		}
+		if capturedLogStatus != "pass" {
+			t.Errorf("Expected logStatusHeader 'pass', got '%s'", capturedLogStatus)
+		}
+		if capturedLogStatusDetail != "pass:bypass_header" {
+			t.Errorf("Expected logStatusDetailHeader 'pass:bypass_header', got '%s'", capturedLogStatusDetail)
+		}
+		t.Logf("SUCCESS: Bypass header sets headers to pass and pass:bypass_header")
+	})
+}

@@ -31,6 +31,70 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
+## Observability
+
+The plugin is designed to provide detailed observability through **Traefik access logs** by adding headers to the **request** (not the response). This means:
+
+- Headers are visible in Traefik access logs but **not sent back to clients**
+- You can track geolocation and blocking decisions for all traffic
+- Useful for security analysis, debugging, and compliance reporting
+
+### Available Headers
+
+| Config Setting | Purpose | Example Values |
+|----------------|---------|----------------|
+| `countryHeader` | Country code of the request origin | `US`, `DE`, `PRIVATE` |
+| `logStatusHeader` | Simple pass/block status | `pass`, `block` |
+| `logStatusDetailHeader` | Detailed decision with reason | `pass:allowed_country`, `block:blocked_country` |
+
+### logStatusHeader Values
+
+Simple status indicating whether the request was allowed or blocked:
+- `pass` - Request was allowed through
+- `block` - Request was blocked
+
+### logStatusDetailHeader Values
+
+Detailed status with format `{action}:{reason}`:
+
+**Pass reasons (request allowed):**
+
+| Value | Description |
+|-------|-------------|
+| `pass:allow_private` | IP is private/internal (RFC 1918) and `allowPrivate` is true |
+| `pass:allowed_ip_block` | IP matched a CIDR range in `allowedIPBlocks` or `allowedIPBlocksDir` |
+| `pass:allowed_country` | Country code is in `allowedCountries` list |
+| `pass:default_allow` | No rules matched and `defaultAllow` is true |
+| `pass:ignore_verb` | HTTP method is in `ignoreVerbs` list (e.g., OPTIONS, HEAD) |
+| `pass:excluded_regex` | Request matched `excludedPathsRegex` pattern |
+| `pass:bypass_header` | Request contained a matching `bypassHeaders` header/value |
+
+**Block reasons (request denied):**
+
+| Value | Description |
+|-------|-------------|
+| `block:allow_private` | IP is private/internal but `allowPrivate` is false |
+| `block:blocked_ip_block` | IP matched a CIDR range in `blockedIPBlocks` or `blockedIPBlocksDir` |
+| `block:blocked_country` | Country code is in `blockedCountries` list |
+| `block:default_allow` | No rules matched and `defaultAllow` is false |
+| `block:error` | IP lookup failed and `banIfError` is true |
+
+### Traefik Access Log Configuration
+
+```yaml
+accessLog:
+  filePath: "/var/log/traefik/access.log"
+  format: json
+  fields:
+    headers:
+      names:
+        X-IPCountry: keep
+        X-Geoblock-Status: keep
+        X-Geoblock-Decision: keep
+```
+
+This gives you full visibility into geoblocking decisions without exposing internal logic to clients.
+
 ## Features
 
 - Block or allow requests based on country of origin (using ISO 3166-1 alpha-2 country codes)
@@ -381,7 +445,7 @@ http:
           databaseAutoUpdateCode: "DB1"              # Database product code to download (if using premium)
 
           #-------------------------------
-          # Response header settings
+          # Request header settings
           #-------------------------------  
           countryHeader: "X-IPCountry"  
           # Optional header to add the country code to the REQUEST (available in Traefik access logs)
@@ -391,13 +455,21 @@ http:
           # Note: Header is initially set to "PRIVATE" and only overridden by the first real country found
           # This ensures private IPs processed later cannot override legitimate country information
           
-          remediationHeadersCustomName: "X-Geoblock-Action"
-          # Optional header to add the blocking phase/reason to the RESPONSE when request is blocked
-          # This header is added to the HTTP response sent back to the client (available in Traefik access logs)
-          # Possible values: "allow_private", "blocked_ip_block", "allowed_ip_block", 
-          #                  "blocked_country", "allowed_country", "default_allow", "error"
-          # Example access log config: accesslog.fields.headers.names.X-Geoblock-Action=keep
-          # When empty, no header is added to blocked responses
+          logStatusHeader: "X-Geoblock-Status"
+          # Optional header to add simple pass/block status to the REQUEST
+          # Values: "pass" or "block"
+          # Useful for quick filtering in logs without parsing the detailed reason
+          # Example access log config: accesslog.fields.headers.names.X-Geoblock-Status=keep
+          
+          logStatusDetailHeader: "X-Geoblock-Decision"
+          # Optional header to add detailed decision result to the REQUEST
+          # Format: "pass:{reason}" or "block:{reason}"
+          # See the Observability section for all possible values
+          # Example access log config: accesslog.fields.headers.names.X-Geoblock-Decision=keep
+          
+          # DEPRECATED - use logStatusHeader/logStatusDetailHeader instead
+          # remediationHeadersCustomName: "X-Geoblock-Action"
+          # This added a header to the RESPONSE, but the new headers add to the REQUEST which is more useful for logging
 
 
 ```
