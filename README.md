@@ -20,8 +20,6 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 > 🔒 **ModSecurity CRS**: [david-garcia-garcia/traefik-modsecurity](https://github.com/david-garcia-garcia/traefik-modsecurity) - Web Application Firewall with OWASP Core Rule Set  
 > 🚦 **Ratelimit**: [Traefik Rate Limit](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/) - Control request rates and prevent abuse
 
-## Performance & Scalability
-
 **Designed for high-performance production environments:**
 
 - **No external API calls** - All geolocation lookups are performed using local IP2Location database files, ensuring zero latency from external services
@@ -30,6 +28,18 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 - **Hot-swappable database updates** - Database updates occur without middleware restart or service interruption
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
+
+## Performance and Stability Adivisory
+
+> **⚠️ You should not run middlewares as Yaegi plugins in production.**
+>
+> Traefik's default plugin system runs plugins via [Yaegi](https://github.com/traefik/yaegi) (a Go interpreter) at runtime. Middlewares run on every request, so they sit on the hot path. Using an interpreter for that workload has concrete drawbacks related to memory management, CPU usage and observability (see [feat: improve pprof experience by adding wrappers to interpreted functions by david-garcia-garcia · Pull Request #1712 · traefik/yaegi](https://github.com/traefik/yaegi/pull/1712))
+>
+> For production deployments where middlewares handle substantial traffic, use a Traefik build that **compiles those middlewares into the binary** instead of loading them as Yaegi plugins such as in [david-garcia-garcia/traefik-with-plugins: Traefik container with preloaded plugins in it](https://github.com/david-garcia-garcia/traefik-with-plugins)
+>
+> **For more details and discussion, read [Traefik issue #12213](https://github.com/traefik/traefik/issues/12213) in the Traefik issue queue.**
+
+## Performance & Scalability
 
 ## Observability
 
