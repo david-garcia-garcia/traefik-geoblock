@@ -13,8 +13,6 @@ import (
 	"log/slog"
 )
 
-//go:generate go run ./tools/dbdownload/main.go -o ./IP2LOCATION-LITE-DB1.IPV6.BIN
-
 // Add this constant near the top of the file, after imports
 const PrivateIpCountryAlias = "PRIVATE"
 

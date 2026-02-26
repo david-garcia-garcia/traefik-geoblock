@@ -235,6 +235,14 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             # HEAD response should only contain status headers, no Content-Type or body for blocked requests
             $headResponse | Should -Not -Match "Content-Type.*text/html"
         }
+
+        It "Should return configured status code for blocked POST requests" {
+            # POST requests are still geoblocked; they should return the configured disallowedStatusCode (default 403)
+            $statusCode = curl -s -o nul -w "%{http_code}" -X POST -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" "$script:BaseUrl/foo"
+
+            # Verify we get 403 (and not e.g. 204 No Content)
+            $statusCode | Should -Be "403"
+        }
     }
     
     Context "Auto-update Configuration" {

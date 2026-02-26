@@ -39,8 +39,6 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
-## Performance & Scalability
-
 ## Observability
 
 The plugin is designed to provide detailed observability through **Traefik access logs** by adding headers to the **request** (not the response). This means:
@@ -227,6 +225,12 @@ go test
 ```
 
 ## Configuration
+
+### IP2Location database
+
+When Traefik loads the plugin, it uses the plugin’s directory (the copied repo/source); if that directory contains `IP2LOCATION-LITE-DB1.IPV6.BIN`, the plugin can use it. You can also point to a file or directory via **`databaseFilePath`**, or put the file in the directory set by **`TRAEFIK_PLUGIN_GEOBLOCK_PATH`** (fallback). To all extent, this means that an database is provided out of the box as a fallback mechanism if an automatic update cannot be performed.
+
+To have the plugin download and use the latest DB automatically, set **`databaseAutoUpdate: true`** and **`databaseAutoUpdateDir`**; it then hot-swaps without restart (check every 24h; immediate update if the current DB is older than 1 month). See [Dynamic Configuration](#dynamic-configuration) for all options.
 
 ### Environment Variables
 
