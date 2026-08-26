@@ -115,15 +115,15 @@ type Config struct {
 // CreateConfig creates the default plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
-		DisallowedStatusCode:              http.StatusForbidden,
-		LogLevel:                          "info",                                   // Default to info logging
-		LogFormat:                         "text",                                   // Default to text format
-		BanIfError:                        true,                                     // Default to banning on errors
-		BypassHeaders:                     make(map[string]string),                  // Initialize empty map
-		IPHeaders:                         []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
-		IPHeaderStrategy:                  IPHeaderStrategyCheckAll,                 // Default to checking all IPs
-		DatabaseProvider: DatabaseProviderIP2Location, // Only implemented provider
-		CountryHeader:    "",                          // Default to empty thus not setting the header
+		DisallowedStatusCode: http.StatusForbidden,
+		LogLevel:             "info",                                   // Default to info logging
+		LogFormat:            "text",                                   // Default to text format
+		BanIfError:           true,                                     // Default to banning on errors
+		BypassHeaders:        make(map[string]string),                  // Initialize empty map
+		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,                 // Default to checking all IPs
+		DatabaseProvider:     DatabaseProviderIP2Location,              // Only implemented provider
+		CountryHeader:        "",                                       // Default to empty thus not setting the header
 	}
 }
 

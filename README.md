@@ -214,6 +214,12 @@ The codebase includes a full set of integration and unit tests:
 # Run unit tests
 go test
 
+# Throughput gates (also run in CI; skipped with -short)
+go test -run TestThroughput -v
+
+# Compare lookup/request cost before and after a change
+go test -bench=BenchmarkPlugin -benchmem
+
 # Run integration tests
 .\Test-Integration.ps
 ```
@@ -288,6 +294,10 @@ http:
           #-------------------------------
           databaseProvider: ip2location   # Only ip2location is implemented. Empty defaults to ip2location.
           ip2location_databaseFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+          # Deprecated aliases still work if the ip2location_ keys are unset:
+          # databaseFilePath, databaseAutoUpdate, databaseAutoUpdateDir,
+          # databaseAutoUpdateToken, databaseAutoUpdateCode.
+          # Prefer the ip2location_ keys; a startup warning is logged when aliases are set.
           # Can be:
           # - Full path: /path/to/IP2LOCATION-LITE-DB1.IPV6.BIN
           # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively). 

@@ -38,6 +38,12 @@ IP2Location-only settings SHALL live on Traefik Config as `ip2location_databaseF
 - **WHEN** `ip2location_databaseAutoUpdate` is true and a directory is set
 - **THEN** the IP2Location provider performs the existing init-from-dir and background update behavior
 
+#### Scenario: Deprecated unprefixed aliases
+- **WHEN** an unprefixed IP2Location key is set (`databaseFilePath`, `databaseAutoUpdate`, `databaseAutoUpdateDir`, `databaseAutoUpdateToken`, `databaseAutoUpdateCode`) and the matching `ip2location_` key is unset
+- **THEN** the plugin copies the unprefixed value onto the prefixed field
+- **AND** logs a deprecation warning
+- **AND** a set `ip2location_` key wins over its unprefixed alias
+
 ### Requirement: IP2Location implementation is isolated
 The IP2Location open, BIN version read, download, extract, and hot-swap SHALL live in the IP2Location provider package. A later vendor MUST be addable by implementing DatabaseProvider and adding a branch on `databaseProvider` without changing allow/block rules. The plugin MUST NOT type-assert a concrete vendor wrapper to read provider state.
 

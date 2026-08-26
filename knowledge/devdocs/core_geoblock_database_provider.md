@@ -17,6 +17,7 @@ Traefik Config key that names the implementation. Empty defaults to `ip2location
 
 - Set `databaseProvider` (or leave empty for `ip2location`).
 - Set that vendor's prefixed fields. Pass them only into that vendor's constructor.
+- Unprefixed IP2Location keys are deprecated aliases: `applyDeprecatedIP2LocationSettings` copies them when the `ip2location_` field is unset, then defaults the code to `DB1`. Do not default the new code in `CreateConfig` or Traefik old-only `databaseAutoUpdateCode` is ignored.
 - Call `LookupCountry(ip)` from the plugin. Map errors through existing `banIfError`.
 - Add a later vendor by implementing `Provider` and adding a switch branch. Do not type-assert a concrete wrapper in `plugin.go`.
 

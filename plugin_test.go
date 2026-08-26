@@ -2,6 +2,8 @@ package traefik_geoblock
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -409,6 +411,75 @@ func TestNew(t *testing.T) {
 		}
 		if plugin != nil {
 			t.Error("expected plugin to be nil when no filepath and no environment variable are provided")
+		}
+	})
+}
+
+func TestApplyDeprecatedIP2LocationSettings(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("maps old when new empty", func(t *testing.T) {
+		cfg := &Config{
+			DatabaseFilePath:        "./old.bin",
+			DatabaseAutoUpdate:      true,
+			DatabaseAutoUpdateDir:   "/old-dir",
+			DatabaseAutoUpdateToken: "tok",
+			DatabaseAutoUpdateCode:  "DB8BINIPV6",
+		}
+		applyDeprecatedIP2LocationSettings(cfg, logger)
+		if cfg.Ip2locationDatabaseFilePath != "./old.bin" {
+			t.Errorf("path: got %q", cfg.Ip2locationDatabaseFilePath)
+		}
+		if !cfg.Ip2locationDatabaseAutoUpdate {
+			t.Error("expected auto-update to map from deprecated field")
+		}
+		if cfg.Ip2locationDatabaseAutoUpdateDir != "/old-dir" {
+			t.Errorf("dir: got %q", cfg.Ip2locationDatabaseAutoUpdateDir)
+		}
+		if cfg.Ip2locationDatabaseAutoUpdateToken != "tok" {
+			t.Errorf("token: got %q", cfg.Ip2locationDatabaseAutoUpdateToken)
+		}
+		if cfg.Ip2locationDatabaseAutoUpdateCode != "DB8BINIPV6" {
+			t.Errorf("code: got %q", cfg.Ip2locationDatabaseAutoUpdateCode)
+		}
+	})
+
+	t.Run("prefixed wins", func(t *testing.T) {
+		cfg := &Config{
+			DatabaseFilePath:                   "./old.bin",
+			Ip2locationDatabaseFilePath:        "./new.bin",
+			DatabaseAutoUpdate:                 false,
+			Ip2locationDatabaseAutoUpdate:      true,
+			DatabaseAutoUpdateDir:              "/old-dir",
+			Ip2locationDatabaseAutoUpdateDir:   "/new-dir",
+			DatabaseAutoUpdateToken:            "old-tok",
+			Ip2locationDatabaseAutoUpdateToken: "new-tok",
+			DatabaseAutoUpdateCode:             "DB1",
+			Ip2locationDatabaseAutoUpdateCode:  "DB8BINIPV6",
+		}
+		applyDeprecatedIP2LocationSettings(cfg, logger)
+		if cfg.Ip2locationDatabaseFilePath != "./new.bin" {
+			t.Errorf("path: got %q", cfg.Ip2locationDatabaseFilePath)
+		}
+		if cfg.Ip2locationDatabaseAutoUpdateDir != "/new-dir" {
+			t.Errorf("dir: got %q", cfg.Ip2locationDatabaseAutoUpdateDir)
+		}
+		if cfg.Ip2locationDatabaseAutoUpdateToken != "new-tok" {
+			t.Errorf("token: got %q", cfg.Ip2locationDatabaseAutoUpdateToken)
+		}
+		if cfg.Ip2locationDatabaseAutoUpdateCode != "DB8BINIPV6" {
+			t.Errorf("code: got %q", cfg.Ip2locationDatabaseAutoUpdateCode)
+		}
+		if !cfg.Ip2locationDatabaseAutoUpdate {
+			t.Error("expected prefixed auto-update to stay true")
+		}
+	})
+
+	t.Run("defaults code to DB1", func(t *testing.T) {
+		cfg := &Config{}
+		applyDeprecatedIP2LocationSettings(cfg, logger)
+		if cfg.Ip2locationDatabaseAutoUpdateCode != "DB1" {
+			t.Errorf("code: got %q", cfg.Ip2locationDatabaseAutoUpdateCode)
 		}
 	})
 }
