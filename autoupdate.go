@@ -16,6 +16,15 @@ const (
 	tokenDownloadURL = "https://www.ip2location.com/download?token=%s&file=%s" // #nosec G101
 )
 
+// ip2locationDownloadURL builds the auto-update download URL.
+// With a token, file= is dbCode unchanged (the official package code).
+func ip2locationDownloadURL(token, dbCode string) string {
+	if token != "" {
+		return fmt.Sprintf(tokenDownloadURL, token, dbCode)
+	}
+	return liteDownloadURL
+}
+
 // UpdateIfNeeded checks if the database needs updating and performs the update if necessary.
 // If runSync is true, the update will be performed synchronously, otherwise it runs in background.
 func UpdateIfNeeded(dbPath string, runSync bool, logger *slog.Logger, config *Config) error {
@@ -131,14 +140,7 @@ func downloadAndUpdateDatabase(cfg *Config, logger *slog.Logger) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Download database
-	var downloadURL string
-	if cfg.DatabaseAutoUpdateToken != "" {
-		downloadURL = fmt.Sprintf(tokenDownloadURL, cfg.DatabaseAutoUpdateToken,
-			fmt.Sprintf("IP2LOCATION-LITE-%s.IPV6.BIN.ZIP", dbCode))
-	} else {
-		downloadURL = liteDownloadURL
-	}
+	downloadURL := ip2locationDownloadURL(cfg.DatabaseAutoUpdateToken, dbCode)
 
 	resp, err := http.Get(downloadURL) // #nosec G107
 	if err != nil {
