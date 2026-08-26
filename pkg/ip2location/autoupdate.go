@@ -1,4 +1,4 @@
-package traefik_geoblock
+package ip2location
 
 import (
 	"archive/zip"
@@ -9,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
 const (
@@ -27,14 +30,14 @@ func ip2locationDownloadURL(token, dbCode string) string {
 
 // UpdateIfNeeded checks if the database needs updating and performs the update if necessary.
 // If runSync is true, the update will be performed synchronously, otherwise it runs in background.
-func UpdateIfNeeded(dbPath string, runSync bool, logger *slog.Logger, config *Config) error {
+func UpdateIfNeeded(dbPath string, runSync bool, logger *slog.Logger, config *DatabaseConfig) error {
 	var performUpdate bool
 	if dbPath == "" {
 		// Empty path means we need to update
 		logger.Info("no database path provided, update needed")
 		performUpdate = true
 	} else {
-		dbDate, err := GetDateFromName(dbPath)
+		dbDate, err := dbutils.GetDateFromName(dbPath)
 		if err != nil {
 			logger.Warn("cannot determine database age", "error", err)
 			performUpdate = true
@@ -82,7 +85,7 @@ func findLatestDatabase(dir string, dbCode string) (string, error) {
 	var latestDate time.Time
 
 	for _, f := range files {
-		date, err := GetDateFromName(f)
+		date, err := dbutils.GetDateFromName(f)
 		if err != nil {
 			continue
 		}
@@ -96,7 +99,7 @@ func findLatestDatabase(dir string, dbCode string) (string, error) {
 	return latest, nil
 }
 
-func downloadAndUpdateDatabase(cfg *Config, logger *slog.Logger) error {
+func downloadAndUpdateDatabase(cfg *DatabaseConfig, logger *slog.Logger) error {
 	dbCode := cfg.DatabaseAutoUpdateCode
 	if dbCode == "" {
 		dbCode = "DB1"
@@ -205,7 +208,7 @@ func downloadAndUpdateDatabase(cfg *Config, logger *slog.Logger) error {
 
 	// Verify database and get version for naming
 	tmpDBPath := filepath.Join(tmpDir, "database.bin")
-	version, err := GetDatabaseVersion(tmpDBPath)
+	version, err := dbutils.GetDatabaseVersion(tmpDBPath)
 	if err != nil {
 		return fmt.Errorf("invalid database file: %w", err)
 	}
@@ -215,12 +218,12 @@ func downloadAndUpdateDatabase(cfg *Config, logger *slog.Logger) error {
 	finalPath := filepath.Join(cfg.DatabaseAutoUpdateDir, finalName)
 
 	// Check if the database file already exists (same version already downloaded)
-	if fileExists(finalPath) {
+	if fileutils.Exists(finalPath) {
 		logger.Warn("the available IP2Location database is not newer than the one already available, database did not update", "path", finalPath)
 		return nil
 	}
 
-	if err := copyFile(tmpDBPath, finalPath, false); err != nil {
+	if err := fileutils.Copy(tmpDBPath, finalPath, false); err != nil {
 		return fmt.Errorf("failed to copy database to final location: %w", err)
 	}
 

@@ -1,4 +1,4 @@
-package traefik_geoblock
+package fileutils
 
 import (
 	"fmt"
@@ -157,27 +157,23 @@ func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *s
 	return "", fmt.Errorf("file not found: %s (searched in %s and TRAEFIK_PLUGIN_GEOBLOCK_PATH)", defaultFile, originalPath)
 }
 
-// Global instance for backward compatibility and convenience
-var fileUtils = NewFileUtils()
+// Default is the shared FileUtils used by package-level helpers.
+var Default = NewFileUtils()
 
-// Convenience functions that delegate to the global instance
-// These maintain backward compatibility with existing code
-
-// fileExists is a convenience function that uses the global FileUtils instance
-func fileExists(filename string) bool {
-	return fileUtils.ExistsAndIsFile(filename)
+// Exists reports whether filename exists and is a file.
+func Exists(filename string) bool {
+	return Default.ExistsAndIsFile(filename)
 }
 
-// copyFile is a convenience function that uses the global FileUtils instance
-func copyFile(src string, dst string, overwrite bool) error {
-	return fileUtils.Copy(src, dst, overwrite)
+// Copy copies src to dst using Default.
+func Copy(src string, dst string, overwrite bool) error {
+	return Default.Copy(src, dst, overwrite)
 }
 
-// searchFile is a convenience function that uses the global FileUtils instance
-func searchFile(baseFile string, defaultFile string, logger *slog.Logger) string {
-	result, err := fileUtils.Search(baseFile, defaultFile, logger)
+// Search finds a file using Default. On error it returns "".
+func Search(baseFile string, defaultFile string, logger *slog.Logger) string {
+	result, err := Default.Search(baseFile, defaultFile, logger)
 	if err != nil {
-		// For backward compatibility, return empty string on error
 		return ""
 	}
 	return result

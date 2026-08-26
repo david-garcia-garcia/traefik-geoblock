@@ -49,21 +49,14 @@ The plugin is designed to provide detailed observability through **Traefik acces
 - You can track geolocation and blocking decisions for all traffic
 - Useful for security analysis, debugging, and compliance reporting
 
-> **Recommended Approach**: Using `logStatusHeader` and `logStatusDetailHeader` with Traefik access logs is the recommended way to observe plugin behavior. This provides complete visibility into both allowed and blocked requests with detailed decision reasons. The built-in `logBannedRequests` feature only logs blocked requests and is considered a legacy approach.
+> **Recommended Approach**: Set `logStatusDetailHeader` and keep that name in Traefik access logs. That is the only plugin decision header. It covers both allowed and blocked requests (`pass:{reason}` / `block:{reason}`).
 
 ### Available Headers
 
 | Config Setting | Purpose | Example Values |
 |----------------|---------|----------------|
 | `countryHeader` | Country code of the request origin | `US`, `DE`, `PRIVATE` |
-| `logStatusHeader` | Simple pass/block status | `pass`, `block` |
-| `logStatusDetailHeader` | Detailed decision with reason | `pass:allowed_country`, `block:blocked_country` |
-
-### logStatusHeader Values
-
-Simple status indicating whether the request was allowed or blocked:
-- `pass` - Request was allowed through
-- `block` - Request was blocked
+| `logStatusDetailHeader` | Decision with reason | `pass:allowed_country`, `block:blocked_country` |
 
 ### logStatusDetailHeader Values
 
@@ -111,7 +104,6 @@ accessLog:
     headers:
       names:
         X-IPCountry: keep
-        X-Geoblock-Status: keep
         X-Geoblock-Decision: keep
 ```
 
@@ -207,7 +199,7 @@ experimental:
 - `download.ip2location.com`
 - `www.ip2location.com`
 
-> **Note:** If automatic updates are disabled (`databaseAutoUpdate: false`), no external network access is required and the plugin operates entirely offline.
+> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate: false`), no external network access is required and the plugin operates entirely offline.
 
 ## Testing and development
 
@@ -294,7 +286,8 @@ http:
           #-------------------------------
           # Database Configuration
           #-------------------------------
-          databaseFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+          databaseProvider: ip2location   # Only ip2location is implemented. Empty defaults to ip2location.
+          ip2location_databaseFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
           # Can be:
           # - Full path: /path/to/IP2LOCATION-LITE-DB1.IPV6.BIN
           # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively). 
@@ -442,32 +435,23 @@ http:
           #-------------------------------
           logLevel: "info"                  # Available: debug, info, warn, error
           logFormat: "json"                 # Available: json, text
-          logPath: "/var/log/geoblock.log"  # Empty for Traefik's standard output
-          logBannedRequests: true           # Log blocked requests. They will be logged at info level.
-          # NOTE: logBannedRequests is not the recommended way to observe plugin behavior.
-          # Use logStatusHeader and logStatusDetailHeader with Traefik access logs instead,
-          # which provides visibility into both allowed AND blocked requests with detailed reasons.
-          fileLogBufferSizeBytes: 1024      # Buffer size for file logging in bytes (default: 1024)
-          fileLogBufferTimeoutSeconds: 2    # Buffer timeout for file logging in seconds (default: 2)
-          # File logging uses buffered writes for better performance. The buffer is flushed when:
-          # - The buffer reaches fileLogBufferSizeBytes size
-          # - fileLogBufferTimeoutSeconds seconds have passed since the last flush
-          # - The logger is closed/shutdown
+          # Plugin logs go to stdout (Traefik's process log). There is no file logger.
+          # Observe allow/block decisions with logStatusDetailHeader in access logs.
 
           #-------------------------------
-          # Database Auto-Update Settings
+          # Database Auto-Update Settings (IP2Location)
           #-------------------------------
-          databaseAutoUpdate: true                   
+          ip2location_databaseAutoUpdate: true                   
           # Enable automatic database updates with hot-swapping. Updates check every 24 hours
           # and immediately on startup if the current database is older than 1 month.
           # Updated databases are hot-swapped without requiring middleware restart.
           # Make sure you whitelist in your FW domains ["download.ip2location.com", "www.ip2location.com"]
-          databaseAutoUpdateDir: "/data/ip2database" 
+          ip2location_databaseAutoUpdateDir: "/data/ip2database" 
           # Directory to store updated databases. This must be a persistent volume in the traefik pod.
           # The plugin uses a singleton pattern - multiple middlewares with identical configurations
           # share the same database factory and hot-swap operations.
-          databaseAutoUpdateToken: ""                # IP2Location download token (if using premium)
-          databaseAutoUpdateCode: "DB8BINIPV6"       # Official IP2Location package code for file= (e.g. DB8BINIPV6, DB1LITEBINIPV6). Sent unchanged when a token is set. Not a short product like DB8.
+          ip2location_databaseAutoUpdateToken: ""                # IP2Location download token (if using premium)
+          ip2location_databaseAutoUpdateCode: "DB8BINIPV6"       # Official IP2Location package code for file= (e.g. DB8BINIPV6, DB1LITEBINIPV6). Sent unchanged when a token is set. Not a short product like DB8.
 
           #-------------------------------
           # Request header settings
@@ -480,22 +464,11 @@ http:
           # Note: Header is initially set to "PRIVATE" and only overridden by the first real country found
           # This ensures private IPs processed later cannot override legitimate country information
           
-          logStatusHeader: "X-Geoblock-Status"
-          # Optional header to add simple pass/block status to the REQUEST
-          # Values: "pass" or "block"
-          # Useful for quick filtering in logs without parsing the detailed reason
-          # Example access log config: accesslog.fields.headers.names.X-Geoblock-Status=keep
-          
           logStatusDetailHeader: "X-Geoblock-Decision"
-          # Optional header to add detailed decision result to the REQUEST
+          # Optional header to add the decision to the REQUEST
           # Format: "pass:{reason}" or "block:{reason}"
           # See the Observability section for all possible values
           # Example access log config: accesslog.fields.headers.names.X-Geoblock-Decision=keep
-          
-          # DEPRECATED - use logStatusHeader/logStatusDetailHeader instead
-          # remediationHeadersCustomName: "X-Geoblock-Action"
-          # This added a header to the RESPONSE which exposed internal details to clients.
-          # The new headers add to the REQUEST so they're visible in access logs but not sent to clients.
 
 
 ```
@@ -526,49 +499,6 @@ The plugin processes requests in the following order:
 - Country header behavior: Header is initially set to "PRIVATE" and only overridden by the first real country found, preventing private IPs from overriding legitimate geolocation information
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
 - Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment
-
-### Log Format (Legacy)
-
-> **Note**: This section documents the built-in `logBannedRequests` feature which only logs blocked requests. For comprehensive observability of both allowed and blocked requests, use `logStatusHeader` and `logStatusDetailHeader` with Traefik access logs instead. See the [Observability](#observability) section for details.
-
-When using JSON logging, the following fields are included in **blocked request** log entries (note: allowed requests are not logged):
-
-- `time`: Timestamp of the request in ISO 8601 format
-- `level`: Log level (debug, info, warn, error)
-- `msg`: Log message describing the action
-- `plugin`: Plugin identifier
-- `ip`: The IP address that triggered the action
-- `ip_chain`: Full chain of IP addresses from X-Forwarded-For header
-- `country`: Country code or "PRIVATE" for internal networks
-- `host`: Request host header
-- `method`: HTTP method used
-- `phase`: Processing phase where the action occurred:
-  - `allow_private`: Private network check
-  - `blocked_ip_block`: IP block rules check (blocked)
-  - `allowed_ip_block`: IP block rules check (allowed)
-  - `blocked_country`: Country rules check (blocked)
-  - `allowed_country`: Country rules check (allowed)
-  - `default_allow`: Default allow/deny rule
-- `path`: Request path
-
-Example log entry:
-```json
-{
-    "time": "2025-03-01T19:24:04.414051815Z",
-    "level": "INFO",
-    "msg": "blocked request",
-    "plugin": "geoblock@docker",
-    "ip": "172.18.0.1",
-    "ip_chain": "",
-    "country": "PRIVATE",
-    "host": "localhost:8000",
-    "method": "GET",
-    "phase": "allow_private",
-    "path": "/bar"
-}
-```
-
-
 
 ---
 

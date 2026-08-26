@@ -8,7 +8,8 @@ testData:
   # to load local files. To prevent errors, the plugin is disabled here.
   # This will cause the plugin to not attempt to load the database file.
   enabled: false
-  # databaseFilePath: IP2LOCATION-LITE-DB1.IPV6.BIN
+  # databaseProvider: ip2location
+  # ip2location_databaseFilePath: IP2LOCATION-LITE-DB1.IPV6.BIN
   # allowedCountries: [ "CH", "DE" ]
   # blockedCountries: [ "RU" ]
   # defaultAllow: false

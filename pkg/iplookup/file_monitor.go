@@ -1,4 +1,4 @@
-package traefik_geoblock
+package iplookup
 
 import (
 	"bufio"

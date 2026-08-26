@@ -2,7 +2,6 @@ package traefik_geoblock
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,12 +10,20 @@ import (
 	"strings"
 
 	"log/slog"
+
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
 )
 
 //go:generate go run ./tools/dbdownload/main.go -o ./IP2LOCATION-LITE-DB1.IPV6.BIN
 
-// Add this constant near the top of the file, after imports
-const PrivateIpCountryAlias = "PRIVATE"
+const (
+	PrivateIpCountryAlias       = "PRIVATE"
+	DatabaseProviderIP2Location = "ip2location"
+)
 
 // Log status constants for observability headers
 const (
@@ -48,11 +55,27 @@ const (
 // Config defines the plugin configuration.
 type Config struct {
 	// Core settings
-	Enabled          bool   // Enable/disable the plugin
-	DatabaseFilePath string // Path to ip2location database file
-	DefaultAllow     bool   // Default behavior when IP matches no rules
-	AllowPrivate     bool   // Allow requests from private/internal networks
-	BanIfError       bool   // Ban requests if IP lookup fails
+	Enabled      bool // Enable/disable the plugin
+	DefaultAllow bool // Default behavior when IP matches no rules
+	AllowPrivate bool // Allow requests from private/internal networks
+	BanIfError   bool // Ban requests if IP lookup fails
+
+	// Database provider. Empty defaults to ip2location. Only ip2location is implemented.
+	DatabaseProvider string `json:"databaseProvider,omitempty" mapstructure:"databaseProvider"`
+
+	// IP2Location provider settings. Each vendor keeps its own prefixed keys.
+	Ip2locationDatabaseFilePath        string `json:"ip2location_databaseFilePath,omitempty" mapstructure:"ip2location_databaseFilePath"`
+	Ip2locationDatabaseAutoUpdate      bool   `json:"ip2location_databaseAutoUpdate,omitempty" mapstructure:"ip2location_databaseAutoUpdate"`
+	Ip2locationDatabaseAutoUpdateDir   string `json:"ip2location_databaseAutoUpdateDir,omitempty" mapstructure:"ip2location_databaseAutoUpdateDir"`
+	Ip2locationDatabaseAutoUpdateToken string `json:"ip2location_databaseAutoUpdateToken,omitempty" mapstructure:"ip2location_databaseAutoUpdateToken"`
+	Ip2locationDatabaseAutoUpdateCode  string `json:"ip2location_databaseAutoUpdateCode,omitempty" mapstructure:"ip2location_databaseAutoUpdateCode"`
+
+	// Deprecated unprefixed aliases. Copied onto the ip2location_ fields when those are unset.
+	DatabaseFilePath        string `json:"databaseFilePath,omitempty" mapstructure:"databaseFilePath"`
+	DatabaseAutoUpdate      bool   `json:"databaseAutoUpdate,omitempty" mapstructure:"databaseAutoUpdate"`
+	DatabaseAutoUpdateDir   string `json:"databaseAutoUpdateDir,omitempty" mapstructure:"databaseAutoUpdateDir"`
+	DatabaseAutoUpdateToken string `json:"databaseAutoUpdateToken,omitempty" mapstructure:"databaseAutoUpdateToken"`
+	DatabaseAutoUpdateCode  string `json:"databaseAutoUpdateCode,omitempty" mapstructure:"databaseAutoUpdateCode"`
 
 	// Country-based rules (ISO 3166-1 alpha-2 format)
 	AllowedCountries []string // Whitelist of countries to allow
@@ -68,16 +91,11 @@ type Config struct {
 	DisallowedStatusCode  int    // HTTP status code for blocked requests
 	BanHtmlFilePath       string // Custom HTML template for blocked requests
 	CountryHeader         string // Header to write the country code to (on REQUEST)
-	LogStatusHeader       string // Header to write simple status to (on REQUEST): "pass" or "block"
 	LogStatusDetailHeader string // Header to write detailed status to (on REQUEST): "pass:{reason}" or "block:{reason}"
 
 	// Logging configuration
-	LogLevel                    string // Log level: "debug", "info", "warn", "error"
-	LogFormat                   string // Log format: "json" or "text"
-	LogPath                     string // Log destination: "stdout", "stderr", or file path
-	LogBannedRequests           bool   // Log blocked requests
-	FileLogBufferSizeBytes      int    // Buffer size for file logging in bytes (default: 1024)
-	FileLogBufferTimeoutSeconds int    // Buffer timeout for file logging in seconds (default: 2)
+	LogLevel  string // Log level: "debug", "info", "warn", "error"
+	LogFormat string // Log format: "json" or "text"
 
 	// BypassHeaders is a map of header names to values that, when matched,
 	// will skip the geoblocking check entirely
@@ -92,64 +110,46 @@ type Config struct {
 
 	// Path exclusion
 	ExcludedPathsRegex string // Regular expression to match paths that should skip blocking (still enriched with GeoIP)
-
-	// Remediation settings
-	RemediationHeadersCustomName string // Name of the header to add to blocked responses indicating the phase/reason
-
-	// Auto-update settings
-	DatabaseAutoUpdate      bool   `json:"databaseAutoUpdate,omitempty"`
-	DatabaseAutoUpdateDir   string `json:"databaseAutoUpdateDir,omitempty"`
-	DatabaseAutoUpdateToken string `json:"databaseAutoUpdateToken,omitempty"`
-	DatabaseAutoUpdateCode  string `json:"databaseAutoUpdateCode,omitempty"`
 }
 
 // CreateConfig creates the default plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
-		DisallowedStatusCode:         http.StatusForbidden,
-		LogLevel:                     "info",                                   // Default to info logging
-		LogFormat:                    "text",                                   // Default to text format
-		LogPath:                      "",                                       // Default to traefik
-		BanIfError:                   true,                                     // Default to banning on errors
-		BypassHeaders:                make(map[string]string),                  // Initialize empty map
-		IPHeaders:                    []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
-		IPHeaderStrategy:             IPHeaderStrategyCheckAll,                 // Default to checking all IPs
-		DatabaseAutoUpdateCode:       "DB1",                                    // Default database code
-		LogBannedRequests:            true,                                     // Default to logging blocked requests
-		CountryHeader:                "",                                       // Default to empty thus not setting the header
-		RemediationHeadersCustomName: "",                                       // Default to empty thus not setting the header
-		FileLogBufferSizeBytes:       1024,                                     // Default buffer size 1024 bytes
-		FileLogBufferTimeoutSeconds:  2,                                        // Default timeout 2 seconds
+		DisallowedStatusCode:              http.StatusForbidden,
+		LogLevel:                          "info",                                   // Default to info logging
+		LogFormat:                         "text",                                   // Default to text format
+		BanIfError:                        true,                                     // Default to banning on errors
+		BypassHeaders:                     make(map[string]string),                  // Initialize empty map
+		IPHeaders:                         []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
+		IPHeaderStrategy:                  IPHeaderStrategyCheckAll,                 // Default to checking all IPs
+		DatabaseProvider: DatabaseProviderIP2Location, // Only implemented provider
+		CountryHeader:    "",                          // Default to empty thus not setting the header
 	}
 }
 
 // Update the Plugin struct to store the ban HTML content instead of template
 type Plugin struct {
-	next                         http.Handler
-	name                         string
-	databaseFile                 string           // Just for testing purposes
-	db                           *DatabaseWrapper // Changed from ip2location.DB to DatabaseWrapper
-	enabled                      bool
-	allowedCountries             map[string]struct{} // Instead of []string to improve lookup performance
-	blockedCountries             map[string]struct{} // Instead of []string to improve lookup performance
-	defaultAllow                 bool
-	allowPrivate                 bool
-	banIfError                   bool
-	disallowedStatusCode         int
-	allowedIPBlocks              *IpLookupFileMonitor // Fast radix tree-based allowed IP block lookups
-	blockedIPBlocks              *IpLookupFileMonitor // Fast radix tree-based blocked IP block lookups
-	banHtmlContent               string               // Changed from banHtmlTemplate
-	logger                       *slog.Logger
-	bypassHeaders                map[string]string
-	ipHeaders                    []string            // List of headers to check for client IP addresses
-	ipHeaderStrategy             string              // Strategy for processing multiple IP addresses
-	ignoreVerbs                  map[string]struct{} // Set of HTTP verbs to ignore for blocking
-	excludedPathsRegex           *regexp.Regexp      // Compiled regex for excluded paths
-	logBannedRequests            bool
-	countryHeader                string
-	logStatusHeader              string // Header to write simple status on REQUEST: "pass" or "block"
-	logStatusDetailHeader        string // Header to write detailed status on REQUEST: "pass:{reason}" or "block:{reason}"
-	remediationHeadersCustomName string // Name of the header to add to blocked responses (deprecated)
+	next                  http.Handler
+	name                  string
+	db                    dbprovider.Provider
+	enabled               bool
+	allowedCountries      map[string]struct{} // Instead of []string to improve lookup performance
+	blockedCountries      map[string]struct{} // Instead of []string to improve lookup performance
+	defaultAllow          bool
+	allowPrivate          bool
+	banIfError            bool
+	disallowedStatusCode  int
+	allowedIPBlocks       *iplookup.IpLookupFileMonitor
+	blockedIPBlocks       *iplookup.IpLookupFileMonitor
+	banHtmlContent        string // Changed from banHtmlTemplate
+	logger                *slog.Logger
+	bypassHeaders         map[string]string
+	ipHeaders             []string            // List of headers to check for client IP addresses
+	ipHeaderStrategy      string              // Strategy for processing multiple IP addresses
+	ignoreVerbs           map[string]struct{} // Set of HTTP verbs to ignore for blocking
+	excludedPathsRegex    *regexp.Regexp      // Compiled regex for excluded paths
+	countryHeader         string
+	logStatusDetailHeader string
 }
 
 // New creates a new plugin instance.
@@ -162,14 +162,11 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		return nil, fmt.Errorf("%s: no config provided", name)
 	}
 
-	bootstrapLogger := createBootstrapLogger(name, cfg.LogLevel)
-
-	// Create logger first so we can use it for debugging
-	logger := createLogger(ctx, name, cfg.LogLevel, cfg.LogFormat, cfg.LogPath, cfg.FileLogBufferSizeBytes, cfg.FileLogBufferTimeoutSeconds, bootstrapLogger)
+	bootstrapLogger := logging.NewBootstrap(name, cfg.LogLevel)
+	logger := logging.New(name, cfg.LogLevel, cfg.LogFormat, bootstrapLogger)
 	logger.Debug("initializing plugin",
 		"logLevel", cfg.LogLevel,
-		"logFormat", cfg.LogFormat,
-		"logPath", cfg.LogPath)
+		"logFormat", cfg.LogFormat)
 
 	if !cfg.Enabled {
 		bootstrapLogger.Warn("plugin disabled")
@@ -200,33 +197,20 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 			IPHeaderStrategyCheckAll, IPHeaderStrategyCheckFirst, IPHeaderStrategyCheckFirstNonePrivate)
 	}
 
-	// Create database configuration
-	dbConfig := &DatabaseConfig{
-		DatabaseFilePath:        cfg.DatabaseFilePath,
-		DatabaseAutoUpdate:      cfg.DatabaseAutoUpdate,
-		DatabaseAutoUpdateDir:   cfg.DatabaseAutoUpdateDir,
-		DatabaseAutoUpdateToken: cfg.DatabaseAutoUpdateToken,
-		DatabaseAutoUpdateCode:  cfg.DatabaseAutoUpdateCode,
-	}
+	applyDeprecatedIP2LocationSettings(cfg, bootstrapLogger)
 
-	// Get database factory - uses singleton pattern per database path
-	// Using the bootstrap logger here because the database factory is shared between all plugins
-	factory, err := GetDatabaseFactory(dbConfig, bootstrapLogger)
+	// Bootstrap logger: the provider/factory is shared between plugin instances.
+	db, err := openDatabaseProvider(cfg, bootstrapLogger)
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to get database factory: %w", name, err)
+		return nil, fmt.Errorf("%s: failed to get database provider: %w", name, err)
 	}
 
-	// Get the database wrapper
-	db := factory.GetWrapper()
-	databasePath := db.GetPath()
-
-	// Create separate IP lookup file monitors with radix trees for fast lookups and file monitoring
-	allowedIPHelper, err := NewIpLookupFileMonitor(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
+	allowedIPHelper, err := iplookup.NewIpLookupFileMonitor(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading allowed IP blocks: %w", name, err)
 	}
 
-	blockedIPHelper, err := NewIpLookupFileMonitor(cfg.BlockedIPBlocks, cfg.BlockedIPBlocksDir, logger)
+	blockedIPHelper, err := iplookup.NewIpLookupFileMonitor(cfg.BlockedIPBlocks, cfg.BlockedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading blocked IP blocks: %w", name, err)
 	}
@@ -235,7 +219,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 
 	if cfg.BanHtmlFilePath != "" {
 		var err error
-		cfg.BanHtmlFilePath, err = fileUtils.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
+		cfg.BanHtmlFilePath, err = fileutils.Default.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to find ban HTML file: %w", name, err)
 		}
@@ -276,34 +260,96 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 
 	plugin := &Plugin{
-		next:                         next,
-		name:                         name,
-		databaseFile:                 databasePath,
-		db:                           db,
-		enabled:                      cfg.Enabled,
-		allowedCountries:             allowedCountries,
-		blockedCountries:             blockedCountries,
-		defaultAllow:                 cfg.DefaultAllow,
-		allowPrivate:                 cfg.AllowPrivate,
-		banIfError:                   cfg.BanIfError,
-		disallowedStatusCode:         cfg.DisallowedStatusCode,
-		allowedIPBlocks:              allowedIPHelper,
-		blockedIPBlocks:              blockedIPHelper,
-		banHtmlContent:               banHtmlContent,
-		bypassHeaders:                cfg.BypassHeaders,
-		ipHeaders:                    cfg.IPHeaders,
-		ipHeaderStrategy:             cfg.IPHeaderStrategy,
-		ignoreVerbs:                  ignoreVerbs,
-		excludedPathsRegex:           excludedPathsRegex,
-		logger:                       logger,
-		logBannedRequests:            cfg.LogBannedRequests,
-		countryHeader:                cfg.CountryHeader,
-		logStatusHeader:              cfg.LogStatusHeader,
-		logStatusDetailHeader:        cfg.LogStatusDetailHeader,
-		remediationHeadersCustomName: cfg.RemediationHeadersCustomName,
+		next:                  next,
+		name:                  name,
+		db:                    db,
+		enabled:               cfg.Enabled,
+		allowedCountries:      allowedCountries,
+		blockedCountries:      blockedCountries,
+		defaultAllow:          cfg.DefaultAllow,
+		allowPrivate:          cfg.AllowPrivate,
+		banIfError:            cfg.BanIfError,
+		disallowedStatusCode:  cfg.DisallowedStatusCode,
+		allowedIPBlocks:       allowedIPHelper,
+		blockedIPBlocks:       blockedIPHelper,
+		banHtmlContent:        banHtmlContent,
+		bypassHeaders:         cfg.BypassHeaders,
+		ipHeaders:             cfg.IPHeaders,
+		ipHeaderStrategy:      cfg.IPHeaderStrategy,
+		ignoreVerbs:           ignoreVerbs,
+		excludedPathsRegex:    excludedPathsRegex,
+		logger:                logger,
+		countryHeader:         cfg.CountryHeader,
+		logStatusDetailHeader: cfg.LogStatusDetailHeader,
 	}
 
 	return plugin, nil
+}
+
+// applyDeprecatedIP2LocationSettings copies unprefixed IP2Location keys onto the
+// ip2location_ fields when those are unset, then defaults the database code to DB1.
+// Prefixed values win. CreateConfig must not pre-fill the new code field or an
+// old-only databaseAutoUpdateCode would be ignored after Traefik decode.
+func applyDeprecatedIP2LocationSettings(cfg *Config, logger *slog.Logger) {
+	used := make([]string, 0, 5)
+	if cfg.DatabaseFilePath != "" {
+		used = append(used, "databaseFilePath")
+		if cfg.Ip2locationDatabaseFilePath == "" {
+			cfg.Ip2locationDatabaseFilePath = cfg.DatabaseFilePath
+		}
+	}
+	if cfg.DatabaseAutoUpdate {
+		used = append(used, "databaseAutoUpdate")
+		if !cfg.Ip2locationDatabaseAutoUpdate {
+			cfg.Ip2locationDatabaseAutoUpdate = true
+		}
+	}
+	if cfg.DatabaseAutoUpdateDir != "" {
+		used = append(used, "databaseAutoUpdateDir")
+		if cfg.Ip2locationDatabaseAutoUpdateDir == "" {
+			cfg.Ip2locationDatabaseAutoUpdateDir = cfg.DatabaseAutoUpdateDir
+		}
+	}
+	if cfg.DatabaseAutoUpdateToken != "" {
+		used = append(used, "databaseAutoUpdateToken")
+		if cfg.Ip2locationDatabaseAutoUpdateToken == "" {
+			cfg.Ip2locationDatabaseAutoUpdateToken = cfg.DatabaseAutoUpdateToken
+		}
+	}
+	if cfg.DatabaseAutoUpdateCode != "" {
+		used = append(used, "databaseAutoUpdateCode")
+		if cfg.Ip2locationDatabaseAutoUpdateCode == "" {
+			cfg.Ip2locationDatabaseAutoUpdateCode = cfg.DatabaseAutoUpdateCode
+		}
+	}
+	if len(used) > 0 {
+		logger.Warn("deprecated IP2Location settings are set; use the ip2location_ prefixed keys",
+			"deprecated", used)
+	}
+	if cfg.Ip2locationDatabaseAutoUpdateCode == "" {
+		cfg.Ip2locationDatabaseAutoUpdateCode = "DB1"
+	}
+}
+
+// openDatabaseProvider constructs the geo DatabaseProvider selected by Config.
+// Empty DatabaseProvider defaults to ip2location. Unknown values fail.
+func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
+	name := strings.TrimSpace(cfg.DatabaseProvider)
+	if name == "" {
+		name = DatabaseProviderIP2Location
+	}
+	switch strings.ToLower(name) {
+	case DatabaseProviderIP2Location:
+		return ip2location.New(ip2location.DatabaseConfig{
+			DatabaseFilePath:        cfg.Ip2locationDatabaseFilePath,
+			DatabaseAutoUpdate:      cfg.Ip2locationDatabaseAutoUpdate,
+			DatabaseAutoUpdateDir:   cfg.Ip2locationDatabaseAutoUpdateDir,
+			DatabaseAutoUpdateToken: cfg.Ip2locationDatabaseAutoUpdateToken,
+			DatabaseAutoUpdateCode:  cfg.Ip2locationDatabaseAutoUpdateCode,
+		}, logger)
+	default:
+		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)
+	}
 }
 
 // isExcludedByRegex checks if the request matches the excluded paths regex.
@@ -320,9 +366,6 @@ func (p Plugin) isExcludedByRegex(host, path string) bool {
 // setLogHeaders sets the log status headers on the request for observability.
 // status is "pass" or "block", reason is the detailed reason (e.g., "allowed_country").
 func (p Plugin) setLogHeaders(req *http.Request, status, reason string) {
-	if p.logStatusHeader != "" {
-		req.Header.Set(p.logStatusHeader, status)
-	}
 	if p.logStatusDetailHeader != "" {
 		req.Header.Set(p.logStatusDetailHeader, status+":"+reason)
 	}
@@ -446,17 +489,6 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 
 		if !allowed && passReason == PhaseNone {
-			if p.logBannedRequests {
-				p.logger.Info("blocked request",
-					"ip", ip,
-					"ip_chain", ipChain,
-					"country", country,
-					"host", req.Host,
-					"method", req.Method,
-					"phase", phase,
-					"path", req.URL.Path,
-					"remote_addr", req.RemoteAddr)
-			}
 			p.setLogHeaders(req, LogStatusBlock, phase)
 			p.serveBanHtml(rw, ip, country, phase, req.Method)
 			return
@@ -601,17 +633,7 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, country string, phase strin
 
 // Lookup queries the ip2location database for a given IP address.
 func (p Plugin) Lookup(ip string) (string, error) {
-	record, err := p.db.Get_country_short(ip)
-	if err != nil {
-		return "", err
-	}
-
-	// Avoid redundant assignment and string conversion
-	if strings.HasPrefix(strings.ToLower(record.Country_short), "invalid") {
-		return "", errors.New(record.Country_short)
-	}
-
-	return record.Country_short, nil
+	return p.db.LookupCountry(ip)
 }
 
 // isAllowedIPBlocks checks if an IP is allowed based on the allowed CIDR blocks using fast radix tree lookup
@@ -626,11 +648,6 @@ func (p Plugin) isBlockedIPBlocks(ipAddr net.IP) (bool, int, error) {
 
 // Update the serveBanHtml function to use simple string replacement
 func (p Plugin) serveBanHtml(rw http.ResponseWriter, ip, country, phase string, requestMethod string) {
-	// Set remediation header if configured
-	if p.remediationHeadersCustomName != "" {
-		rw.Header().Set(p.remediationHeadersCustomName, phase)
-	}
-
 	if p.banHtmlContent != "" && requestMethod == http.MethodGet {
 		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 		rw.WriteHeader(p.disallowedStatusCode)

@@ -272,134 +272,7 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         }
     }
     
-    Context "Geoblock Log File Testing" {
-        It "Should write blocked requests to custom log file" {
-            # Clear any existing log content by triggering a container restart if needed
-            # Make a blocked request to the logtest endpoint
-            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
-            $result = Invoke-TestRequest -Uri "$script:BaseUrl/logtest" -Headers $headers
-            $result.StatusCode | Should -Be 403
-            
-            # Wait a moment for log to be written
-            Start-Sleep -Seconds 2
-            
-            # Read the log file from the Docker container
-            $logContent = docker exec traefik cat /var/log/geoblock/geoblock.log 2>$null
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to read geoblock log file from container"
-            }
-            
-            # Parse the JSON log entries
-            $logLines = $logContent -split "`n" | Where-Object { $_.Trim() -ne "" }
-            $logLines.Count | Should -BeGreaterThan 0
-            
-            # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
-            $allLogEntries = @()
-            foreach ($line in $logLines) {
-                try {
-                    $logEntry = $line | ConvertFrom-Json
-                    $allLogEntries += $logEntry
-                } catch {
-                    throw "Malformed JSON line found in log file: '$line'. This indicates a bug in the logging implementation."
-                }
-            }
-            
-            # Find the blocked request log entry
-            $blockedEntry = $allLogEntries | Where-Object { 
-                $_.msg -eq "blocked request" -and $_.ip -eq $script:TestIPs.US_Google_DNS 
-            } | Select-Object -First 1
-            
-            # Verify the log entry contains expected fields
-            $blockedEntry | Should -Not -BeNullOrEmpty
-            $blockedEntry.level | Should -Be "INFO"
-            $blockedEntry.msg | Should -Be "blocked request"
-            $blockedEntry.plugin | Should -Match "geoblock"
-            $blockedEntry.ip | Should -Be $script:TestIPs.US_Google_DNS
-            $blockedEntry.country | Should -Be "US"
-            $blockedEntry.host | Should -Match "localhost"
-            $blockedEntry.method | Should -Be "GET"
-            $blockedEntry.path | Should -Be "/logtest"
-            $blockedEntry.phase | Should -Be "blocked_country"
-        }
-        
-        It "Should not log allowed requests (only blocked requests are logged)" {
-            # Make an allowed request to the logtest endpoint
-            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
-            $result = Invoke-TestRequest -Uri "$script:BaseUrl/logtest" -Headers $headers
-            $result.StatusCode | Should -Be 200
-            
-            # Wait a moment for any potential log to be written
-            Start-Sleep -Seconds 2
-            
-            # Read the log file from the Docker container
-            $logContent = docker exec traefik cat /var/log/geoblock/geoblock.log 2>$null
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to read geoblock log file from container"
-            }
-            
-            # Parse the log lines and check for any entries related to the German IP
-            $logLines = $logContent -split "`n" | Where-Object { $_.Trim() -ne "" }
-            
-            # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
-            $allLogEntries = @()
-            foreach ($line in $logLines) {
-                try {
-                    $logEntry = $line | ConvertFrom-Json
-                    $allLogEntries += $logEntry
-                } catch {
-                    throw "Malformed JSON line found in log file: '$line'. This indicates a bug in the logging implementation."
-                }
-            }
-            
-            # Look for any log entries with the German IP (should not find any for allowed requests)
-            $germanIPLogFound = ($allLogEntries | Where-Object { $_.ip -eq $script:TestIPs.German_IP }).Count -gt 0
-            
-            # Verify that allowed requests are NOT logged
-            $germanIPLogFound | Should -Be $false
-        }
-        
-        It "Should include correct timestamp format in log entries" {
-            # Make a blocked request to generate a log entry
-            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
-            $result = Invoke-TestRequest -Uri "$script:BaseUrl/logtest" -Headers $headers
-            $result.StatusCode | Should -Be 403
-            
-            # Wait a moment for log to be written
-            Start-Sleep -Seconds 2
-            
-            # Read and parse the log file
-            $logContent = docker exec traefik cat /var/log/geoblock/geoblock.log 2>$null
-            $logLines = $logContent -split "`n" | Where-Object { $_.Trim() -ne "" }
-            
-            # Validate that ALL log lines are properly formatted JSON (no malformed lines should exist)
-            $allLogEntries = @()
-            foreach ($line in $logLines) {
-                try {
-                    $logEntry = $line | ConvertFrom-Json
-                    $allLogEntries += $logEntry
-                } catch {
-                    throw "Malformed JSON line found in log file: '$line'. This indicates a bug in the logging implementation."
-                }
-            }
-            
-            # Find a geoblock log entry
-            $geoblockEntry = $allLogEntries | Where-Object { 
-                $_.plugin -match "geoblock" -and $_.time 
-            } | Select-Object -First 1
-            
-            # Verify timestamp format (ISO 8601)
-            $geoblockEntry | Should -Not -BeNullOrEmpty
-            $geoblockEntry.time | Should -Match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
-            
-            # Verify the timestamp can be parsed as a valid DateTime
-            $timestamp = [DateTime]::Parse($geoblockEntry.time)
-            $timestamp | Should -BeOfType [DateTime]
-            
-            # Verify the timestamp is recent (within last 5 minutes)
-            $timeDiff = [DateTime]::UtcNow - $timestamp.ToUniversalTime()
-            $timeDiff.TotalMinutes | Should -BeLessThan 5
-        }
-        
+    Context "Access log headers" {
         It "Should add countryHeader to allowed requests" {
             # Make an allowed request to the countryHeaderTest endpoint
             $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
@@ -448,117 +321,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $countryHeaderLogFound | Should -Be $true
         }
 
-        It "Should add remediationHeader to blocked requests with correct phase" {
-            # Make a blocked request to the remediationHeaderTest endpoint
-            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
-            $result = Invoke-TestRequest -Uri "$script:BaseUrl/remediationHeaderTest" -Headers $headers
-            $result.StatusCode | Should -Be 403
-            
-            # Read access log entries using shared helper
-            $allLogEntries = Get-TraefikAccessLogEntries -WaitSeconds 2
-            
-            # Look for log entries where the X-Geoblock-Action response header is present for blocked US requests
-            $remediationHeaderLogFound = ($allLogEntries | Where-Object { 
-                $_.'downstream_X-Geoblock-Action' -eq "blocked_country" -and 
-                $_.RequestPath -eq "/remediationHeaderTest"
-            }).Count -gt 0
-            
-            # Verify that the remediation header was added to the response with the correct phase
-            $remediationHeaderLogFound | Should -Be $true
-        }
-
-        It "Should add remediationHeader to blocked private IP requests with allow_private phase" {
-            # For this test, we'll use the fact that when allowPrivate=true but we get a blocked country,
-            # we should see blocked_country phase, not allow_private phase
-            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
-            $result = Invoke-TestRequest -Uri "$script:BaseUrl/remediationHeaderTest" -Headers $headers
-            $result.StatusCode | Should -Be 403
-            
-            # Read access log entries using shared helper
-            $allLogEntries = Get-TraefikAccessLogEntries -WaitSeconds 2
-            
-            # Look for log entries with blocked_country phase (US is blocked)
-            $blockedCountryHeaderFound = ($allLogEntries | Where-Object { 
-                $_.'downstream_X-Geoblock-Action' -eq "blocked_country" -and 
-                $_.RequestPath -eq "/remediationHeaderTest"
-            }).Count -gt 0
-            
-            # Verify that we got the blocked_country phase for US IP
-            $blockedCountryHeaderFound | Should -Be $true
-        }
-
-        It "Should NOT add remediationHeader to allowed requests" {
-            # Make an allowed request to the remediationHeaderTest endpoint
-            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
-            $result = Invoke-TestRequest -Uri "$script:BaseUrl/remediationHeaderTest" -Headers $headers
-            $result.StatusCode | Should -Be 200
-            
-            # Read access log entries using shared helper
-            $allLogEntries = Get-TraefikAccessLogEntries -WaitSeconds 2
-            
-            # Look for any response headers in successful requests to remediationHeaderTest
-            $remediationHeaderInAllowedRequest = ($allLogEntries | Where-Object { 
-                $_.'downstream_X-Geoblock-Action' -and 
-                $_.RequestPath -eq "/remediationHeaderTest" -and
-                $_.DownstreamStatus -eq 200
-            }).Count -gt 0
-            
-            # Verify that remediation header is NOT added to allowed requests
-            $remediationHeaderInAllowedRequest | Should -Be $false
-        }
-
-        It "Should add remediationHeader with default_allow phase for unmatched requests" {
-            # Test with an IP that doesn't match any country rules
-            # We'll use a different approach - set up a scenario where defaultAllow=false
-            # and the IP doesn't match allowed or blocked countries
-            # For our test setup, let's use a private IP that would trigger allow_private phase
-            
-            # Actually, let's test with a known scenario: private IP with allowPrivate=true
-            # should result in allow_private phase, but that's for allowed requests
-            # Let's use the current setup and verify we get the expected phase
-            
-            # The remediationHeaderTest endpoint blocks US,CN,RU and allows DE,FR,GB
-            # defaultAllow=false, so any other country should get default_allow phase
-            
-            # Let's test what we can verify: that blocked requests get the right phase
-            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
-            $result = Invoke-TestRequest -Uri "$script:BaseUrl/remediationHeaderTest" -Headers $headers
-            $result.StatusCode | Should -Be 403
-            
-            # Wait a moment for log to be written
-            Start-Sleep -Seconds 2
-            
-            # Read the access.log file from the traefik container
-            $accessLogContent = docker exec traefik cat /var/log/traefik/access.log 2>$null
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to read traefik access log"
-            }
-            
-            # Parse the log lines 
-            $logLines = $accessLogContent -split "`n" | Where-Object { $_.Trim() -ne "" }
-            
-            # Validate that ALL log lines are properly formatted JSON
-            $allLogEntries = @()
-            foreach ($line in $logLines) {
-                try {
-                    $logEntry = $line | ConvertFrom-Json
-                    $allLogEntries += $logEntry
-                } catch {
-                    throw "Malformed JSON line found in log file: '$line'."
-                }
-            }
-            
-            # Look for the specific remediation header value
-            $expectedPhaseFound = ($allLogEntries | Where-Object { 
-                $_.'downstream_X-Geoblock-Action' -eq "blocked_country" -and 
-                $_.RequestPath -eq "/remediationHeaderTest"
-            }).Count -gt 0
-            
-            # Verify we can detect the phase correctly
-            $expectedPhaseFound | Should -Be $true
-        }
-    }
-    
     Context "Block All Requests" {
         It "Should block localhost request (private IP not allowed)" {
             # The /blockall endpoint has allowPrivate=false, so even localhost should be blocked
@@ -713,9 +475,8 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
     }
     
     Context "Log Status Headers" {
-        # Tests for logStatusHeader and logStatusDetailHeader feature
-        # The /logheaders endpoint has both headers configured:
-        # - logStatusHeader: X-Geoblock-Status (pass or block)
+        # Tests for logStatusDetailHeader
+        # The /logheaders endpoint is configured with:
         # - logStatusDetailHeader: X-Geoblock-Decision (pass:reason or block:reason)
         # - allowedCountries: DE, AU
         # - blockedCountries: US
@@ -731,7 +492,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
-            $logEntry.'request_X-Geoblock-Status' | Should -Be "pass"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:allowed_country"
         }
         
@@ -741,7 +501,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
-            $logEntry.'request_X-Geoblock-Status' | Should -Be "pass"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:allowed_country"
         }
         
@@ -751,7 +510,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
-            $logEntry.'request_X-Geoblock-Status' | Should -Be "pass"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:allow_private"
         }
         
@@ -761,7 +519,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
-            $logEntry.'request_X-Geoblock-Status' | Should -Be "pass"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:ignore_verb"
         }
         
@@ -771,7 +528,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
-            $logEntry.'request_X-Geoblock-Status' | Should -Be "pass"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:excluded_regex"
         }
         
@@ -781,7 +537,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
-            $logEntry.'request_X-Geoblock-Status' | Should -Be "pass"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "pass:bypass_header"
         }
         
@@ -794,7 +549,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
-            $logEntry.'request_X-Geoblock-Status' | Should -Be "block"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "block:default_allow"
         }
         
@@ -806,7 +560,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
-            $logEntry.'request_X-Geoblock-Status' | Should -Be "block"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "block:blocked_ip_block"
         }
         
@@ -818,7 +571,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
-            $logEntry.'request_X-Geoblock-Status' | Should -Be "block"
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "block:blocked_country"
         }
     }

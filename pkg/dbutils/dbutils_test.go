@@ -1,9 +1,12 @@
-package traefik_geoblock
+package dbutils
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+var dbFilePath = filepath.Join("..", "..", "IP2LOCATION-LITE-DB1.IPV6.BIN")
 
 func TestGetDateFromName(t *testing.T) {
 	tests := []struct {

@@ -1,11 +1,8 @@
-package traefik_geoblock
+package iplookup
 
 import (
-	"context"
 	"fmt"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -323,72 +320,6 @@ completely-malformed-entry
 			t.Errorf("Expected prefix length 0 for nil IP, got %d", prefixLen)
 		}
 	})
-}
-
-// TestIpLookupFileMonitor_PluginIntegration tests integration with plugin system
-func TestIpLookupFileMonitor_PluginIntegration(t *testing.T) {
-	tempDir := t.TempDir()
-
-	// Create test IP blocks
-	writeBlocksFile(t, filepath.Join(tempDir, "allowed.txt"), []string{
-		"192.168.0.0/16",
-		"10.0.0.0/8",
-	})
-
-	// Create multiple plugin instances
-	configs := []*Config{
-		{
-			Enabled:              true,
-			DatabaseFilePath:     "./IP2LOCATION-LITE-DB1.IPV6.BIN",
-			AllowedIPBlocksDir:   tempDir,
-			DisallowedStatusCode: 403,
-			IPHeaders:            []string{"x-forwarded-for"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
-		},
-		{
-			Enabled:              true,
-			DatabaseFilePath:     "./IP2LOCATION-LITE-DB1.IPV6.BIN",
-			AllowedIPBlocksDir:   tempDir, // Same directory
-			DisallowedStatusCode: 403,
-			IPHeaders:            []string{"x-forwarded-for"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
-		},
-		{
-			Enabled:              true,
-			DatabaseFilePath:     "./IP2LOCATION-LITE-DB1.IPV6.BIN",
-			BlockedIPBlocksDir:   tempDir, // Different usage of same directory
-			DisallowedStatusCode: 403,
-			IPHeaders:            []string{"x-forwarded-for"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
-		},
-	}
-
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-	})
-
-	// Create multiple plugin instances
-	plugins := make([]http.Handler, len(configs))
-	for i, config := range configs {
-		ctx := context.Background()
-		plugin, err := New(ctx, nextHandler, config, fmt.Sprintf("test-plugin-%d", i))
-		if err != nil {
-			t.Fatalf("Failed to create plugin %d: %v", i, err)
-		}
-		plugins[i] = plugin
-	}
-
-	// Test that all plugins work correctly
-	for i, plugin := range plugins {
-		req := httptest.NewRequest("GET", "/test", nil)
-		req.Header.Set("X-Forwarded-For", "192.168.1.1") // Should be allowed/blocked based on config
-
-		rr := httptest.NewRecorder()
-		plugin.ServeHTTP(rr, req)
-
-		// All should process the request (specific behavior depends on config)
-		t.Logf("Plugin %d response status: %d", i, rr.Code)
-	}
 }
 
 func writeBlocksFile(t *testing.T, filename string, blocks []string) {

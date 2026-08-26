@@ -1,4 +1,4 @@
-package traefik_geoblock
+package fileutils
 
 import (
 	"log/slog"
@@ -361,12 +361,12 @@ func TestFileUtils_BackwardCompatibility(t *testing.T) {
 		defer os.Remove(tmpFile.Name())
 		tmpFile.Close()
 
-		if !fileExists(tmpFile.Name()) {
-			t.Error("fileExists should return true for existing file")
+		if !Exists(tmpFile.Name()) {
+			t.Error("Exists should return true for existing file")
 		}
 
-		if fileExists("/non/existing/file") {
-			t.Error("fileExists should return false for non-existing file")
+		if Exists("/non/existing/file") {
+			t.Error("Exists should return false for non-existing file")
 		}
 	})
 
@@ -386,12 +386,12 @@ func TestFileUtils_BackwardCompatibility(t *testing.T) {
 
 		// Copy using global function
 		dstFile := filepath.Join(t.TempDir(), "dst.txt")
-		if err := copyFile(srcFile.Name(), dstFile, false); err != nil {
-			t.Fatalf("copyFile failed: %v", err)
+		if err := Copy(srcFile.Name(), dstFile, false); err != nil {
+			t.Fatalf("Copy failed: %v", err)
 		}
 
 		// Verify
-		if !fileExists(dstFile) {
+		if !Exists(dstFile) {
 			t.Error("destination file should exist")
 		}
 	})
@@ -407,7 +407,7 @@ func TestFileUtils_BackwardCompatibility(t *testing.T) {
 		defer os.Remove(tmpFile.Name())
 		tmpFile.Close()
 
-		result := searchFile(tmpFile.Name(), "default.txt", logger)
+		result := Search(tmpFile.Name(), "default.txt", logger)
 		if result != tmpFile.Name() {
 			t.Errorf("expected %q, got %q", tmpFile.Name(), result)
 		}

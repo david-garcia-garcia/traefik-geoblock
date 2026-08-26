@@ -1,4 +1,4 @@
-package traefik_geoblock
+package dbutils
 
 import (
 	"encoding/binary"

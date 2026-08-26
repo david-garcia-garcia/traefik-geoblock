@@ -1,4 +1,4 @@
-package traefik_geoblock
+package ip2location
 
 import (
 	"encoding/json"
@@ -7,15 +7,20 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"log/slog"
 
-	"github.com/ip2location/ip2location-go/v9"
+	ip2loc "github.com/ip2location/ip2location-go/v9"
+
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
-// DatabaseConfig contains only the configuration needed for database management
+// DatabaseConfig is IP2Location-only settings (BIN path and auto-update).
 type DatabaseConfig struct {
 	DatabaseFilePath        string
 	DatabaseAutoUpdate      bool
@@ -26,18 +31,30 @@ type DatabaseConfig struct {
 
 // DatabaseWrapper wraps ip2location.DB and allows for hot-swapping during updates
 type DatabaseWrapper struct {
-	db      *ip2location.DB
+	db      *ip2loc.DB
 	path    string
-	version *DBVersion
+	version *dbutils.DBVersion
 }
 
 // Get_country_short performs IP country lookup (fast path - no locking)
-func (dw *DatabaseWrapper) Get_country_short(ip string) (ip2location.IP2Locationrecord, error) {
+func (dw *DatabaseWrapper) Get_country_short(ip string) (ip2loc.IP2Locationrecord, error) {
 	return dw.db.Get_country_short(ip)
 }
 
+// LookupCountry returns the ISO country code for ip, or an error if the lookup is invalid.
+func (dw *DatabaseWrapper) LookupCountry(ip string) (string, error) {
+	record, err := dw.Get_country_short(ip)
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(strings.ToLower(record.Country_short), "invalid") {
+		return "", fmt.Errorf("%s", record.Country_short)
+	}
+	return record.Country_short, nil
+}
+
 // GetVersion returns the current database version (fast path - no locking)
-func (dw *DatabaseWrapper) GetVersion() *DBVersion {
+func (dw *DatabaseWrapper) GetVersion() *dbutils.DBVersion {
 	return dw.version
 }
 
@@ -56,7 +73,7 @@ func (dw *DatabaseWrapper) Close() error {
 }
 
 // swapDatabase replaces the current database with a new one (internal method)
-func (dw *DatabaseWrapper) swapDatabase(newDB *ip2location.DB, newPath string, newVersion *DBVersion) *ip2location.DB {
+func (dw *DatabaseWrapper) swapDatabase(newDB *ip2loc.DB, newPath string, newVersion *dbutils.DBVersion) *ip2loc.DB {
 	oldDB := dw.db
 	dw.db = newDB
 	dw.path = newPath
@@ -161,13 +178,13 @@ func (df *DatabaseFactory) initialize() error {
 	}
 
 	// Open the database
-	db, err := ip2location.OpenDB(targetPath)
+	db, err := ip2loc.OpenDB(targetPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database %s: %w", targetPath, err)
 	}
 
 	// Get and validate database version
-	version, err := GetDatabaseVersion(targetPath)
+	version, err := dbutils.GetDatabaseVersion(targetPath)
 	if err != nil {
 		db.Close()
 		return fmt.Errorf("failed to read database version from %s: %w", targetPath, err)
@@ -198,7 +215,7 @@ func (df *DatabaseFactory) resolveDatabasePath() (string, error) {
 	databasePath := df.config.DatabaseFilePath
 
 	// Search for database file
-	databasePath, err := fileUtils.Search(databasePath, "IP2LOCATION-LITE-DB1.IPV6.BIN", df.logger)
+	databasePath, err := fileutils.Default.Search(databasePath, "IP2LOCATION-LITE-DB1.IPV6.BIN", df.logger)
 	if err != nil {
 		return "", fmt.Errorf("database file not found: %w", err)
 	}
@@ -240,7 +257,7 @@ func (df *DatabaseFactory) createLocalDatabaseCopy(sourcePath string) (string, e
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("IP2LOCATION-LITE-DB1.IPV6_%s.BIN", timestamp))
 
 	// Copy to temp location
-	if err := copyFile(sourcePath, tmpFile, false); err != nil {
+	if err := fileutils.Copy(sourcePath, tmpFile, false); err != nil {
 		return "", fmt.Errorf("failed to create local copy: %w", err)
 	}
 
@@ -295,7 +312,7 @@ func (df *DatabaseFactory) checkAndUpdate() {
 	}
 
 	// Attempt to download a newer version (actual download happens here)
-	updateCfg := &Config{
+	updateCfg := &DatabaseConfig{
 		DatabaseAutoUpdateDir:   df.config.DatabaseAutoUpdateDir,
 		DatabaseAutoUpdateToken: df.config.DatabaseAutoUpdateToken,
 		DatabaseAutoUpdateCode:  df.config.DatabaseAutoUpdateCode,
@@ -333,14 +350,14 @@ func (df *DatabaseFactory) performHotSwap(newDatabasePath string) error {
 	}
 
 	// Open new database
-	newDB, err := ip2location.OpenDB(newLocalCopy)
+	newDB, err := ip2loc.OpenDB(newLocalCopy)
 	if err != nil {
 		os.Remove(newLocalCopy)
 		return fmt.Errorf("performHotSwap: failed to open new database: %w", err)
 	}
 
 	// Get version
-	newVersion, err := GetDatabaseVersion(newLocalCopy)
+	newVersion, err := dbutils.GetDatabaseVersion(newLocalCopy)
 	if err != nil {
 		newDB.Close()
 		os.Remove(newLocalCopy)
@@ -393,6 +410,15 @@ func generateConfigHash(config *DatabaseConfig) string {
 	hasher := fnv.New32()
 	hasher.Write(configBytes)
 	return strconv.FormatUint(uint64(hasher.Sum32()), 10)
+}
+
+// New constructs the IP2Location DatabaseProvider (shared factory + wrapper).
+func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
+	factory, err := GetDatabaseFactory(&config, logger)
+	if err != nil {
+		return nil, err
+	}
+	return factory.GetWrapper(), nil
 }
 
 // GetDatabaseFactory returns a singleton database factory for the given configuration

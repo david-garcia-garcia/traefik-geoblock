@@ -1,4 +1,4 @@
-package traefik_geoblock
+package ip2location
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ip2location/ip2location-go/v9"
+	ip2loc "github.com/ip2location/ip2location-go/v9"
 )
 
 func TestPlugin_DatabaseDownloadAndUpdate(t *testing.T) {
@@ -23,7 +23,7 @@ func TestPlugin_DatabaseDownloadAndUpdate(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		config      *Config
+		config      *DatabaseConfig
 		setupFiles  func(t *testing.T, dir string) // Setup test files if needed
 		wantErr     bool
 		errContains string
@@ -31,12 +31,10 @@ func TestPlugin_DatabaseDownloadAndUpdate(t *testing.T) {
 	}{
 		{
 			name: "find latest database",
-			config: &Config{
-				Enabled:                true,
+			config: &DatabaseConfig{
 				DatabaseAutoUpdate:     true,
 				DatabaseAutoUpdateDir:  "./testdata/autoupdate",
 				DatabaseAutoUpdateCode: "DB1",
-				IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 			},
 			setupFiles: func(t *testing.T, dir string) {
 				// Create some test database files with different dates
@@ -123,7 +121,7 @@ func TestUpdateIfNeeded(t *testing.T) {
 				}
 
 				// Verify the downloaded database is valid by trying to open it
-				db, err := ip2location.OpenDB(files[0])
+				db, err := ip2loc.OpenDB(files[0])
 				if err != nil {
 					t.Errorf("downloaded database is not valid: %v", err)
 					return
@@ -146,7 +144,7 @@ func TestUpdateIfNeeded(t *testing.T) {
 			dbPath: filepath.Join(tmpDir, time.Now().Format("20060102")+"_IP2LOCATION-LITE-DB1.IPV6.BIN"),
 			setupFunc: func(path string) {
 				// Copy an existing valid database to this location
-				source := "IP2LOCATION-LITE-DB1.IPV6.BIN" // assuming this exists in test data
+				source := filepath.Join("..", "..", "IP2LOCATION-LITE-DB1.IPV6.BIN")
 				content, err := os.ReadFile(source)
 				if err == nil {
 					_ = os.WriteFile(path, content, 0600)
@@ -169,7 +167,7 @@ func TestUpdateIfNeeded(t *testing.T) {
 				files := []string{latest}
 
 				// Verify the new database is valid
-				db, err := ip2location.OpenDB(files[0])
+				db, err := ip2loc.OpenDB(files[0])
 				if err != nil {
 					t.Errorf("updated database is not valid: %v", err)
 					return
@@ -195,10 +193,9 @@ func TestUpdateIfNeeded(t *testing.T) {
 				Level: slog.LevelDebug,
 			}))
 
-			cfg := &Config{
+			cfg := &DatabaseConfig{
 				DatabaseAutoUpdateDir:  tmpDir,
 				DatabaseAutoUpdateCode: "DB1",
-				IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 			}
 
 			_ = os.RemoveAll(tmpDir)
@@ -266,12 +263,10 @@ func TestDownloadTwiceReturnsNoError(t *testing.T) {
 		Level: slog.LevelDebug,
 	})).With("plugin", "test")
 
-	cfg := &Config{
-		Enabled:                true,
+	cfg := &DatabaseConfig{
 		DatabaseAutoUpdate:     true,
 		DatabaseAutoUpdateDir:  targetDir,
 		DatabaseAutoUpdateCode: "DB1",
-		IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 	}
 
 	// First download - should succeed and create the database file
@@ -327,12 +322,10 @@ func TestDatabaseDirectoryIsCreatedAndDatabaseDownloaded(t *testing.T) {
 		Level: slog.LevelDebug,
 	})).With("plugin", "test")
 
-	cfg := &Config{
-		Enabled:                true,
+	cfg := &DatabaseConfig{
 		DatabaseAutoUpdate:     true,
 		DatabaseAutoUpdateDir:  targetDir,
 		DatabaseAutoUpdateCode: "DB1",
-		IPHeaders:              []string{"x-forwarded-for", "x-real-ip"},
 	}
 
 	// Verify directory doesn't exist before test
@@ -362,7 +355,7 @@ func TestDatabaseDirectoryIsCreatedAndDatabaseDownloaded(t *testing.T) {
 	}
 
 	// Verify the downloaded database is valid
-	db, err := ip2location.OpenDB(latestDB)
+	db, err := ip2loc.OpenDB(latestDB)
 	if err != nil {
 		t.Errorf("downloaded database is not valid: %v", err)
 		return
