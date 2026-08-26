@@ -3,6 +3,7 @@ package traefik_geoblock
 import (
 	"bytes"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -376,5 +377,39 @@ func TestDatabaseDirectoryIsCreatedAndDatabaseDownloaded(t *testing.T) {
 	}
 	if record.Country_short != "US" {
 		t.Errorf("expected country US for 8.8.8.8, got %s", record.Country_short)
+	}
+}
+
+func TestIp2locationDownloadURL_TokenFileIsExactCode(t *testing.T) {
+	const token = "test-token"
+	oldZip := "IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
+
+	cases := []struct {
+		code string
+		want string
+	}{
+		{code: "DB8BINIPV6", want: "DB8BINIPV6"},
+		{code: "DB1LITEBINIPV6", want: "DB1LITEBINIPV6"},
+		{code: "DB8", want: "DB8"},
+		{code: "DB1", want: "DB1"},
+	}
+
+	for _, tc := range cases {
+		got := ip2locationDownloadURL(token, tc.code)
+		u, err := url.Parse(got)
+		if err != nil {
+			t.Fatalf("code %s: parse url: %v", tc.code, err)
+		}
+		file := u.Query().Get("file")
+		if file != tc.want {
+			t.Errorf("code %s: file=%q, want %q", tc.code, file, tc.want)
+		}
+		if strings.Contains(file, oldZip) || file == oldZip {
+			t.Errorf("code %s: file=%q must not be the old ZIP filename", tc.code, file)
+		}
+	}
+
+	if got := ip2locationDownloadURL("", "DB1"); got != liteDownloadURL {
+		t.Errorf("empty token: got %q, want liteDownloadURL", got)
 	}
 }

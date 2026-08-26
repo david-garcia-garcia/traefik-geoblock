@@ -467,7 +467,7 @@ http:
           # The plugin uses a singleton pattern - multiple middlewares with identical configurations
           # share the same database factory and hot-swap operations.
           databaseAutoUpdateToken: ""                # IP2Location download token (if using premium)
-          databaseAutoUpdateCode: "DB1"              # Database product code to download (if using premium)
+          databaseAutoUpdateCode: "DB8BINIPV6"       # Official IP2Location package code for file= (e.g. DB8BINIPV6, DB1LITEBINIPV6). Sent unchanged when a token is set. Not a short product like DB8.
 
           #-------------------------------
           # Request header settings
