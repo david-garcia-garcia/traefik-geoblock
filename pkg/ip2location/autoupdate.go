@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
@@ -15,8 +16,20 @@ import (
 )
 
 const (
-	liteDownloadURL  = "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
-	tokenDownloadURL = "https://www.ip2location.com/download?token=%s&file=%s" // #nosec G101
+	liteDownloadURL    = "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
+	asnLiteDownloadURL = "https://download.ip2location.com/lite/IP2LOCATION-LITE-ASN.IPV6.BIN.ZIP"
+	asnLiteIPv4URL     = "https://download.ip2location.com/lite/IP2LOCATION-LITE-ASN.BIN.ZIP"
+	tokenDownloadURL   = "https://www.ip2location.com/download?token=%s&file=%s" // #nosec G101
+
+	// DefaultASNDatabaseCode is the official IP2Location package code for
+	// ASN LITE IPv6 BIN (file=DBASNLITEBINIPV6).
+	DefaultASNDatabaseCode = "DBASNLITEBINIPV6"
+
+	defaultGeoFileName = "IP2LOCATION-LITE-DB1.IPV6.BIN"
+	defaultASNFileName = "IP2LOCATION-LITE-ASN.IPV6.BIN"
+
+	// ASN LITE IPv6 BIN is ~264MB; geo LITE is much smaller.
+	maxExtractBytes = 512 * 1024 * 1024
 )
 
 // ip2locationDownloadURL builds the auto-update download URL.
@@ -25,7 +38,31 @@ func ip2locationDownloadURL(token, dbCode string) string {
 	if token != "" {
 		return fmt.Sprintf(tokenDownloadURL, token, dbCode)
 	}
+	if isASNDatabaseCode(dbCode) {
+		if strings.EqualFold(dbCode, "DBASNLITEBIN") {
+			return asnLiteIPv4URL
+		}
+		return asnLiteDownloadURL
+	}
 	return liteDownloadURL
+}
+
+func isASNDatabaseCode(code string) bool {
+	return strings.Contains(strings.ToUpper(code), "ASN")
+}
+
+func defaultFileNameForCode(code string) string {
+	if isASNDatabaseCode(code) {
+		return defaultASNFileName
+	}
+	return defaultGeoFileName
+}
+
+func defaultDatabaseCode(code string) string {
+	if code != "" {
+		return code
+	}
+	return "DB1"
 }
 
 // UpdateIfNeeded checks if the database needs updating and performs the update if necessary.
@@ -68,9 +105,7 @@ func UpdateIfNeeded(dbPath string, runSync bool, logger *slog.Logger, config *Da
 
 // findLatestDatabase finds the most recent database file in the specified directory
 func findLatestDatabase(dir string, dbCode string) (string, error) {
-	if dbCode == "" {
-		dbCode = "DB1"
-	}
+	dbCode = defaultDatabaseCode(dbCode)
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create directory: %w", err)
@@ -100,10 +135,7 @@ func findLatestDatabase(dir string, dbCode string) (string, error) {
 }
 
 func downloadAndUpdateDatabase(cfg *DatabaseConfig, logger *slog.Logger) error {
-	dbCode := cfg.DatabaseAutoUpdateCode
-	if dbCode == "" {
-		dbCode = "DB1"
-	}
+	dbCode := defaultDatabaseCode(cfg.DatabaseAutoUpdateCode)
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(cfg.DatabaseAutoUpdateDir, 0755); err != nil {
@@ -111,7 +143,7 @@ func downloadAndUpdateDatabase(cfg *DatabaseConfig, logger *slog.Logger) error {
 	}
 
 	// Create lock file
-	lockFile := filepath.Join(cfg.DatabaseAutoUpdateDir, "update.lock")
+	lockFile := filepath.Join(cfg.DatabaseAutoUpdateDir, "update-"+dbCode+".lock")
 
 	// Check if lock file exists and its age
 	if fi, err := os.Stat(lockFile); err == nil {
@@ -189,9 +221,8 @@ func downloadAndUpdateDatabase(cfg *DatabaseConfig, logger *slog.Logger) error {
 				return fmt.Errorf("failed to create database file: %w", err)
 			}
 
-			// Add size limit to prevent zip bombs (200MB should be more than enough for the database)
-			limited := io.LimitReader(rc, 200*1024*1024) // 100MB limit
-			_, err = io.Copy(dbFile, limited)            // #nosec G110
+			limited := io.LimitReader(rc, maxExtractBytes)
+			_, err = io.Copy(dbFile, limited) // #nosec G110
 			rc.Close()
 			if err != nil {
 				dbFile.Close()

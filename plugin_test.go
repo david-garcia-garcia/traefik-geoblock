@@ -12,14 +12,34 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 )
 
 const (
-	pluginName = "geoblock"
-	dbFilePath = "./IP2LOCATION-LITE-DB1.IPV6.BIN"
+	pluginName  = "geoblock"
+	dbFilePath  = "./IP2LOCATION-LITE-DB1.IPV6.BIN"
+	db8FilePath = "./testdata/IP2LOCATION-DB8.BIN"
 )
+
+var fullEnrichHeaders = map[string]string{
+	"X-Geo-Country": dbprovider.MetaCountry,
+	"X-Geo-Region":  dbprovider.MetaRegion,
+	"X-Geo-City":    dbprovider.MetaCity,
+	"X-Geo-Isp":     dbprovider.MetaIsp,
+	"X-Geo-Domain":  dbprovider.MetaDomain,
+	"X-Geo-Asn":     dbprovider.MetaAsn,
+}
+
+func requireDB8(tb testing.TB) string {
+	tb.Helper()
+	if _, err := os.Stat(db8FilePath); err != nil {
+		tb.Skip("paid DB8 BIN not present; place testdata/IP2LOCATION-DB8.BIN")
+	}
+	return db8FilePath
+}
 
 type noopHandler struct{}
 
@@ -168,6 +188,63 @@ func TestNew(t *testing.T) {
 		}
 	})
 
+	t.Run("RequestHeaderEnrichIspDomainKeysAllowed", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                     true,
+			Ip2locationDatabaseFilePath: dbFilePath,
+			DisallowedStatusCode:        http.StatusForbidden,
+			IPHeaders:                   []string{"x-real-ip"},
+			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+			RequestHeaderEnrich: map[string]string{
+				"X-Geo-Isp":    "isp",
+				"X-Geo-Domain": "domain",
+			},
+		}, pluginName)
+		if err != nil {
+			t.Errorf("expected isp/domain enrich keys to be allowed, got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin not to be nil")
+		}
+	})
+
+	t.Run("RequestHeaderEnrichAsnKeyAllowed", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                     true,
+			Ip2locationDatabaseFilePath: dbFilePath,
+			DisallowedStatusCode:        http.StatusForbidden,
+			IPHeaders:                   []string{"x-real-ip"},
+			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+			RequestHeaderEnrich:         map[string]string{"X-Geo-Asn": "asn"},
+		}, pluginName)
+		if err != nil {
+			t.Errorf("expected asn enrich key to be allowed, got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin not to be nil")
+		}
+	})
+
+	t.Run("UnknownRequestHeaderEnrichKey", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                     true,
+			Ip2locationDatabaseFilePath: dbFilePath,
+			DisallowedStatusCode:        http.StatusForbidden,
+			IPHeaders:                   []string{"x-real-ip"},
+			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+			RequestHeaderEnrich:         map[string]string{"X-Geo-Asn": "not-a-key"},
+		}, pluginName)
+		if err == nil {
+			t.Error("expected error for unknown requestHeaderEnrich key")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil")
+		}
+		if err != nil && !strings.Contains(err.Error(), "unknown requestHeaderEnrich") {
+			t.Errorf("expected unknown key error, got: %v", err)
+		}
+	})
+
 	t.Run("EmptyIPHeaders", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
@@ -273,12 +350,12 @@ func TestNew(t *testing.T) {
 
 		// Verify the plugin works by testing a lookup
 		if plugin != nil {
-			country, err := plugin.(*Plugin).Lookup("8.8.8.8")
+			rec, err := plugin.(*Plugin).Lookup("8.8.8.8")
 			if err != nil {
 				t.Errorf("expected successful lookup with env var database, but got: %v", err)
 			}
-			if country != "US" {
-				t.Errorf("expected country US for 8.8.8.8, got %s", country)
+			if rec.Country != "US" {
+				t.Errorf("expected country US for 8.8.8.8, got %s", rec.Country)
 			}
 		}
 	})
@@ -481,6 +558,9 @@ func TestApplyDeprecatedIP2LocationSettings(t *testing.T) {
 		if cfg.Ip2locationDatabaseAutoUpdateCode != "DB1" {
 			t.Errorf("code: got %q", cfg.Ip2locationDatabaseAutoUpdateCode)
 		}
+		if cfg.Ip2locationAsnDatabaseAutoUpdateCode != ip2location.DefaultASNDatabaseCode {
+			t.Errorf("asn code: got %q", cfg.Ip2locationAsnDatabaseAutoUpdateCode)
+		}
 	})
 }
 
@@ -524,12 +604,12 @@ func TestNew_AutoUpdate(t *testing.T) {
 
 		// Verify that the database is working by testing a lookup
 		p := plugin.(*Plugin)
-		country, err := p.Lookup("8.8.8.8")
+		rec, err := p.Lookup("8.8.8.8")
 		if err != nil {
 			t.Errorf("expected database to be initialized and working, but lookup failed: %v", err)
 		}
-		if country != "US" {
-			t.Errorf("expected lookup to return US for 8.8.8.8, but got: %s", country)
+		if rec.Country != "US" {
+			t.Errorf("expected lookup to return US for 8.8.8.8, but got: %s", rec.Country)
 		}
 	})
 
@@ -963,12 +1043,15 @@ func TestPlugin_Lookup(t *testing.T) {
 			t.Errorf("expected no error, but got: %v", err)
 		}
 
-		country, err := plugin.(*Plugin).Lookup("8.8.8.8")
+		rec, err := plugin.(*Plugin).Lookup("8.8.8.8")
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
-		if country != "US" {
-			t.Errorf("expected country to be %s, but got: %s", "US", country)
+		if rec.Country != "US" {
+			t.Errorf("expected country to be %s, but got: %s", "US", rec.Country)
+		}
+		if rec.Asn != "" {
+			t.Errorf("expected empty ASN without ASN BIN, got %q", rec.Asn)
 		}
 	})
 
@@ -988,15 +1071,15 @@ func TestPlugin_Lookup(t *testing.T) {
 			t.Errorf("expected no error, but got: %v", err)
 		}
 
-		country, err := plugin.(*Plugin).Lookup("foobar")
+		rec, err := plugin.(*Plugin).Lookup("foobar")
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
 		if err.Error() != "Invalid IP address." {
 			t.Errorf("unexpected error: %v", err)
 		}
-		if country != "" {
-			t.Errorf("expected country to be empty, but was: %s", country)
+		if rec.Country != "" {
+			t.Errorf("expected country to be empty, but was: %s", rec.Country)
 		}
 	})
 }
@@ -1123,10 +1206,10 @@ func TestCheckAllowed_Localhost(t *testing.T) {
 
 	for _, ip := range testIPs {
 		t.Run("IP_"+ip, func(t *testing.T) {
-			allowed, country, phase, err := p.CheckAllowed(ip)
+			allowed, rec, phase, err := p.CheckAllowed(ip)
 
 			t.Logf("CheckAllowed(%s) = allowed:%v, country:%s, phase:%s, err:%v",
-				ip, allowed, country, phase, err)
+				ip, allowed, rec.Country, phase, err)
 
 			if err != nil {
 				t.Errorf("CheckAllowed returned error: %v", err)
@@ -1138,8 +1221,8 @@ func TestCheckAllowed_Localhost(t *testing.T) {
 			}
 
 			// Country should be "PRIVATE" for private IPs
-			if country != "PRIVATE" {
-				t.Errorf("IP %s should have country='PRIVATE', but got '%s'", ip, country)
+			if rec.Country != "PRIVATE" {
+				t.Errorf("IP %s should have country='PRIVATE', but got '%s'", ip, rec.Country)
 			}
 
 			// Phase should be "allow_private" for private IPs
@@ -2880,5 +2963,145 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 			t.Errorf("Expected logStatusDetailHeader '%s', got '%s'", expectedDetail, capturedLogStatusDetail)
 		}
 		t.Logf("SUCCESS: No IPs found sets headers to %s and %s", LogStatusPass, expectedDetail)
+	})
+}
+
+type stubGeoProvider struct {
+	rec dbprovider.Record
+	err error
+}
+
+func (s stubGeoProvider) Lookup(string) (dbprovider.Record, error) {
+	return s.rec, s.err
+}
+
+func (s stubGeoProvider) Close() error { return nil }
+
+func TestRequestHeaderEnrich(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	emptyBlocks, err := iplookup.NewIpLookupFileMonitor(nil, "", logger)
+	if err != nil {
+		t.Fatalf("cidr monitor: %v", err)
+	}
+
+	t.Run("writes country region city", func(t *testing.T) {
+		plugin := &Plugin{
+			next:    &noopHandler{},
+			enabled: true,
+			db: stubGeoProvider{rec: dbprovider.Record{
+				Country: "US", Region: "California", City: "Mountain View",
+				Isp: "Google LLC", Domain: "google.com", Asn: "15169",
+			}},
+			defaultAllow:     true,
+			allowPrivate:     false,
+			ipHeaders:        []string{"X-Real-Ip"},
+			ipHeaderStrategy: IPHeaderStrategyCheckFirst,
+			allowedIPBlocks:  emptyBlocks,
+			blockedIPBlocks:  emptyBlocks,
+			logger:           logger,
+			requestHeaderEnrich: map[string]string{
+				"X-Geo-Country": dbprovider.MetaCountry,
+				"X-Geo-Region":  dbprovider.MetaRegion,
+				"X-Geo-City":    dbprovider.MetaCity,
+				"X-Geo-Isp":     dbprovider.MetaIsp,
+				"X-Geo-Domain":  dbprovider.MetaDomain,
+				"X-Geo-Asn":     dbprovider.MetaAsn,
+			},
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if rr.Code != http.StatusTeapot {
+			t.Fatalf("status %d", rr.Code)
+		}
+		if got := req.Header.Get("X-Geo-Country"); got != "US" {
+			t.Errorf("country: got %q", got)
+		}
+		if got := req.Header.Get("X-Geo-Region"); got != "California" {
+			t.Errorf("region: got %q", got)
+		}
+		if got := req.Header.Get("X-Geo-City"); got != "Mountain View" {
+			t.Errorf("city: got %q", got)
+		}
+		if got := req.Header.Get("X-Geo-Isp"); got != "Google LLC" {
+			t.Errorf("isp: got %q", got)
+		}
+		if got := req.Header.Get("X-Geo-Domain"); got != "google.com" {
+			t.Errorf("domain: got %q", got)
+		}
+		if got := req.Header.Get("X-Geo-Asn"); got != "15169" {
+			t.Errorf("asn: got %q", got)
+		}
+	})
+
+	t.Run("real BIN writes country and skips missing region city", func(t *testing.T) {
+		handler, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                     true,
+			Ip2locationDatabaseFilePath: dbFilePath,
+			DefaultAllow:                true,
+			DisallowedStatusCode:        http.StatusForbidden,
+			IPHeaders:                   []string{"x-real-ip"},
+			IPHeaderStrategy:            IPHeaderStrategyCheckFirst,
+			RequestHeaderEnrich: map[string]string{
+				"X-Geo-Country": "country",
+				"X-Geo-Region":  "region",
+				"X-Geo-City":    "city",
+			},
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if req.Header.Get("X-Geo-Country") != "US" {
+			t.Errorf("country: got %q", req.Header.Get("X-Geo-Country"))
+		}
+		if req.Header.Get("X-Geo-Region") != "" {
+			t.Errorf("DB1 should not set region, got %q", req.Header.Get("X-Geo-Region"))
+		}
+		if req.Header.Get("X-Geo-City") != "" {
+			t.Errorf("DB1 should not set city, got %q", req.Header.Get("X-Geo-City"))
+		}
+	})
+
+	t.Run("DB8 writes region city isp domain", func(t *testing.T) {
+		path := requireDB8(t)
+		handler, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                     true,
+			Ip2locationDatabaseFilePath: path,
+			DefaultAllow:                true,
+			DisallowedStatusCode:        http.StatusForbidden,
+			IPHeaders:                   []string{"x-real-ip"},
+			IPHeaderStrategy:            IPHeaderStrategyCheckFirst,
+			RequestHeaderEnrich:         fullEnrichHeaders,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if req.Header.Get("X-Geo-Country") != "US" {
+			t.Errorf("country: got %q", req.Header.Get("X-Geo-Country"))
+		}
+		if req.Header.Get("X-Geo-Region") != "California" {
+			t.Errorf("region: got %q", req.Header.Get("X-Geo-Region"))
+		}
+		if req.Header.Get("X-Geo-City") != "Mountain View" {
+			t.Errorf("city: got %q", req.Header.Get("X-Geo-City"))
+		}
+		if req.Header.Get("X-Geo-Isp") != "Google LLC" {
+			t.Errorf("isp: got %q", req.Header.Get("X-Geo-Isp"))
+		}
+		if req.Header.Get("X-Geo-Domain") != "google.com" {
+			t.Errorf("domain: got %q", req.Header.Get("X-Geo-Domain"))
+		}
+		if req.Header.Get("X-Geo-Asn") != "" {
+			t.Errorf("DB8 has no ASN column, got %q", req.Header.Get("X-Geo-Asn"))
+		}
 	})
 }

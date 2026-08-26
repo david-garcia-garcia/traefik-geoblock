@@ -27,6 +27,17 @@ type DatabaseConfig struct {
 	DatabaseAutoUpdateDir   string
 	DatabaseAutoUpdateToken string
 	DatabaseAutoUpdateCode  string
+
+	// ASN LITE is a second BIN. Path is optional; code defaults to DefaultASNDatabaseCode.
+	// AsnDatabaseAutoUpdate is separate from geo auto-update so a 264MB ASN
+	// download is opt-in.
+	AsnDatabaseFilePath       string
+	AsnDatabaseAutoUpdate     bool
+	AsnDatabaseAutoUpdateCode string
+
+	// AllowMissing lets initialize succeed when the BIN is not on disk yet
+	// (ASN first start: download lands later, then hot-swap).
+	AllowMissing bool
 }
 
 // DatabaseWrapper wraps ip2location.DB and allows for hot-swapping during updates
@@ -41,16 +52,48 @@ func (dw *DatabaseWrapper) Get_country_short(ip string) (ip2loc.IP2Locationrecor
 	return dw.db.Get_country_short(ip)
 }
 
-// LookupCountry returns the ISO country code for ip, or an error if the lookup is invalid.
-func (dw *DatabaseWrapper) LookupCountry(ip string) (string, error) {
-	record, err := dw.Get_country_short(ip)
+// Lookup returns country/region/city for ip. Region and city are empty when
+// the BIN does not include those columns (LITE DB1).
+func (dw *DatabaseWrapper) Lookup(ip string) (dbprovider.Record, error) {
+	record, err := dw.db.Get_all(ip)
 	if err != nil {
-		return "", err
+		return dbprovider.Record{}, err
 	}
-	if strings.HasPrefix(strings.ToLower(record.Country_short), "invalid") {
-		return "", fmt.Errorf("%s", record.Country_short)
+	country := record.Country_short
+	if len(country) >= 7 && strings.EqualFold(country[:7], "invalid") {
+		return dbprovider.Record{}, fmt.Errorf("%s", country)
 	}
-	return record.Country_short, nil
+	return dbprovider.Record{
+		Country: country,
+		Region:  usableMeta(record.Region),
+		City:    usableMeta(record.City),
+		Isp:     usableMeta(record.Isp),
+		Domain:  usableMeta(record.Domain),
+	}, nil
+}
+
+func (dw *DatabaseWrapper) lookupASN(ip string) string {
+	if dw == nil || dw.db == nil {
+		return ""
+	}
+	record, err := dw.db.Get_asn(ip)
+	if err != nil {
+		return ""
+	}
+	return usableMeta(record.Asn)
+}
+
+func usableMeta(value string) string {
+	if value == "" || value == "-" {
+		return ""
+	}
+	if strings.HasPrefix(value, "This parameter is unavailable") {
+		return ""
+	}
+	if len(value) >= 7 && strings.EqualFold(value[:7], "invalid") {
+		return ""
+	}
+	return value
 }
 
 // GetVersion returns the current database version (fast path - no locking)
@@ -177,6 +220,14 @@ func (df *DatabaseFactory) initialize() error {
 		df.sourceDbPath = targetPath
 	}
 
+	if targetPath == "" {
+		if !df.config.AllowMissing {
+			return fmt.Errorf("database file not found")
+		}
+		df.logger.Info("no database file yet; waiting for auto-update")
+		return nil
+	}
+
 	// Open the database
 	db, err := ip2loc.OpenDB(targetPath)
 	if err != nil {
@@ -213,9 +264,16 @@ func (df *DatabaseFactory) initialize() error {
 // resolveDatabasePath determines the best database path based on configuration
 func (df *DatabaseFactory) resolveDatabasePath() (string, error) {
 	databasePath := df.config.DatabaseFilePath
+	defaultName := defaultFileNameForCode(df.config.DatabaseAutoUpdateCode)
 
-	// Search for database file
-	databasePath, err := fileutils.Default.Search(databasePath, "IP2LOCATION-LITE-DB1.IPV6.BIN", df.logger)
+	if df.config.AllowMissing {
+		if databasePath != "" && fileutils.Exists(databasePath) {
+			return databasePath, nil
+		}
+		return "", nil
+	}
+
+	databasePath, err := fileutils.Default.Search(databasePath, defaultName, df.logger)
 	if err != nil {
 		return "", fmt.Errorf("database file not found: %w", err)
 	}
@@ -254,7 +312,8 @@ func (df *DatabaseFactory) createLocalDatabaseCopy(sourcePath string) (string, e
 	// Always create unique timestamped copy with nanoseconds to guarantee uniqueness
 	now := time.Now()
 	timestamp := fmt.Sprintf("%s_%d", now.Format("20060102_150405"), now.Nanosecond())
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("IP2LOCATION-LITE-DB1.IPV6_%s.BIN", timestamp))
+	code := defaultDatabaseCode(df.config.DatabaseAutoUpdateCode)
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("IP2LOCATION-LITE-%s.IPV6_%s.BIN", code, timestamp))
 
 	// Copy to temp location
 	if err := fileutils.Copy(sourcePath, tmpFile, false); err != nil {
@@ -291,18 +350,15 @@ func (df *DatabaseFactory) startAutoUpdate() {
 // checkAndUpdate checks if an update is needed and performs actual downloads/updates
 func (df *DatabaseFactory) checkAndUpdate() {
 	currentVersion := df.wrapper.GetVersion()
-	if currentVersion == nil {
-		df.logger.Debug("checkAndUpdate: no current version available, skipping update check")
-		return
-	}
-
-	// Only update if database is older than 1 month
-	if time.Since(currentVersion.Date()) < 30*24*time.Hour {
+	if currentVersion != nil && time.Since(currentVersion.Date()) < 30*24*time.Hour {
 		df.logger.Debug("checkAndUpdate: database is recent, skipping update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
 		return
 	}
-
-	df.logger.Info("checkAndUpdate: database is old, attempting download update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
+	if currentVersion == nil {
+		df.logger.Info("checkAndUpdate: no database open yet, attempting download")
+	} else {
+		df.logger.Info("checkAndUpdate: database is old, attempting download update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
+	}
 
 	// Find current latest database
 	latest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
@@ -330,7 +386,11 @@ func (df *DatabaseFactory) checkAndUpdate() {
 		return
 	}
 
-	if newLatest == "" || newLatest == latest {
+	if newLatest == "" {
+		df.logger.Debug("checkAndUpdate: no new database found after update attempt")
+		return
+	}
+	if newLatest == latest && currentVersion != nil {
 		df.logger.Debug("checkAndUpdate: no new database found after update attempt")
 		return
 	}
@@ -410,15 +470,6 @@ func generateConfigHash(config *DatabaseConfig) string {
 	hasher := fnv.New32()
 	hasher.Write(configBytes)
 	return strconv.FormatUint(uint64(hasher.Sum32()), 10)
-}
-
-// New constructs the IP2Location DatabaseProvider (shared factory + wrapper).
-func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
-	factory, err := GetDatabaseFactory(&config, logger)
-	if err != nil {
-		return nil, err
-	}
-	return factory.GetWrapper(), nil
 }
 
 // GetDatabaseFactory returns a singleton database factory for the given configuration

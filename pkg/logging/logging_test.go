@@ -90,6 +90,7 @@ func TestNew_LogLevels(t *testing.T) {
 		level         string
 		expectedLevel slog.Level
 	}{
+		{"trace level", "trace", LevelTrace},
 		{"debug level", "debug", slog.LevelDebug},
 		{"info level", "info", slog.LevelInfo},
 		{"warn level", "warn", slog.LevelWarn},
@@ -182,6 +183,56 @@ func TestNew_Integration(t *testing.T) {
 	if !strings.Contains(output, pluginName) {
 		t.Errorf("expected output to contain plugin name '%s', but got: %s", pluginName, output)
 	}
+}
+
+func TestNew_TraceLevel(t *testing.T) {
+	pluginName := "trace-test-plugin"
+	bootstrapLogger := NewBootstrap(pluginName, "info")
+
+	t.Run("debug does not emit trace", func(t *testing.T) {
+		var buf bytes.Buffer
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+		go func() { _, _ = buf.ReadFrom(r) }()
+
+		logger := New(pluginName, "debug", "text", bootstrapLogger)
+		Trace(logger, "trace only message")
+		logger.Debug("debug message")
+
+		w.Close()
+		os.Stdout = oldStdout
+		time.Sleep(10 * time.Millisecond)
+		output := buf.String()
+		if strings.Contains(output, "trace only message") {
+			t.Errorf("debug level should not emit trace, got: %s", output)
+		}
+		if !strings.Contains(output, "debug message") {
+			t.Errorf("expected debug message, got: %s", output)
+		}
+	})
+
+	t.Run("trace emits TRACE label", func(t *testing.T) {
+		var buf bytes.Buffer
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+		go func() { _, _ = buf.ReadFrom(r) }()
+
+		logger := New(pluginName, "trace", "text", bootstrapLogger)
+		Trace(logger, "trace only message")
+
+		w.Close()
+		os.Stdout = oldStdout
+		time.Sleep(10 * time.Millisecond)
+		output := buf.String()
+		if !strings.Contains(output, "trace only message") {
+			t.Errorf("expected trace message, got: %s", output)
+		}
+		if !strings.Contains(output, "TRACE") {
+			t.Errorf("expected TRACE level label, got: %s", output)
+		}
+	})
 }
 
 func TestNew_WithAttributes(t *testing.T) {

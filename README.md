@@ -39,7 +39,17 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
-## Performance & Scalability
+**Expected throughput** (`go test -bench=BenchmarkPlugin -benchmem` on a local Intel Core Ultra 7 265K):
+
+| Path | Typical rate | Typical cost |
+| --- | --- | --- |
+| `Lookup` (LITE DB1) | ~131k ops/s | ~6.7 µs, 4 allocs, 536 B |
+| `ServeHTTP` reuse (LITE DB1) | ~122k ops/s | ~6.9 µs, 5 allocs, 552 B |
+| `Lookup` (paid DB8) | ~46k ops/s | ~22 µs, 13 allocs, 1832 B |
+| `ServeHTTP` reuse + full enrich (DB8: country/region/city/isp/domain) | ~45k ops/s | ~22 µs, 20 allocs, 1944 B |
+| CI floor (`TestThroughput_*`) | 20k ops/s | fails the test if below |
+
+DB8 is a larger BIN (region/city/ISP/domain), so each `Get_all` costs more. An ASN LITE BIN adds a second lookup on top. CI still gates at 20k ops/s (`go test -run TestThroughput -v`; skipped with `-short`). The DB8 gate skips when `testdata/IP2LOCATION-DB8.BIN` is absent.
 
 ## Observability
 
@@ -199,7 +209,7 @@ experimental:
 - `download.ip2location.com`
 - `www.ip2location.com`
 
-> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate: false`), no external network access is required and the plugin operates entirely offline.
+> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate: false` and `ip2location_asnDatabaseAutoUpdate: false`), no external network access is required and the plugin operates entirely offline.
 
 ## Testing and development
 
@@ -245,7 +255,7 @@ docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock traefik:latest
 export TRAEFIK_PLUGIN_GEOBLOCK_PATH=/opt/traefik-plugins/geoblock
 ```
 
-When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN` and `geoblockban.html` files in the specified directory if they are not found in their configured locations.
+When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN` and `geoblockban.html` files in the specified directory if they are not found in their configured locations. An ASN BIN is only opened when `ip2location_asnDatabaseFilePath` is set or ASN auto-update has downloaded one.
 
 ### Example Docker Compose Setup
 
@@ -443,7 +453,8 @@ http:
           #-------------------------------
           # Logging Configuration
           #-------------------------------
-          logLevel: "info"                  # Available: debug, info, warn, error
+          logLevel: "info"                  # Available: trace, debug, info, warn, error
+          # Per-request ServeHTTP logs (bypass, exclude, ignore verb) are trace.
           logFormat: "json"                 # Available: json, text
           # Plugin logs go to stdout (Traefik's process log). There is no file logger.
           # Observe allow/block decisions with logStatusDetailHeader in access logs.
@@ -463,6 +474,16 @@ http:
           ip2location_databaseAutoUpdateToken: ""                # IP2Location download token (if using premium)
           ip2location_databaseAutoUpdateCode: "DB8BINIPV6"       # Official IP2Location package code for file= (e.g. DB8BINIPV6, DB1LITEBINIPV6). Sent unchanged when a token is set. Not a short product like DB8.
 
+          ip2location_asnDatabaseFilePath: ""
+          # Optional path to IP2Location LITE IP-ASN BIN (https://lite.ip2location.com/database-asn).
+          # Leave empty if you do not need ASN metadata. The geo BIN does not contain ASN.
+          ip2location_asnDatabaseAutoUpdate: false
+          # Opt-in. When true, downloads and hot-swaps the ASN BIN using the same
+          # ip2location_databaseAutoUpdateDir and token as the geo database.
+          # Default package is DBASNLITEBINIPV6 (~264MB). First start can take a while.
+          ip2location_asnDatabaseAutoUpdateCode: "DBASNLITEBINIPV6"
+          # Official file= package code. Use DBASNLITEBIN for the IPv4-only ASN BIN.
+
           #-------------------------------
           # Request header settings
           #-------------------------------  
@@ -473,6 +494,18 @@ http:
           # Example access log config: accesslog.fields.headers.names.X-IPCountry=keep
           # Note: Header is initially set to "PRIVATE" and only overridden by the first real country found
           # This ensures private IPs processed later cannot override legitimate country information
+
+          requestHeaderEnrich:
+            X-Geo-Country: country
+            X-Geo-Region: region
+            X-Geo-City: city
+            X-Geo-Isp: isp
+            X-Geo-Domain: domain
+            X-Geo-Asn: asn
+          # Map request header names to geo metadata keys: country, region, city, isp, domain, asn.
+          # The first public IP wins. Empty or unavailable BIN fields are not written.
+          # IP2Location LITE DB1 is country-only; region/city/isp/domain need DB8 or richer.
+          # asn needs the ASN LITE BIN (ip2location_asnDatabaseFilePath or ASN auto-update).
           
           logStatusDetailHeader: "X-Geoblock-Decision"
           # Optional header to add the decision to the REQUEST

@@ -9,6 +9,12 @@ services:
       - "--accesslog.filepath=/var/log/traefik/access.log"
       - "--accesslog.format=json"
       - "--accesslog.fields.headers.names.X-Ipcountry=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Country=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Region=keep"
+      - "--accesslog.fields.headers.names.X-Geo-City=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Asn=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Isp=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Domain=keep"
       - "--accesslog.fields.headers.names.X-Geoblock-Decision=keep"
       - "--api.insecure=true"
       - "--providers.docker=true"
@@ -24,7 +30,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - logs-local:/var/log/traefik
-      - geoblock-logs:/var/log/geoblock
       - './geoblockban.html:/geoblockban.html:ro'
       - ./:/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock
     ports:
@@ -238,6 +243,27 @@ services:
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.bypassHeaders.X-Geoblock-Bypass=secret-bypass-token"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.blockedIPBlocks=3.5.140.0/24"
 
+  whoami-enrichTest:
+    image: traefik/whoami
+    container_name: "simple-service-enrichTest"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-enrichTest.rule=PathPrefix(`/enrichTest`)"
+      - "traefik.http.routers.router-enrichTest.entrypoints=web"
+      - "traefik.http.routers.router-enrichTest.middlewares=geoblock-enrichTest@docker"
+      - "traefik.http.services.service-enrichTest.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.logLevel=INFO"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.defaultAllow=true"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Country=country"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Region=region"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-City=city"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Asn=asn"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Isp=isp"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Domain=domain"
+
 volumes:
   logs-local:
-  geoblock-logs:

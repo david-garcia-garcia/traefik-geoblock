@@ -14,3 +14,8 @@ dist/
 
 # Vendor needs to be commited for the plugin to work
 # vendor/
+
+# Paid IP2Location BINs (not redistributable)
+testdata/IP2LOCATION-DB8*.BIN
+testdata/IP2LOCATION-DB8*.BIN.ZIP
+testdata/IP-COUNTRY-REGION-CITY-*.BIN

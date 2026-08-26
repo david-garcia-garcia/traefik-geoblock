@@ -320,6 +320,7 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             # Verify that the country header was added with PRIVATE value
             $countryHeaderLogFound | Should -Be $true
         }
+    }
 
     Context "Block All Requests" {
         It "Should block localhost request (private IP not allowed)" {
@@ -436,6 +437,23 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
             $result = Invoke-TestRequest -Uri "$script:BaseUrl/excludedpaths/healthcheck" -Headers $headers
             $result.StatusCode | Should -Be 403
+        }
+    }
+
+    Context "Request header enrichment" {
+        It "Should enrich country, region, and city request headers" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/enrichTest" -Headers $headers
+            $result.StatusCode | Should -Be 200
+            $result.Content | Should -Match "X-Geo-Country:\s*US"
+            # LITE DB1 has no region/city. Those headers are still configured; values stay unset
+            # (unit tests write all three when the provider returns them).
+            $result.Content | Should -Not -Match "Please upgrade the data file"
+            $result.Content | Should -Not -Match "X-Geo-Region:"
+            $result.Content | Should -Not -Match "X-Geo-City:"
+            $result.Content | Should -Not -Match "X-Geo-Asn:"
+            $result.Content | Should -Not -Match "X-Geo-Isp:"
+            $result.Content | Should -Not -Match "X-Geo-Domain:"
         }
     }
     

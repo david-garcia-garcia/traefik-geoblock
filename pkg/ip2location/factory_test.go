@@ -274,6 +274,48 @@ func TestDatabaseFactory_Initialize_Errors(t *testing.T) {
 	}
 }
 
+func TestDatabaseFactory_AllowMissingNoFile(t *testing.T) {
+	CleanupFactories()
+	defer CleanupFactories()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	factory, err := NewDatabaseFactory(&DatabaseConfig{
+		DatabaseAutoUpdateCode: DefaultASNDatabaseCode,
+		AllowMissing:           true,
+	}, logger)
+	if err != nil {
+		t.Fatalf("AllowMissing factory: %v", err)
+	}
+	defer factory.Close()
+
+	if factory.GetWrapper().lookupASN("8.8.8.8") != "" {
+		t.Error("expected empty ASN when no BIN is open")
+	}
+	if factory.GetWrapper().GetVersion() != nil {
+		t.Error("expected no version when no BIN is open")
+	}
+}
+
+func TestUsableMeta(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"15169", "15169"},
+		{"", ""},
+		{"-", ""},
+		{"This parameter is unavailable for selected data file. Please upgrade the data file.", ""},
+		{"Invalid IP address.", ""},
+	}
+	for _, tc := range cases {
+		if got := usableMeta(tc.in); got != tc.want {
+			t.Errorf("usableMeta(%q)=%q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestDatabaseFactory_HotSwap(t *testing.T) {
 	// This test requires a more complex setup to simulate hot swapping
 	// For now, we'll test the basic structure
@@ -445,24 +487,27 @@ func TestDatabaseFactory_Integration(t *testing.T) {
 		DatabaseAutoUpdateCode: "DB1",
 	}
 
-	provider, err := New(cfg, logger)
+	got, err := New(cfg, logger)
 	if err != nil {
 		t.Fatalf("Failed to create provider: %v", err)
 	}
 
-	country, err := provider.LookupCountry("8.8.8.8")
+	rec, err := got.Lookup("8.8.8.8")
 	if err != nil {
 		t.Fatalf("Lookup failed: %v", err)
 	}
-	if country != "US" {
-		t.Errorf("Expected country US, got %s", country)
+	if rec.Country != "US" {
+		t.Errorf("Expected country US, got %s", rec.Country)
+	}
+	if rec.Region != "" || rec.City != "" {
+		t.Errorf("DB1 should leave region/city empty, got region=%q city=%q", rec.Region, rec.City)
 	}
 
-	wrapper, ok := provider.(*DatabaseWrapper)
+	p, ok := got.(*provider)
 	if !ok {
-		t.Fatal("expected DatabaseWrapper")
+		t.Fatal("expected composed ip2location provider")
 	}
-	dbPath := wrapper.GetPath()
+	dbPath := p.geo.GetPath()
 	if !strings.Contains(dbPath, "IP2LOCATION-LITE-DB1.IPV6_") {
 		t.Errorf("Expected database path to be a timestamped local copy, got: %s", dbPath)
 	}
@@ -778,7 +823,7 @@ func TestDatabaseFactory_CheckAndUpdate_SynchronousDownloadAndHotSwap(t *testing
 
 	config := &DatabaseConfig{
 		DatabaseFilePath:        testDBFile, // Fallback database
-		DatabaseAutoUpdate:      true,                              // Enable auto-update ticker for full workflow
+		DatabaseAutoUpdate:      true,       // Enable auto-update ticker for full workflow
 		DatabaseAutoUpdateDir:   tmpDir,
 		DatabaseAutoUpdateCode:  "DB1",
 		DatabaseAutoUpdateToken: "", // Use free version for test
@@ -821,6 +866,52 @@ func TestDatabaseFactory_CheckAndUpdate_SynchronousDownloadAndHotSwap(t *testing
 					initialVersion.String(), currentVersion.String())
 				return
 			}
+		}
+	}
+}
+
+func requireDB8Wrapper(tb testing.TB) *DatabaseWrapper {
+	tb.Helper()
+	db8 := filepath.Join("..", "..", "testdata", "IP2LOCATION-DB8.BIN")
+	if _, err := os.Stat(db8); err != nil {
+		tb.Skip("paid DB8 BIN not present; place testdata/IP2LOCATION-DB8.BIN")
+	}
+	CleanupFactories()
+	tb.Cleanup(CleanupFactories)
+	factory, err := NewDatabaseFactory(&DatabaseConfig{DatabaseFilePath: db8}, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})))
+	if err != nil {
+		tb.Fatalf("DB8 factory: %v", err)
+	}
+	tb.Cleanup(func() { _ = factory.Close() })
+	return factory.GetWrapper()
+}
+
+func BenchmarkDB8_GetCountryShort(b *testing.B) {
+	w := requireDB8Wrapper(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rec, err := w.Get_country_short("8.8.8.8")
+		if err != nil {
+			b.Fatal(err)
+		}
+		if rec.Country_short != "US" {
+			b.Fatalf("country %q", rec.Country_short)
+		}
+	}
+}
+
+func BenchmarkDB8_GetAll(b *testing.B) {
+	w := requireDB8Wrapper(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rec, err := w.Lookup("8.8.8.8")
+		if err != nil {
+			b.Fatal(err)
+		}
+		if rec.Country != "US" {
+			b.Fatalf("country %q", rec.Country)
 		}
 	}
 }

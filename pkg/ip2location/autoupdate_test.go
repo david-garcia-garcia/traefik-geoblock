@@ -405,4 +405,38 @@ func TestIp2locationDownloadURL_TokenFileIsExactCode(t *testing.T) {
 	if got := ip2locationDownloadURL("", "DB1"); got != liteDownloadURL {
 		t.Errorf("empty token: got %q, want liteDownloadURL", got)
 	}
+	if got := ip2locationDownloadURL("", DefaultASNDatabaseCode); got != asnLiteDownloadURL {
+		t.Errorf("empty token ASN IPv6: got %q, want asnLiteDownloadURL", got)
+	}
+	if got := ip2locationDownloadURL("", "DBASNLITEBIN"); got != asnLiteIPv4URL {
+		t.Errorf("empty token ASN IPv4: got %q, want asnLiteIPv4URL", got)
+	}
+	got := ip2locationDownloadURL(token, DefaultASNDatabaseCode)
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("ASN token url: %v", err)
+	}
+	if file := u.Query().Get("file"); file != DefaultASNDatabaseCode {
+		t.Errorf("ASN token file=%q, want %q", file, DefaultASNDatabaseCode)
+	}
+}
+
+func TestFindLatestDatabase_ASNCode(t *testing.T) {
+	testDir := t.TempDir()
+	files := []string{
+		"20230101_IP2LOCATION-LITE-DBASNLITEBINIPV6.IPV6.BIN",
+		"20230301_IP2LOCATION-LITE-DBASNLITEBINIPV6.IPV6.BIN",
+	}
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(testDir, f), []byte("test"), 0600); err != nil {
+			t.Fatalf("create %s: %v", f, err)
+		}
+	}
+	latest, err := findLatestDatabase(testDir, DefaultASNDatabaseCode)
+	if err != nil {
+		t.Fatalf("findLatestDatabase: %v", err)
+	}
+	if !strings.Contains(latest, "20230301") {
+		t.Errorf("expected March 2023 ASN file, got %s", latest)
+	}
 }
