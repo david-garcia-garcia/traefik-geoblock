@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"log/slog"
@@ -133,6 +134,7 @@ type DatabaseFactory struct {
 	sourceDbPath       string // Track the original database that was used for the current local copy
 	updateTicker       *time.Ticker
 	stopChan           chan struct{}
+	updateDone         sync.WaitGroup
 	factoryID          string // Unique identifier for this factory instance
 }
 
@@ -184,6 +186,7 @@ func (df *DatabaseFactory) Close() error {
 	if df.updateTicker != nil {
 		df.updateTicker.Stop()
 		close(df.stopChan)
+		df.updateDone.Wait()
 	}
 
 	// Close current database
@@ -334,8 +337,10 @@ func (df *DatabaseFactory) createLocalDatabaseCopy(sourcePath string) (string, e
 // startAutoUpdate starts the auto-update ticker
 func (df *DatabaseFactory) startAutoUpdate() {
 	df.updateTicker = time.NewTicker(24 * time.Hour)
+	df.updateDone.Add(1)
 
 	go func() {
+		defer df.updateDone.Done()
 		df.logger.Debug("startAutoUpdate: starting auto-update ticker")
 
 		// Run first check immediately

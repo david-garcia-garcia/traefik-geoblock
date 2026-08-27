@@ -15,9 +15,9 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 //go:generate go run ./tools/dbdownload/main.go -o ./IP2LOCATION-LITE-DB1.IPV6.BIN
