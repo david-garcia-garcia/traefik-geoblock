@@ -23,8 +23,6 @@ import (
 const (
 	// DefaultFileName is the committed Lite MMDB at the module root.
 	DefaultFileName = "ipinfo_lite.mmdb"
-
-	maxParentWalk = 6
 )
 
 // DatabaseConfig is IPinfo Lite MMDB path and auto-update.
@@ -56,34 +54,18 @@ type provider struct {
 	stopChan     chan struct{}
 }
 
-var (
-	factories    = map[string]*provider{}
-	factoryMutex sync.RWMutex
-)
+var factories = dbprovider.NewRegistry()
 
 // New opens the IPinfo Lite DatabaseProvider (singleton per config).
 func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
 	key := configHash(config)
-
-	factoryMutex.RLock()
-	if p, ok := factories[key]; ok {
-		factoryMutex.RUnlock()
-		return p, nil
-	}
-	factoryMutex.RUnlock()
-
-	factoryMutex.Lock()
-	defer factoryMutex.Unlock()
-	if p, ok := factories[key]; ok {
-		return p, nil
-	}
-
-	p, err := newProvider(config, logger)
+	v, err := factories.GetOrCreate(key, func() (any, error) {
+		return newProvider(config, logger)
+	})
 	if err != nil {
 		return nil, err
 	}
-	factories[key] = p
-	return p, nil
+	return v.(dbprovider.Provider), nil
 }
 
 func newProvider(config DatabaseConfig, logger *slog.Logger) (*provider, error) {
@@ -144,34 +126,12 @@ func resolveSeedPath(configured string, logger *slog.Logger) (string, error) {
 	if found, err := fileutils.Default.Search(configured, DefaultFileName, logger); err == nil && found != "" {
 		return found, nil
 	}
-	if bundled := findBundledMMDB(); bundled != "" {
-		return bundled, nil
-	}
-	return "", fmt.Errorf("IPinfo database file not found (set ipinfo_databaseFilePath or keep %s in the plugin tree)", DefaultFileName)
-}
-
-func findBundledMMDB() string {
 	for _, cand := range []string{DefaultFileName, filepath.Join(".", DefaultFileName)} {
 		if fileutils.Exists(cand) {
-			return cand
+			return cand, nil
 		}
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	for i := 0; i < maxParentWalk; i++ {
-		cand := filepath.Join(wd, DefaultFileName)
-		if fileutils.Exists(cand) {
-			return cand
-		}
-		parent := filepath.Dir(wd)
-		if parent == wd {
-			break
-		}
-		wd = parent
-	}
-	return ""
+	return "", fmt.Errorf("IPinfo database file not found (set ipinfo_databaseFilePath or keep %s in the plugin tree)", DefaultFileName)
 }
 
 func (p *provider) open(path string) error {
@@ -299,10 +259,7 @@ func configHash(cfg DatabaseConfig) string {
 
 // resetFactories is for tests.
 func resetFactories() {
-	factoryMutex.Lock()
-	defer factoryMutex.Unlock()
-	for k, p := range factories {
-		_ = p.Close()
-		delete(factories, k)
-	}
+	factories.Clear(func(v any) {
+		_ = v.(*provider).Close()
+	})
 }

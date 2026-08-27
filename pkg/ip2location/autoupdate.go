@@ -148,10 +148,10 @@ func downloadAndUpdateDatabase(cfg *DatabaseConfig, logger *slog.Logger) error {
 	if fi, err := os.Stat(lockFile); err == nil {
 		age := time.Since(fi.ModTime())
 		if age < time.Hour {
-			logger.Debug("another update is in progress (lock file: %s, age: %s)", lockFile, age)
+			logger.Debug("another update is in progress", "lock", lockFile, "age", age)
 			return nil
 		}
-		logger.Warn("removing stale lock file (lock file: %s, age: %s)", lockFile, age)
+		logger.Warn("removing stale lock file", "lock", lockFile, "age", age)
 		if err := os.Remove(lockFile); err != nil {
 			return fmt.Errorf("failed to remove stale lock file %s: %v", lockFile, err)
 		}

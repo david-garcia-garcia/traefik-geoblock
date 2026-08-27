@@ -24,6 +24,15 @@ func Trace(logger *slog.Logger, msg string, args ...any) {
 	logger.Log(context.Background(), LevelTrace, msg, args...)
 }
 
+// Redact keeps the first two characters of s and replaces the rest with '*'.
+func Redact(s string) string {
+	r := []rune(s)
+	if len(r) <= 2 {
+		return s
+	}
+	return string(r[:2]) + strings.Repeat("*", len(r)-2)
+}
+
 func parseLevel(level string) (slog.Level, bool) {
 	switch strings.ToLower(level) {
 	case "trace":

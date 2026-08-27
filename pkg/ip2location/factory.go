@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"log/slog"
@@ -453,11 +452,8 @@ func (df *DatabaseFactory) performHotSwap(newDatabasePath string) error {
 	return nil
 }
 
-// Global factory manager
-var (
-	factoryMutex sync.RWMutex
-	factories    = make(map[string]*DatabaseFactory)
-)
+// factories is one DatabaseFactory per config hash (Traefik reloads call New again).
+var factories = dbprovider.NewRegistry()
 
 // generateConfigHash creates a unique hash key from DatabaseConfig for singleton pattern
 func generateConfigHash(config *DatabaseConfig) string {
@@ -481,43 +477,24 @@ func generateConfigHash(config *DatabaseConfig) string {
 
 // GetDatabaseFactory returns a singleton database factory for the given configuration
 func GetDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseFactory, error) {
-	// Generate unique key from the entire configuration
 	key := generateConfigHash(config)
-
-	factoryMutex.RLock()
-	if factory, exists := factories[key]; exists {
-		factoryMutex.RUnlock()
+	v, err := factories.GetOrCreate(key, func() (any, error) {
+		factory, err := NewDatabaseFactory(config, logger)
+		if err != nil {
+			return nil, err
+		}
+		logger.Debug("created new database factory", "config_hash", key)
 		return factory, nil
-	}
-	factoryMutex.RUnlock()
-
-	// Create new factory
-	factoryMutex.Lock()
-	defer factoryMutex.Unlock()
-
-	// Double-check pattern
-	if factory, exists := factories[key]; exists {
-		return factory, nil
-	}
-
-	factory, err := NewDatabaseFactory(config, logger)
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	factories[key] = factory
-	logger.Debug("created new database factory", "config_hash", key)
-
-	return factory, nil
+	return v.(*DatabaseFactory), nil
 }
 
 // CleanupFactories closes all database factories (for testing/shutdown)
 func CleanupFactories() {
-	factoryMutex.Lock()
-	defer factoryMutex.Unlock()
-
-	for key, factory := range factories {
-		factory.Close()
-		delete(factories, key)
-	}
+	factories.Clear(func(v any) {
+		v.(*DatabaseFactory).Close()
+	})
 }

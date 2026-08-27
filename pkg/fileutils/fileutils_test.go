@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestFileUtils_Exists(t *testing.T) {
+func TestFileUtils_ExistsPath(t *testing.T) {
 	fu := NewFileUtils()
 
 	t.Run("existing file or path", func(t *testing.T) {
@@ -20,20 +20,20 @@ func TestFileUtils_Exists(t *testing.T) {
 		defer os.Remove(tmpFile.Name())
 		tmpFile.Close()
 
-		if !fu.Exists(tmpFile.Name()) {
+		if !fu.ExistsPath(tmpFile.Name()) {
 			t.Error("expected file to exist")
 		}
 	})
 
 	t.Run("non-existing file", func(t *testing.T) {
-		if fu.Exists("/non/existing/file.txt") {
+		if fu.ExistsPath("/non/existing/file.txt") {
 			t.Error("expected file not to exist")
 		}
 	})
 
 	t.Run("directory should exist", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		if !fu.Exists(tmpDir) {
+		if !fu.ExistsPath(tmpDir) {
 			t.Error("expected directory to exist")
 		}
 	})

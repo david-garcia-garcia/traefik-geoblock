@@ -471,6 +471,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	// Include first: when set, only matching {host}{path} may be blocked.
+	// Non-matching URLs skip blocking with no secret; bypassHeaders is stronger.
 	if passReason == PhaseNone && !p.isIncludedByRegex(req.Host, req.URL.Path) {
 		passReason = PhaseNotIncludedRegex
 		logging.Trace(p.logger, "request not included for blocking by regex",
@@ -496,7 +497,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			if actualValue := req.Header.Get(header); actualValue == expectedValue {
 				logging.Trace(p.logger, "bypassing geoblock due to bypass header match",
 					"header", header,
-					"value", expectedValue,
+					"value", logging.Redact(expectedValue),
 					"remote_addr", req.RemoteAddr,
 					"ip_chain", ipChain)
 				passReason = PhaseBypassHeader

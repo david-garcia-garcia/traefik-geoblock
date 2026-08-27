@@ -512,18 +512,13 @@ func TestNew(t *testing.T) {
 			t.Error("expected plugin not to be nil when environment variable is valid")
 		}
 
-		// Verify the plugin is using the database from the environment variable
 		if plugin != nil {
-			factory, err := ip2location.GetDatabaseFactory(&ip2location.DatabaseConfig{
-				DatabaseFilePath: badDBPath,
-			}, plugin.(*Plugin).logger)
+			rec, err := plugin.(*Plugin).Lookup("8.8.8.8")
 			if err != nil {
-				t.Errorf("failed to get database factory: %v", err)
-			} else {
-				actualPath := factory.GetWrapper().GetPath()
-				if !filepath.IsAbs(actualPath) || !strings.Contains(actualPath, envDir) {
-					t.Errorf("expected database path to be from environment directory, got: %s", actualPath)
-				}
+				t.Errorf("expected successful lookup with env var database, but got: %v", err)
+			}
+			if rec.Country != "US" {
+				t.Errorf("expected country US for 8.8.8.8, got %s", rec.Country)
 			}
 		}
 	})

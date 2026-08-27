@@ -5,16 +5,23 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"log/slog"
+
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
 func testMMDB(t *testing.T) string {
 	t.Helper()
-	p := findBundledMMDB()
-	if p == "" {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	p := filepath.Join(filepath.Dir(file), "..", "..", DefaultFileName)
+	if !fileutils.Exists(p) {
 		t.Fatal("ipinfo_lite.mmdb not found; commit it at the module root")
 	}
 	return p
@@ -92,6 +99,8 @@ func TestLookup_PublicAndPrivate(t *testing.T) {
 func TestNew_EmptyPathFindsBundled(t *testing.T) {
 	resetFactories()
 	t.Cleanup(resetFactories)
+
+	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", filepath.Dir(testMMDB(t)))
 
 	p, err := New(DatabaseConfig{}, testLogger())
 	if err != nil {

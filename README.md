@@ -202,6 +202,37 @@ experimental:
         useunsafe: true
 ```
 
+## GeoIP database configuration and updates
+
+The plugin looks up IPs with one of two providers (`databaseProvider`):
+
+| Provider | Config value | Bundled seed (when available) |
+| --- | --- | --- |
+| IP2Location (default) | `ip2location` or empty | `IP2LOCATION-LITE-DB1.IPV6.BIN` (country). ASN is a separate BIN and is **not** bundled. |
+| IPinfo Lite | `ipinfo` | `ipinfo_lite.mmdb` (country + ASN in one file) |
+
+Only the selected provider’s files are opened. Unused vendor paths are ignored.
+
+**Finding the bundled files.** Traefik does not put the plugin tree on the process working directory. Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to the directory that contains the plugin (the local clone, or the registry unpack such as `/plugins-storage/sources/github.com/david-garcia-garcia/traefik-geoblock`). The plugin searches that directory for the bundled filenames when no other file is configured. Without this variable, empty seed paths fail unless the file is already on an auto-update volume.
+
+**Recommendation: configure auto-update** and point the auto-update directory at a persistent volume. The bundled snapshots (and any static seed file you copy in) go stale. Auto-update downloads a current database, stores a dated copy, and hot-swaps it without restarting Traefik.
+
+How auto-update works:
+
+- Turn it on with `ip2location_databaseAutoUpdate` / `ip2location_asnDatabaseAutoUpdate` / `ipinfo_databaseAutoUpdate`, and set the matching `*AutoUpdateDir` (required; must survive container restarts).
+- On startup the plugin uses the newest dated file already in that directory. A 24-hour ticker then checks again.
+- IP2Location LITE DB1 downloads from the public CDN with no token. ASN LITE and paid IP2Location packages need `ip2location_databaseAutoUpdateToken` and the official `file=` package code. IPinfo Lite downloads only when `ipinfo_databaseAutoUpdateToken` is set; without a token an error is logged and the seed stays in use.
+- New files are stored as `YYYYMMDD_…` in the auto-update directory. IP2Location downloads when the open BIN is older than 30 days. IPinfo skips the download when the dated MMDB is less than 24 hours old.
+- Same config shares one factory (one ticker). See [Network Requirements](#network-requirements) for the download hosts.
+
+`ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, and `ipinfo_databaseFilePath` are **seeds / fallbacks**, not the live copy once auto-update has stored a file. Resolution order for each database the provider needs:
+
+1. **Auto-update directory** — newest dated file already there (when auto-update is on).
+2. **Configured seed path** — the matching `*_databaseFilePath` (file, or a directory searched for the default filename).
+3. **Bundled database** — the committed seed, when that provider ships one, found via `TRAEFIK_PLUGIN_GEOBLOCK_PATH`.
+
+If none of those exist, plugin creation fails (except an empty IP2Location ASN path, which means “no ASN”).
+
 ## Network Requirements
 
 **For automatic database updates to function, ensure your firewall allows outbound HTTPS connections to:**
@@ -399,6 +430,8 @@ http:
           # WHEN SET: only matching requests are candidates for blocking.
           # Non-matching requests pass (pass:not_included_regex) and are still enriched.
           # Unset/empty: every request is a candidate (same as today).
+          # A public URL match is not a secret: anyone who can guess the path
+          # skips blocking. For health checks, bypassHeaders is stronger.
           # Examples:
           # - "^[^/]*/secure/.*"                 # only /secure/* on any host
           # - "^app\\.example\\.com/admin/.*"    # only /admin/* on that host
@@ -573,8 +606,8 @@ The plugin processes requests in the following order:
 - With `CheckFirst` or `CheckFirstNonePrivate` strategies: Only the selected IP(s) are evaluated; the request is denied only if the selected IP is blocked
 - Country header behavior: Header is initially set to "PRIVATE" and only overridden by the first real country found, preventing private IPs from overriding legitimate geolocation information
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
-- Included paths: When `includedPathsRegex` is set, only matching requests can be blocked. Other requests skip blocking but still receive GeoIP enrichment
-- Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment. Exclude is evaluated after include and still wins
+- Included paths: When `includedPathsRegex` is set, only matching requests can be blocked. Other requests skip blocking but still receive GeoIP enrichment. The regex is a public URL match, not a secret — `bypassHeaders` is stronger for health checks
+- Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment. Exclude is evaluated after include and still wins. Same as include: a public URL is not a secret; `bypassHeaders` is stronger for health checks
 
 ---
 

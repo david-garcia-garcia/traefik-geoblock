@@ -16,8 +16,8 @@ func NewFileUtils() *FileUtils {
 	return &FileUtils{}
 }
 
-// ExistsAndIsFile checks if a file exists and is not a directory
-func (fu *FileUtils) Exists(filename string) bool {
+// ExistsPath reports whether filename exists (file or directory).
+func (fu *FileUtils) ExistsPath(filename string) bool {
 	_, err := os.Stat(filename)
 	return !os.IsNotExist(err)
 }
@@ -104,25 +104,25 @@ func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *s
 
 	// If we are going to perform a search, defaultFileName must be provided
 	if defaultFile == "" {
-		return "", fmt.Errorf("database_factory [Search]: defaultFile must be provided when performing a search")
+		return "", fmt.Errorf("fileutils: defaultFile must be provided when performing a search")
 	}
 
 	// The basePathOrFile must be a directory
 	if fu.ExistsAndIsDir(basePathOrFile) {
-		logger.Debug("database_factory [Search]: basePathOrFile is a directory, searching recursively for file.", "basePathOrFile", basePathOrFile)
+		logger.Debug("fileutils: basePathOrFile is a directory, searching recursively for file.", "basePathOrFile", basePathOrFile)
 	} else {
 		// Try to fallback to the environment variable path
 		envPath := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
 		if envPath != "" {
 			if fu.ExistsAndIsDir(envPath) {
-				logger.Debug("database_factory [Search]: using environment variable path TRAEFIK_PLUGIN_GEOBLOCK_PATH for file search.", "envPath", envPath)
+				logger.Debug("fileutils: using environment variable path TRAEFIK_PLUGIN_GEOBLOCK_PATH for file search.", "envPath", envPath)
 				basePathOrFile = envPath
 			} else {
-				logger.Error("database_factory [Search]: TRAEFIK_PLUGIN_GEOBLOCK_PATH is not a directory", "envPath", envPath)
-				return "", fmt.Errorf("database_factory [Search]: TRAEFIK_PLUGIN_GEOBLOCK_PATH is not a directory")
+				logger.Error("fileutils: TRAEFIK_PLUGIN_GEOBLOCK_PATH is not a directory", "envPath", envPath)
+				return "", fmt.Errorf("fileutils: TRAEFIK_PLUGIN_GEOBLOCK_PATH is not a directory")
 			}
 		} else {
-			return "", fmt.Errorf("database_factory [Search]: TRAEFIK_PLUGIN_GEOBLOCK_PATH not provided and basePathOrFile is not a directory or does not exist")
+			return "", fmt.Errorf("fileutils: TRAEFIK_PLUGIN_GEOBLOCK_PATH not provided and basePathOrFile is not a directory or does not exist")
 		}
 	}
 

@@ -12,6 +12,23 @@ import (
 
 const testPluginName = "test-plugin"
 
+func TestRedact(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"a", "a"},
+		{"ab", "ab"},
+		{"abc", "ab*"},
+		{"mysupersecretkey", "my**************"},
+	}
+	for _, tc := range cases {
+		if got := Redact(tc.in); got != tc.want {
+			t.Errorf("Redact(%q)=%q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestStdoutWriter_Write(t *testing.T) {
 	var buf bytes.Buffer
 	oldStdout := os.Stdout

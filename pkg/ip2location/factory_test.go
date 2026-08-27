@@ -145,6 +145,37 @@ func TestGetDatabaseFactory_Singleton(t *testing.T) {
 	}
 }
 
+func TestGetDatabaseFactory_BadPathFallsBackToEnv(t *testing.T) {
+	CleanupFactories()
+	defer CleanupFactories()
+
+	envDir := t.TempDir()
+	envDBPath := filepath.Join(envDir, "IP2LOCATION-LITE-DB1.IPV6.BIN")
+	dbContent, err := os.ReadFile(testDBFile)
+	if err != nil {
+		t.Fatalf("failed to read source database: %v", err)
+	}
+	if err := os.WriteFile(envDBPath, dbContent, 0600); err != nil {
+		t.Fatalf("failed to create env database: %v", err)
+	}
+
+	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", envDir)
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	}))
+	factory, err := GetDatabaseFactory(&DatabaseConfig{
+		DatabaseFilePath: "/nonexistent/path/bad-database.bin",
+	}, logger)
+	if err != nil {
+		t.Fatalf("expected factory from env dir: %v", err)
+	}
+	actualPath := factory.GetWrapper().GetPath()
+	if !filepath.IsAbs(actualPath) || !strings.Contains(actualPath, envDir) {
+		t.Errorf("expected database path to be from environment directory, got: %s", actualPath)
+	}
+}
+
 func TestDatabaseFactory_AutoUpdate(t *testing.T) {
 	// Cleanup factories before test
 	CleanupFactories()
