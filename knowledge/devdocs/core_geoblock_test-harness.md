@@ -22,7 +22,7 @@ Unit and bench tests live next to the owner package. Traefik behavior is proven 
 
 - Change `plugin.go` policy or config → add or extend a package test in the matching `plugin_*_test.go` (config, policy, ipheaders, filters, observe). Shared fixtures stay in `plugin_test.go`.
 - Change a helper in `pkg/<name>` → add or extend `pkg/<name>/*_test.go`.
-- Change lookup or `ServeHTTP` cost → run `go test -bench=BenchmarkPlugin -benchmem`. Keep `TestThroughput_*` floors conservative; raise them only after CI samples.
+- Change lookup or `ServeHTTP` cost → run `go test -bench=BenchmarkPlugin -benchmem`. MaxMind benches (`BenchmarkPlugin_*MaxMind`) use dummy IP `81.2.69.142`, not 8.8.8.8. Keep `TestThroughput_*` floors conservative; raise them only after CI samples.
 - Change Traefik-visible behavior (headers, labels, blocking) → add a `whoami-*` service in `docker-compose.yml` with a unique `PathPrefix` and matching plugin labels, then a Pester `Context` / `It` in `scripts/integration-tests.Tests.ps1`.
 - HTTP from Pester: `Invoke-TestRequest`. Access-log asserts: keep the header on the Traefik `accesslog.fields.headers.names.*` command, then `Get-TraefikAccessLogEntries`.
 - whoami echoes forwarded request headers in the body (`X-Geo-Country: US`).

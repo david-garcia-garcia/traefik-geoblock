@@ -406,3 +406,114 @@ func BenchmarkPlugin_ServeHTTP_Reuse(b *testing.B) {
 		plugin.ServeHTTP(rr, req)
 	}
 }
+
+const maxmindDummyIP = "81.2.69.142"
+
+func newMaxMindPlugin(tb testing.TB) *Plugin {
+	tb.Helper()
+	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+		Enabled:                 true,
+		DatabaseProvider:        DatabaseProviderMaxMind,
+		MaxmindDatabaseFilePath: maxmindFilePath,
+		AllowedCountries:        []string{"GB"},
+		DefaultAllow:            false,
+		AllowPrivate:            false,
+		BanIfError:              true,
+		DisallowedStatusCode:    http.StatusForbidden,
+		IPHeaders:               []string{"x-real-ip"},
+		IPHeaderStrategy:        IPHeaderStrategyCheckFirst,
+		LogLevel:                "error",
+		LogFormat:               "text",
+	}, pluginName)
+	if err != nil {
+		tb.Fatalf("failed to create MaxMind plugin: %v", err)
+	}
+	plugin, ok := handler.(*Plugin)
+	if !ok {
+		tb.Fatalf("expected *Plugin, got %T", handler)
+	}
+	return plugin
+}
+
+func TestThroughput_ServeHTTP_MaxMind(t *testing.T) {
+	plugin := newMaxMindPlugin(t)
+	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+	req.Header.Set("X-Real-IP", maxmindDummyIP)
+	rr := httptest.NewRecorder()
+	plugin.ServeHTTP(rr, req)
+	requireMinThroughput(t, "ServeHTTP_MaxMind", func() {
+		plugin.ServeHTTP(rr, req)
+		if rr.Code != http.StatusTeapot {
+			t.Fatalf("unexpected status %d", rr.Code)
+		}
+	})
+}
+
+func BenchmarkPlugin_Lookup_MaxMind(b *testing.B) {
+	plugin := newMaxMindPlugin(b)
+	rec, err := plugin.Lookup(maxmindDummyIP)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if rec.Country != "GB" {
+		b.Fatalf("expected GB from dummy fixture, got %q", rec.Country)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := plugin.Lookup(maxmindDummyIP); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPlugin_ServeHTTP_MaxMind(b *testing.B) {
+	plugin := newMaxMindPlugin(b)
+	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+	req.Header.Set("X-Real-IP", maxmindDummyIP)
+	rr := httptest.NewRecorder()
+	plugin.ServeHTTP(rr, req)
+	if rr.Code != http.StatusTeapot {
+		b.Fatalf("unexpected status %d", rr.Code)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		plugin.ServeHTTP(rr, req)
+	}
+}
+
+func BenchmarkPlugin_ServeHTTP_MaxMindEnrich(b *testing.B) {
+	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+		Enabled:                 true,
+		DatabaseProvider:        DatabaseProviderMaxMind,
+		MaxmindDatabaseFilePath: maxmindFilePath,
+		AllowedCountries:        []string{"GB"},
+		DefaultAllow:            false,
+		AllowPrivate:            false,
+		BanIfError:              true,
+		DisallowedStatusCode:    http.StatusForbidden,
+		IPHeaders:               []string{"x-real-ip"},
+		IPHeaderStrategy:        IPHeaderStrategyCheckFirst,
+		LogLevel:                "error",
+		LogFormat:               "text",
+		RequestHeaderEnrich: map[string]string{
+			"X-Geo-Country": "country",
+			"X-Geo-Region":  "region",
+			"X-Geo-City":    "city",
+		},
+	}, pluginName)
+	if err != nil {
+		b.Fatal(err)
+	}
+	plugin := handler.(*Plugin)
+	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+	req.Header.Set("X-Real-IP", maxmindDummyIP)
+	rr := httptest.NewRecorder()
+	plugin.ServeHTTP(rr, req)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		plugin.ServeHTTP(rr, req)
+	}
+}

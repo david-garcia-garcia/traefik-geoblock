@@ -32,14 +32,14 @@ A Traefik middleware that looks up the client IP in a **local** GeoIP database (
 
 **Designed for high-performance production environments:**
 
-- **No per-request GeoIP API** — lookups use a local IP2Location BIN or IPinfo MMDB
+- **No per-request GeoIP API** — lookups use a local IP2Location BIN, IPinfo MMDB, or MaxMind GeoIP2 MMDB
 - **Minimal memory footprint** — no application-level cache; the database format is read in place
 - **Offline after load** — no outbound call unless you enable auto-update
 - **Hot-swappable database updates** — new files load without restarting Traefik
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
-**Expected throughput** (`go test -bench=BenchmarkPlugin -benchmem` on a local Intel Core Ultra 7 265K). `Lookup` always reads the full geo row (`Get_all`). `ServeHTTP` reuse is the Traefik path (request/recorder reused). Country-only vs full `requestHeaderEnrich` on the same BIN is the same lookup; extra headers are cheap.
+**Expected throughput** (`go test -bench=BenchmarkPlugin -benchmem` on a local Intel Core Ultra 7 265K). `Lookup` always reads the full geo row (`Get_all` on IP2Location). `ServeHTTP` reuse is the Traefik path (request/recorder reused). Country-only vs full `requestHeaderEnrich` on the same BIN is the same lookup; extra headers are cheap. MaxMind benches use the committed dummy `GeoIP2-Country-Test.mmdb` and dummy IP `81.2.69.142` (not 8.8.8.8). A live GeoLite2-Country file is much larger and will be slower.
 
 | Database | `Lookup` | `ServeHTTP` reuse | Typical cost |
 | --- | --- | --- | --- |
@@ -48,6 +48,7 @@ This architecture ensures consistent response times and eliminates external serv
 | Paid DB8 (country only) | ~37k ops/s | ~46k ops/s | ~22–27 µs, 13–14 allocs, ~1840 B |
 | Paid DB8 + full enrich (country/region/city/isp/domain) | ~46k ops/s | ~45k ops/s | ~22 µs, 20 allocs, 1944 B |
 | Paid DB8 + ASN LITE (full enrich) | ~27k ops/s | ~22k ops/s | ~38–45 µs, 18–26 allocs, ~2500 B |
+| MaxMind dummy Country | ~1.7M ops/s | ~1.3M ops/s | ~0.60–0.80 µs, 5–6 allocs, ~140–155 B |
 
 ## Geo enrichment and observability
 
@@ -268,6 +269,9 @@ go test -run TestThroughput -v
 
 # Compare lookup/request cost before and after a change
 go test -bench=BenchmarkPlugin -benchmem
+
+# MaxMind dummy fixture only (uses 81.2.69.142, not 8.8.8.8)
+go test -run '^$' -bench=MaxMind -benchmem
 
 # Run integration tests
 .\Test-Integration.ps1
