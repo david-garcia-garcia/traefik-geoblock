@@ -90,7 +90,7 @@ func TestNew(t *testing.T) {
 	t.Run("UnsupportedDatabaseProvider", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			DatabaseProvider:            "maxmind",
+			DatabaseProvider:            "no-such-vendor",
 			Ip2locationDatabaseFilePath: dbFilePath,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
@@ -134,6 +134,23 @@ func TestNew(t *testing.T) {
 		}, pluginName)
 		if err != nil {
 			t.Errorf("expected prefixed path to win over deprecated databaseFilePath, but got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin not to be nil")
+		}
+	})
+
+	t.Run("ExplicitMaxMindProvider", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                 true,
+			DatabaseProvider:        DatabaseProviderMaxMind,
+			MaxmindDatabaseFilePath: maxmindFilePath,
+			DisallowedStatusCode:    http.StatusForbidden,
+			IPHeaders:               []string{"x-real-ip"},
+			IPHeaderStrategy:        IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Errorf("expected no error with databaseProvider maxmind, but got: %v", err)
 		}
 		if plugin == nil {
 			t.Error("expected plugin not to be nil")

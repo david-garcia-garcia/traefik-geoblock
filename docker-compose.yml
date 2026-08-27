@@ -37,6 +37,7 @@ services:
       - ./:/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock
       - ip2-token:/data/ip2database-token
       - ipinfo-update:/data/ipinfo
+      - maxmind-update:/data/maxmind
     ports:
       - 8000:80
       - 8080:8080
@@ -245,6 +246,34 @@ services:
       - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Domain=domain"
       - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Asn=asn"
 
+  whoami-maxmind:
+    image: traefik/whoami
+    container_name: "simple-service-maxmind"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-maxmind.rule=PathPrefix(`/maxmind`)"
+      - "traefik.http.routers.router-maxmind.entrypoints=web"
+      - "traefik.http.routers.router-maxmind.middlewares=geoblock-maxmind@docker"
+      - "traefik.http.services.service-maxmind.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.databaseProvider=maxmind"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.maxmind_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/GeoIP2-Country-Test.mmdb"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.maxmind_databaseAutoUpdate=true"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.maxmind_databaseAutoUpdateDir=/data/maxmind"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.maxmind_databaseAutoUpdateToken=${MAXMIND_DOWNLOAD_TOKEN:-}"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.maxmind_databaseAutoUpdateCode=${MAXMIND_DATABASE_CODE:-GeoLite2-Country}"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.blockedCountries=CN"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.allowedCountries=GB"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.defaultAllow=false"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.countryHeader=X-Ipcountry"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.requestHeaderEnrich.X-Geo-Country=country"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.requestHeaderEnrich.X-Geo-Country-Name=country_name"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.requestHeaderEnrich.X-Geo-Continent=continent"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.requestHeaderEnrich.X-Geo-Continent-Code=continent_code"
+      - "traefik.http.middlewares.geoblock-maxmind.plugin.geoblock.requestHeaderEnrich.X-Geo-Asn=asn"
+
   # NEW: Additional routes sharing existing middleware definitions
   whoami-shared1:
     image: traefik/whoami
@@ -361,3 +390,4 @@ volumes:
   logs-local:
   ip2-token:
   ipinfo-update:
+  maxmind-update:

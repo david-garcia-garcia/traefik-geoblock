@@ -52,6 +52,8 @@ BeforeAll {
         Localhost = "127.0.0.1"
         Japanese_IP = "126.0.0.1"  # JP - for testing default_allow scenarios
         AWS_Blocked_IP = "3.5.140.1"  # AWS IP in blocked IP block range (3.5.140.0/24)
+        MaxMindDummyGB = "81.2.69.142"   # GeoIP2-Country-Test.mmdb GB
+        MaxMindDummyCN = "175.16.199.1"  # GeoIP2-Country-Test.mmdb CN
     }
     
     # Helper function to make HTTP requests with proper error handling
@@ -546,6 +548,30 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $response | Should -Match "X-Geo-Asn:\s*AS6724"
             $response | Should -Match "X-Geo-Region:\s*null"
             $response | Should -Match "X-Geo-City:\s*null"
+        }
+    }
+
+    Context "MaxMind dummy Country provider" {
+        It "Should block dummy CN IP" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.MaxMindDummyCN }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/maxmind" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+
+        It "Should allow dummy GB IP" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.MaxMindDummyGB }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/maxmind" -Headers $headers
+            $result.StatusCode | Should -Be 200
+        }
+
+        It "Should enrich GeoIP2 country fields on an allowed request" {
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.MaxMindDummyGB)" "$script:BaseUrl/maxmind") -join "`n"
+            $response | Should -Match "X-Ipcountry:\s*GB"
+            $response | Should -Match "X-Geo-Country:\s*GB"
+            $response | Should -Match "X-Geo-Country-Name:\s*United Kingdom"
+            $response | Should -Match "X-Geo-Continent:\s*Europe"
+            $response | Should -Match "X-Geo-Continent-Code:\s*EU"
+            $response | Should -Match "X-Geo-Asn:\s*null"
         }
     }
 

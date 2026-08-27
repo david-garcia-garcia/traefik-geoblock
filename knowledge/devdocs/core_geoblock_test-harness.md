@@ -66,6 +66,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 - LITE DB1 has country only. Region/city/ISP/domain/ASN integration asserts must not require values the BIN cannot supply. Paid DB8 lives at `testdata/IP2LOCATION-DB8.BIN` (gitignored); package tests skip if it is absent. ASN needs `IP2LOCATION-LITE-ASN.IPV6.BIN` (or `IP2LOCATION_ASN_BIN`). ASN auto-update does not download without a token.
 - IPinfo Lite snapshot is `ipinfo_lite.mmdb` at the module root. Provider tests and `/ipinfo` compose use it. `/ipinfo` enriches every Lite column (country, country_name, continent, continent_code, isp, domain, asn). ASN strings are `AS…`.
+- MaxMind dummy seed is `GeoIP2-Country-Test.mmdb` at the module root. `/maxmind` compose uses dummy IPs `81.2.69.142` (GB) and `175.16.199.1` (CN), not 8.8.8.8.
 - Compose labels for the BIN are `ip2location_*` (unprefixed names are deprecated aliases).
 - Traefik `forwardedHeaders` must stay on so the plugin sees `X-Real-IP`, not the Docker network address.
 - Throughput floors catch large regressions only. Compare impact with benches on the same machine.
