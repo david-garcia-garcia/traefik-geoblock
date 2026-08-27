@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
 )
@@ -139,6 +140,81 @@ func TestNew(t *testing.T) {
 		}
 	})
 
+	t.Run("ExplicitIPinfoProvider", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                true,
+			DatabaseProvider:       DatabaseProviderIPinfo,
+			IpinfoDatabaseFilePath: ipinfoFilePath,
+			DisallowedStatusCode:   http.StatusForbidden,
+			IPHeaders:              []string{"x-real-ip"},
+			IPHeaderStrategy:       IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Errorf("expected no error with databaseProvider ipinfo, but got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin not to be nil")
+		}
+	})
+
+	t.Run("IPinfoEmptyPathUsesBundledMMDB", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:              true,
+			DatabaseProvider:     DatabaseProviderIPinfo,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			CountryHeader:        "x-country-code",
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("empty ipinfo path should use bundled MMDB: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if got := req.Header.Get("x-country-code"); got != "US" {
+			t.Errorf("country: got %q want US", got)
+		}
+	})
+
+	t.Run("IPinfoAutoUpdateWithoutDirFails", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                  true,
+			DatabaseProvider:         DatabaseProviderIPinfo,
+			IpinfoDatabaseFilePath:   ipinfoFilePath,
+			IpinfoDatabaseAutoUpdate: true,
+			DisallowedStatusCode:     http.StatusForbidden,
+			IPHeaders:                []string{"x-real-ip"},
+			IPHeaderStrategy:         IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err == nil {
+			t.Fatal("expected New to fail when IPinfo auto-update is on without a dir")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil")
+		}
+	})
+
+	t.Run("IPinfoAutoUpdateWithoutTokenDoesNotFail", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                     true,
+			DatabaseProvider:            DatabaseProviderIPinfo,
+			IpinfoDatabaseFilePath:      ipinfoFilePath,
+			IpinfoDatabaseAutoUpdate:    true,
+			IpinfoDatabaseAutoUpdateDir: t.TempDir(),
+			DisallowedStatusCode:        http.StatusForbidden,
+			IPHeaders:                   []string{"x-real-ip"},
+			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Errorf("IPinfo auto-update without token must not fail New, got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin not to be nil")
+		}
+	})
+
 	t.Run("ExplicitIP2LocationProvider", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
@@ -214,6 +290,43 @@ func TestNew(t *testing.T) {
 		}
 		if plugin == nil {
 			t.Error("expected plugin not to be nil")
+		}
+	})
+
+	t.Run("CountryHeaderFoldsIntoRequestHeaderEnrich", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                     true,
+			Ip2locationDatabaseFilePath: dbFilePath,
+			CountryHeader:               "X-IPCountry",
+			DisallowedStatusCode:        http.StatusForbidden,
+			IPHeaders:                   []string{"x-real-ip"},
+			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		p := plugin.(*Plugin)
+		if got := p.requestHeaderEnrich[http.CanonicalHeaderKey("X-IPCountry")]; got != dbprovider.MetaCountry {
+			t.Errorf("folded countryHeader: got %q want %s", got, dbprovider.MetaCountry)
+		}
+	})
+
+	t.Run("RequestHeaderEnrichWinsOverCountryHeader", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:                     true,
+			Ip2locationDatabaseFilePath: dbFilePath,
+			CountryHeader:               "X-Geo-Country",
+			RequestHeaderEnrich:         map[string]string{"X-Geo-Country": "city"},
+			DisallowedStatusCode:        http.StatusForbidden,
+			IPHeaders:                   []string{"x-real-ip"},
+			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		p := plugin.(*Plugin)
+		if got := p.requestHeaderEnrich[http.CanonicalHeaderKey("X-Geo-Country")]; got != dbprovider.MetaCity {
+			t.Errorf("explicit enrich should win: got %q want %s", got, dbprovider.MetaCity)
 		}
 	})
 

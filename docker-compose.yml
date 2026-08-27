@@ -15,6 +15,9 @@ services:
       - "--accesslog.fields.headers.names.X-Geo-Asn=keep"
       - "--accesslog.fields.headers.names.X-Geo-Isp=keep"
       - "--accesslog.fields.headers.names.X-Geo-Domain=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Country-Name=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Continent=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Continent-Code=keep"
       - "--accesslog.fields.headers.names.X-Geoblock-Decision=keep"
       - "--api.insecure=true"
       - "--providers.docker=true"
@@ -207,6 +210,34 @@ services:
       - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.includedPathsRegex=^[^/]*/includedpaths/secure/.*$$"
       # Exclude still wins after include
       - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.excludedPathsRegex=^[^/]*/includedpaths/secure/health$$"
+
+  whoami-ipinfo:
+    image: traefik/whoami
+    container_name: "simple-service-ipinfo"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-ipinfo.rule=PathPrefix(`/ipinfo`)"
+      - "traefik.http.routers.router-ipinfo.entrypoints=web"
+      - "traefik.http.routers.router-ipinfo.middlewares=geoblock-ipinfo@docker"
+      - "traefik.http.services.service-ipinfo.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.databaseProvider=ipinfo"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/ipinfo_lite.mmdb"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.blockedCountries=US"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.allowedCountries=DE"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.defaultAllow=false"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.countryHeader=X-Ipcountry"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Country=country"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Country-Name=country_name"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Continent=continent"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Continent-Code=continent_code"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Region=region"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-City=city"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Isp=isp"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Domain=domain"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Asn=asn"
 
   # NEW: Additional routes sharing existing middleware definitions
   whoami-shared1:

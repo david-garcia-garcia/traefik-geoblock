@@ -45,7 +45,6 @@ func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
 		name              string
 		ip                string
 		expectedStatus    int
-		expectedLogStatus string
 		expectedLogDetail string
 		description       string
 	}{
@@ -53,25 +52,22 @@ func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
 			name:              "Allowed_AU_IP_should_have_pass_header",
 			ip:                "1.1.1.1", // AU IP
 			expectedStatus:    http.StatusTeapot,
-			expectedLogStatus: LogStatusPass,
 			expectedLogDetail: LogStatusPass + ":" + PhaseAllowedCountry,
-			description:       "AU IP should set headers to pass and pass:allowed_country",
+			description:       "AU IP should set X-Geoblock-Decision to pass:allowed_country",
 		},
 		{
 			name:              "Blocked_US_IP_should_have_block_header",
 			ip:                "8.8.8.8", // US IP
 			expectedStatus:    http.StatusForbidden,
-			expectedLogStatus: LogStatusBlock,
 			expectedLogDetail: LogStatusBlock + ":" + PhaseBlockedCountry,
-			description:       "US IP should set headers to block and block:blocked_country",
+			description:       "US IP should set X-Geoblock-Decision to block:blocked_country",
 		},
 		{
 			name:              "Allowed_private_IP_should_have_pass_header",
 			ip:                "192.168.1.1", // Private IP
 			expectedStatus:    http.StatusTeapot,
-			expectedLogStatus: LogStatusPass,
 			expectedLogDetail: LogStatusPass + ":" + PhaseAllowPrivate,
-			description:       "Private IP should set headers to pass and pass:allow_private",
+			description:       "Private IP should set X-Geoblock-Decision to pass:allow_private",
 		},
 	}
 
@@ -107,8 +103,8 @@ func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
 				}
 			}
 
-			t.Logf("SUCCESS: %s - IP: %s -> Status: %d, LogStatus: %s, LogDetail: %s",
-				tt.description, tt.ip, rr.Code, tt.expectedLogStatus, tt.expectedLogDetail)
+			t.Logf("SUCCESS: %s - IP: %s -> Status: %d, LogDetail: %s",
+				tt.description, tt.ip, rr.Code, tt.expectedLogDetail)
 		})
 	}
 }
@@ -539,7 +535,40 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		}
 	})
 
-	t.Run("real BIN writes country and skips missing region city", func(t *testing.T) {
+	t.Run("private IP writes PRIVATE country and null for other keys", func(t *testing.T) {
+		plugin := &Plugin{
+			next:             &noopHandler{},
+			enabled:          true,
+			db:               stubGeoProvider{},
+			defaultAllow:     true,
+			allowPrivate:     true,
+			ipHeaders:        []string{"X-Real-Ip"},
+			ipHeaderStrategy: IPHeaderStrategyCheckFirst,
+			allowedIPBlocks:  emptyBlocks,
+			blockedIPBlocks:  emptyBlocks,
+			logger:           logger,
+			requestHeaderEnrich: map[string]string{
+				"X-Geo-Country": dbprovider.MetaCountry,
+				"X-Geo-Region":  dbprovider.MetaRegion,
+				"X-Geo-Asn":     dbprovider.MetaAsn,
+			},
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "127.0.0.1")
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if req.Header.Get("X-Geo-Country") != PrivateIpCountryAlias {
+			t.Errorf("country: got %q", req.Header.Get("X-Geo-Country"))
+		}
+		if req.Header.Get("X-Geo-Region") != EnrichNullAlias {
+			t.Errorf("region: got %q want null", req.Header.Get("X-Geo-Region"))
+		}
+		if req.Header.Get("X-Geo-Asn") != EnrichNullAlias {
+			t.Errorf("asn: got %q want null", req.Header.Get("X-Geo-Asn"))
+		}
+	})
+
+	t.Run("real BIN writes country and null for missing region city", func(t *testing.T) {
 		handler, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
 			Ip2locationDatabaseFilePath: dbFilePath,
@@ -563,11 +592,11 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		if req.Header.Get("X-Geo-Country") != "US" {
 			t.Errorf("country: got %q", req.Header.Get("X-Geo-Country"))
 		}
-		if req.Header.Get("X-Geo-Region") != "" {
-			t.Errorf("DB1 should not set region, got %q", req.Header.Get("X-Geo-Region"))
+		if req.Header.Get("X-Geo-Region") != EnrichNullAlias {
+			t.Errorf("DB1 region: got %q want null", req.Header.Get("X-Geo-Region"))
 		}
-		if req.Header.Get("X-Geo-City") != "" {
-			t.Errorf("DB1 should not set city, got %q", req.Header.Get("X-Geo-City"))
+		if req.Header.Get("X-Geo-City") != EnrichNullAlias {
+			t.Errorf("DB1 city: got %q want null", req.Header.Get("X-Geo-City"))
 		}
 	})
 
@@ -604,8 +633,199 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		if req.Header.Get("X-Geo-Domain") != "google.com" {
 			t.Errorf("domain: got %q", req.Header.Get("X-Geo-Domain"))
 		}
-		if req.Header.Get("X-Geo-Asn") != "" {
+		if req.Header.Get("X-Geo-Asn") != EnrichNullAlias {
 			t.Errorf("DB8 has no ASN column, got %q", req.Header.Get("X-Geo-Asn"))
+		}
+	})
+
+	t.Run("IPinfo Lite writes valued fields and null for empty region city", func(t *testing.T) {
+		handler, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:              true,
+			DatabaseProvider:     DatabaseProviderIPinfo,
+			IpinfoDatabaseFilePath: ipinfoFilePath,
+			DefaultAllow:         true,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+			RequestHeaderEnrich: map[string]string{
+				"X-Geo-Country":        "country",
+				"X-Geo-Country-Name":   "country_name",
+				"X-Geo-Continent":      "continent",
+				"X-Geo-Continent-Code": "continent_code",
+				"X-Geo-Region":         "region",
+				"X-Geo-City":           "city",
+				"X-Geo-Isp":            "isp",
+				"X-Geo-Domain":         "domain",
+				"X-Geo-Asn":            "asn",
+			},
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if req.Header.Get("X-Geo-Country") != "US" {
+			t.Errorf("country: got %q", req.Header.Get("X-Geo-Country"))
+		}
+		if req.Header.Get("X-Geo-Country-Name") != "United States" {
+			t.Errorf("country_name: got %q", req.Header.Get("X-Geo-Country-Name"))
+		}
+		if req.Header.Get("X-Geo-Continent") != "North America" {
+			t.Errorf("continent: got %q", req.Header.Get("X-Geo-Continent"))
+		}
+		if req.Header.Get("X-Geo-Continent-Code") != "NA" {
+			t.Errorf("continent_code: got %q", req.Header.Get("X-Geo-Continent-Code"))
+		}
+		if req.Header.Get("X-Geo-Isp") != "Google LLC" {
+			t.Errorf("isp: got %q", req.Header.Get("X-Geo-Isp"))
+		}
+		if req.Header.Get("X-Geo-Domain") != "google.com" {
+			t.Errorf("domain: got %q", req.Header.Get("X-Geo-Domain"))
+		}
+		if req.Header.Get("X-Geo-Asn") != "AS15169" {
+			t.Errorf("asn: got %q", req.Header.Get("X-Geo-Asn"))
+		}
+		if req.Header.Get("X-Geo-Region") != EnrichNullAlias {
+			t.Errorf("Lite region: got %q want null", req.Header.Get("X-Geo-Region"))
+		}
+		if req.Header.Get("X-Geo-City") != EnrichNullAlias {
+			t.Errorf("Lite city: got %q want null", req.Header.Get("X-Geo-City"))
+		}
+	})
+}
+
+func TestEnrichNullSentinel(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	emptyBlocks, err := iplookup.NewIpLookupFileMonitor(nil, "", logger)
+	if err != nil {
+		t.Fatalf("cidr monitor: %v", err)
+	}
+
+	allKeys := map[string]string{
+		"X-Geo-Country":        dbprovider.MetaCountry,
+		"X-Geo-Country-Name":   dbprovider.MetaCountryName,
+		"X-Geo-Continent":      dbprovider.MetaContinent,
+		"X-Geo-Continent-Code": dbprovider.MetaContinentCode,
+		"X-Geo-Region":         dbprovider.MetaRegion,
+		"X-Geo-City":           dbprovider.MetaCity,
+		"X-Geo-Isp":            dbprovider.MetaIsp,
+		"X-Geo-Domain":         dbprovider.MetaDomain,
+		"X-Geo-Asn":            dbprovider.MetaAsn,
+	}
+
+	t.Run("applyGeoHeaders writes null for every empty mapped key", func(t *testing.T) {
+		p := Plugin{requestHeaderEnrich: allKeys}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		set := false
+		p.applyGeoHeaders(req, dbprovider.Record{Country: "US", Isp: "Acme"}, &set)
+		if !set {
+			t.Fatal("expected geo headers marked set")
+		}
+		if got := req.Header.Get("X-Geo-Country"); got != "US" {
+			t.Errorf("country: got %q", got)
+		}
+		if got := req.Header.Get("X-Geo-Isp"); got != "Acme" {
+			t.Errorf("isp: got %q", got)
+		}
+		for _, header := range []string{
+			"X-Geo-Country-Name", "X-Geo-Continent", "X-Geo-Continent-Code",
+			"X-Geo-Region", "X-Geo-City", "X-Geo-Domain", "X-Geo-Asn",
+		} {
+			if got := req.Header.Get(header); got != EnrichNullAlias {
+				t.Errorf("%s: got %q want %q", header, got, EnrichNullAlias)
+			}
+		}
+		if _, ok := req.Header["X-Unmapped"]; ok {
+			t.Error("unmapped header must stay absent")
+		}
+	})
+
+	t.Run("applyGeoHeaders does not write when country is empty or PRIVATE", func(t *testing.T) {
+		p := Plugin{requestHeaderEnrich: allKeys}
+		for _, rec := range []dbprovider.Record{{}, {Country: PrivateIpCountryAlias}} {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			set := false
+			p.applyGeoHeaders(req, rec, &set)
+			if set {
+				t.Errorf("country %q: must not mark headers set", rec.Country)
+			}
+			if len(req.Header) != 0 {
+				t.Errorf("country %q: wrote headers %v", rec.Country, req.Header)
+			}
+		}
+	})
+
+	t.Run("setPrivateGeoHeaders writes PRIVATE on country and null on other keys", func(t *testing.T) {
+		p := Plugin{requestHeaderEnrich: allKeys}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		p.setPrivateGeoHeaders(req)
+		if got := req.Header.Get("X-Geo-Country"); got != PrivateIpCountryAlias {
+			t.Errorf("country: got %q want PRIVATE", got)
+		}
+		for _, header := range []string{
+			"X-Geo-Country-Name", "X-Geo-Continent", "X-Geo-Continent-Code",
+			"X-Geo-Region", "X-Geo-City", "X-Geo-Isp", "X-Geo-Domain", "X-Geo-Asn",
+		} {
+			if got := req.Header.Get(header); got != EnrichNullAlias {
+				t.Errorf("%s: got %q want %q", header, got, EnrichNullAlias)
+			}
+		}
+	})
+
+	t.Run("empty public lookup keeps PRIVATE and null", func(t *testing.T) {
+		plugin := &Plugin{
+			next:                &noopHandler{},
+			enabled:             true,
+			db:                  stubGeoProvider{},
+			defaultAllow:        true,
+			allowPrivate:        true,
+			ipHeaders:           []string{"X-Real-Ip"},
+			ipHeaderStrategy:    IPHeaderStrategyCheckFirst,
+			allowedIPBlocks:     emptyBlocks,
+			blockedIPBlocks:     emptyBlocks,
+			logger:              logger,
+			requestHeaderEnrich: allKeys,
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		plugin.ServeHTTP(httptest.NewRecorder(), req)
+		if got := req.Header.Get("X-Geo-Country"); got != PrivateIpCountryAlias {
+			t.Errorf("country: got %q want PRIVATE", got)
+		}
+		if got := req.Header.Get("X-Geo-Region"); got != EnrichNullAlias {
+			t.Errorf("region: got %q want null", got)
+		}
+	})
+
+	t.Run("first public IP overwrites PRIVATE and null", func(t *testing.T) {
+		plugin := &Plugin{
+			next:    &noopHandler{},
+			enabled: true,
+			db: stubGeoProvider{rec: dbprovider.Record{
+				Country: "DE", Region: "Berlin",
+			}},
+			defaultAllow:        true,
+			allowPrivate:        true,
+			ipHeaders:           []string{"X-Forwarded-For"},
+			ipHeaderStrategy:    IPHeaderStrategyCheckAll,
+			allowedIPBlocks:     emptyBlocks,
+			blockedIPBlocks:     emptyBlocks,
+			logger:              logger,
+			requestHeaderEnrich: allKeys,
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Forwarded-For", "127.0.0.1, 8.8.8.8")
+		plugin.ServeHTTP(httptest.NewRecorder(), req)
+		if got := req.Header.Get("X-Geo-Country"); got != "DE" {
+			t.Errorf("country: got %q want DE", got)
+		}
+		if got := req.Header.Get("X-Geo-Region"); got != "Berlin" {
+			t.Errorf("region: got %q want Berlin", got)
+		}
+		if got := req.Header.Get("X-Geo-City"); got != EnrichNullAlias {
+			t.Errorf("city: got %q want null", got)
 		}
 	})
 }

@@ -49,12 +49,6 @@ This architecture ensures consistent response times and eliminates external serv
 | Paid DB8 + full enrich (country/region/city/isp/domain) | ~46k ops/s | ~45k ops/s | ~22 µs, 20 allocs, 1944 B |
 | Paid DB8 + ASN LITE (full enrich) | ~27k ops/s | ~22k ops/s | ~38–45 µs, 18–26 allocs, ~2500 B |
 
-ASN LITE IPv6 is ~264 MB and is **not** on the public lite CDN (`download.ip2location.com/lite/` 404s). A free LITE account **download token** is required (`file=DBASNLITEBINIPV6`). The plugin does not attempt an ASN download unless `ip2location_databaseAutoUpdateToken` is set. The BIN is not in the repo (GitHub 100 MB limit); keep it on a persistent volume or set `ip2location_asnDatabaseFilePath`.
-
-A second ASN `Get_asn` is the same class of cost as a geo lookup on a large BIN. LITE+ASN is about **one third** of LITE-only. DB8+ASN is the slowest of the four and sits just above the CI floor.
-
-CI still gates at **20k ops/s** (`go test -run TestThroughput -v`; skipped with `-short`). DB8 and ASN benches skip when those BINs are absent.
-
 ## Observability
 
 The plugin is designed to provide detailed observability through **Traefik access logs** by adding headers to the **request** (not the response). This means:
@@ -69,7 +63,8 @@ The plugin is designed to provide detailed observability through **Traefik acces
 
 | Config Setting | Purpose | Example Values |
 |----------------|---------|----------------|
-| `countryHeader` | Country code of the request origin | `US`, `DE`, `PRIVATE` |
+| `requestHeaderEnrich` | Geo metadata on the request. Every mapped header is written. Missing values are `null`. Country on a private IP is `PRIVATE`. | `X-Geo-Country: US`, `X-Geo-Region: null` |
+| `countryHeader` | **Deprecated.** Use `requestHeaderEnrich` with key `country` | `US`, `DE`, `PRIVATE` |
 | `logStatusDetailHeader` | Decision with reason | `pass:allowed_country`, `block:blocked_country` |
 
 ### logStatusDetailHeader Values
@@ -211,10 +206,11 @@ experimental:
 
 **For automatic database updates to function, ensure your firewall allows outbound HTTPS connections to:**
 
-- `download.ip2location.com`
-- `www.ip2location.com`
+- `download.ip2location.com` — IP2Location LITE DB1 (no token)
+- `www.ip2location.com` — IP2Location token downloads (paid packages and ASN LITE)
+- `ipinfo.io` — IPinfo Lite MMDB (token required; the response redirects to IPinfo’s download CDN)
 
-> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate: false` and `ip2location_asnDatabaseAutoUpdate: false`), no external network access is required and the plugin operates entirely offline. LITE DB1 can auto-update without a token. ASN LITE auto-update is not attempted unless `ip2location_databaseAutoUpdateToken` is set (`www.ip2location.com`).
+> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate`, `ip2location_asnDatabaseAutoUpdate`, and `ipinfo_databaseAutoUpdate` all false), no external network access is required and the plugin operates entirely offline. IP2Location LITE DB1 can auto-update without a token. ASN LITE and IPinfo Lite downloads are not attempted unless their download token is set.
 
 ## Testing and development
 
@@ -260,7 +256,7 @@ docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock traefik:latest
 export TRAEFIK_PLUGIN_GEOBLOCK_PATH=/opt/traefik-plugins/geoblock
 ```
 
-When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN` and `geoblockban.html` files in the specified directory if they are not found in their configured locations. An ASN BIN is opened when `ip2location_asnDatabaseFilePath` points at one, or after ASN auto-update has downloaded one. ASN auto-update downloads only when `ip2location_databaseAutoUpdateToken` is set.
+When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN`, `ipinfo_lite.mmdb`, and `geoblockban.html` in the specified directory if they are not found in their configured locations. An ASN BIN is opened when `ip2location_asnDatabaseFilePath` points at one, or after ASN auto-update has downloaded one. ASN auto-update downloads only when `ip2location_databaseAutoUpdateToken` is set. IPinfo auto-update downloads only when `ipinfo_databaseAutoUpdateToken` is set.
 
 ### Example Docker Compose Setup
 
@@ -307,8 +303,8 @@ http:
           #-------------------------------
           # Database Configuration
           #-------------------------------
-          databaseProvider: ip2location   # Only ip2location is implemented. Empty defaults to ip2location.
-          # IP2Location BIN path, auto-update, and ASN keys are in the IP2Location section below.
+          databaseProvider: ip2location   # ip2location (default) or ipinfo. Empty defaults to ip2location.
+          # Vendor keys are prefixed: ip2location_* or ipinfo_*. See those sections below.
           
           #-------------------------------
           # Country-based Rules (ISO 3166-1 alpha-2 format)
@@ -498,28 +494,49 @@ http:
           # Official file= package code. Use DBASNLITEBIN for the IPv4-only ASN BIN.
 
           #-------------------------------
+          # IPinfo Lite Database
+          #-------------------------------
+          # MMDB with country_code + ASN in one file (CC-BY-SA 4.0).
+          # The repo ships a snapshot ipinfo_lite.mmdb (may be stale).
+          # Empty ipinfo_databaseFilePath uses that bundled file when it is
+          # on the plugin tree or found via TRAEFIK_PLUGIN_GEOBLOCK_PATH.
+          ipinfo_databaseFilePath: ""
+          ipinfo_databaseAutoUpdate: false
+          # Daily check. Download is token-only:
+          # https://ipinfo.io/data/ipinfo_lite.mmdb?token=$TOKEN
+          # Without a token an error is logged and the bundled/seed file is used.
+          ipinfo_databaseAutoUpdateDir: "/data/ipinfo"
+          ipinfo_databaseAutoUpdateToken: ""
+          # Free IPinfo account token. Required to download. Cap: 10 downloads/day/IP.
+
+          #-------------------------------
           # Request header settings
           #-------------------------------  
-          countryHeader: "X-IPCountry"  
-          # Optional header to add the country code to the REQUEST (available in Traefik access logs)
-          # This header is added to the request that gets forwarded to your backend service
-          # You can use this to see where all your traffic is coming from in access logs
-          # Example access log config: accesslog.fields.headers.names.X-IPCountry=keep
-          # Note: Header is initially set to "PRIVATE" and only overridden by the first real country found
-          # This ensures private IPs processed later cannot override legitimate country information
+          countryHeader: "X-IPCountry"
+          # Deprecated. Prefer requestHeaderEnrich (below) with metadata key country.
+          # If set, the plugin copies this header name onto requestHeaderEnrich as country
+          # unless that header is already mapped. An explicit enrich mapping wins.
 
           requestHeaderEnrich:
             X-Geo-Country: country
+            X-Geo-Country-Name: country_name
+            X-Geo-Continent: continent
+            X-Geo-Continent-Code: continent_code
             X-Geo-Region: region
             X-Geo-City: city
             X-Geo-Isp: isp
             X-Geo-Domain: domain
             X-Geo-Asn: asn
-          # Map request header names to geo metadata keys: country, region, city, isp, domain, asn.
-          # The first public IP wins. Empty or unavailable BIN fields are not written.
+          # Map request header names to geo metadata keys:
+          # country, country_name, continent, continent_code, region, city, isp, domain, asn.
+          # The first public IP wins. Every mapped header is written; empty or
+          # unavailable fields are the string null (observability tools need the header present).
           # IP2Location LITE DB1 is country-only; region/city/isp/domain need DB8 or richer.
           # asn needs the ASN LITE BIN (ip2location_asnDatabaseFilePath, or
           # asnDatabaseAutoUpdate plus a download token).
+          # IPinfo Lite fills country, country_name, continent, continent_code,
+          # isp (as_name), domain (as_domain), and asn (AS15169 form).
+          # region and city stay empty.
           
           logStatusDetailHeader: "X-Geoblock-Decision"
           # Optional header to add the decision to the REQUEST
@@ -564,3 +581,5 @@ The plugin processes requests in the following order:
 📄 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 🌍 This project includes IP2Location LITE data available from [`lite.ip2location.com`](https://lite.ip2location.com/database/ip-country).
+
+🌍 This project includes [IPinfo Lite](https://ipinfo.io) data (CC-BY-SA 4.0). IP address data powered by [IPinfo](https://ipinfo.io).

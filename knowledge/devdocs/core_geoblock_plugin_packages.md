@@ -23,4 +23,4 @@ Entrypoints stay at `github.com/david-garcia-garcia/traefik-geoblock`. Helpers l
 
 - `.traefik.yml` `import:` — module root
 - `plugin.go` — entrypoints
-- `pkg/` — helpers (`dbprovider`, `ip2location`, `dbutils`, `fileutils`, `iplookup`, `logging`)
+- `pkg/` — helpers (`dbprovider`, `ip2location`, `ipinfo`, `dbutils`, `fileutils`, `iplookup`, `logging`)

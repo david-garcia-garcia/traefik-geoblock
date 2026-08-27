@@ -3,12 +3,18 @@ package dbprovider
 import "testing"
 
 func TestRecordFieldAndKnownMetaKey(t *testing.T) {
-	rec := Record{Country: "US", Region: "California", City: "Mountain View", Isp: "Google LLC", Domain: "google.com", Asn: "15169"}
+	rec := Record{
+		Country: "US", CountryName: "United States", Continent: "North America", ContinentCode: "NA",
+		Region: "California", City: "Mountain View", Isp: "Google LLC", Domain: "google.com", Asn: "15169",
+	}
 	cases := []struct {
 		key, want string
 		known     bool
 	}{
 		{"country", "US", true},
+		{"country_name", "United States", true},
+		{"continent", "North America", true},
+		{"continent_code", "NA", true},
 		{"region", "California", true},
 		{"city", "Mountain View", true},
 		{"isp", "Google LLC", true},

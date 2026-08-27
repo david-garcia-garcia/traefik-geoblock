@@ -480,20 +480,47 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         }
     }
 
+    Context "IPinfo Lite provider" {
+        It "Should block US IP" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/ipinfo" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+
+        It "Should allow German IP" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/ipinfo" -Headers $headers
+            $result.StatusCode | Should -Be 200
+        }
+
+        It "Should enrich all IPinfo Lite fields on an allowed request" {
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.German_IP)" "$script:BaseUrl/ipinfo") -join "`n"
+            $response | Should -Match "X-Ipcountry:\s*DE"
+            $response | Should -Match "X-Geo-Country:\s*DE"
+            $response | Should -Match "X-Geo-Country-Name:\s*Germany"
+            $response | Should -Match "X-Geo-Continent:\s*Europe"
+            $response | Should -Match "X-Geo-Continent-Code:\s*EU"
+            $response | Should -Match "X-Geo-Isp:\s*Strato GmbH"
+            $response | Should -Match "X-Geo-Domain:\s*strato\.de"
+            $response | Should -Match "X-Geo-Asn:\s*AS6724"
+            $response | Should -Match "X-Geo-Region:\s*null"
+            $response | Should -Match "X-Geo-City:\s*null"
+        }
+    }
+
     Context "Request header enrichment" {
         It "Should enrich country, region, and city request headers" {
             $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
             $result = Invoke-TestRequest -Uri "$script:BaseUrl/enrichTest" -Headers $headers
             $result.StatusCode | Should -Be 200
             $result.Content | Should -Match "X-Geo-Country:\s*US"
-            # LITE DB1 has no region/city. Those headers are still configured; values stay unset
-            # (unit tests write all three when the provider returns them).
+            # LITE DB1 has no region/city/asn/isp/domain. Mapped headers are still written as null.
             $result.Content | Should -Not -Match "Please upgrade the data file"
-            $result.Content | Should -Not -Match "X-Geo-Region:"
-            $result.Content | Should -Not -Match "X-Geo-City:"
-            $result.Content | Should -Not -Match "X-Geo-Asn:"
-            $result.Content | Should -Not -Match "X-Geo-Isp:"
-            $result.Content | Should -Not -Match "X-Geo-Domain:"
+            $result.Content | Should -Match "X-Geo-Region:\s*null"
+            $result.Content | Should -Match "X-Geo-City:\s*null"
+            $result.Content | Should -Match "X-Geo-Asn:\s*null"
+            $result.Content | Should -Match "X-Geo-Isp:\s*null"
+            $result.Content | Should -Match "X-Geo-Domain:\s*null"
         }
     }
     

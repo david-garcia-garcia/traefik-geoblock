@@ -14,6 +14,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
 )
@@ -22,7 +23,9 @@ import (
 
 const (
 	PrivateIpCountryAlias       = "PRIVATE"
+	EnrichNullAlias             = "null"
 	DatabaseProviderIP2Location = "ip2location"
+	DatabaseProviderIPinfo      = "ipinfo"
 )
 
 // Log status constants for observability headers
@@ -61,7 +64,7 @@ type Config struct {
 	AllowPrivate bool // Allow requests from private/internal networks
 	BanIfError   bool // Ban requests if IP lookup fails
 
-	// Database provider. Empty defaults to ip2location. Only ip2location is implemented.
+	// Database provider. Empty defaults to ip2location. Implemented: ip2location, ipinfo.
 	DatabaseProvider string `json:"databaseProvider,omitempty" mapstructure:"databaseProvider"`
 
 	// IP2Location provider settings. Each vendor keeps its own prefixed keys.
@@ -73,6 +76,12 @@ type Config struct {
 	Ip2locationAsnDatabaseFilePath       string `json:"ip2location_asnDatabaseFilePath,omitempty" mapstructure:"ip2location_asnDatabaseFilePath"`
 	Ip2locationAsnDatabaseAutoUpdate     bool   `json:"ip2location_asnDatabaseAutoUpdate,omitempty" mapstructure:"ip2location_asnDatabaseAutoUpdate"`
 	Ip2locationAsnDatabaseAutoUpdateCode string `json:"ip2location_asnDatabaseAutoUpdateCode,omitempty" mapstructure:"ip2location_asnDatabaseAutoUpdateCode"`
+
+	// IPinfo Lite (MMDB). Auto-update requires a free-account token.
+	IpinfoDatabaseFilePath        string `json:"ipinfo_databaseFilePath,omitempty" mapstructure:"ipinfo_databaseFilePath"`
+	IpinfoDatabaseAutoUpdate      bool   `json:"ipinfo_databaseAutoUpdate,omitempty" mapstructure:"ipinfo_databaseAutoUpdate"`
+	IpinfoDatabaseAutoUpdateDir   string `json:"ipinfo_databaseAutoUpdateDir,omitempty" mapstructure:"ipinfo_databaseAutoUpdateDir"`
+	IpinfoDatabaseAutoUpdateToken string `json:"ipinfo_databaseAutoUpdateToken,omitempty" mapstructure:"ipinfo_databaseAutoUpdateToken"`
 
 	// Deprecated unprefixed aliases. Copied onto the ip2location_ fields when those are unset.
 	DatabaseFilePath        string `json:"databaseFilePath,omitempty" mapstructure:"databaseFilePath"`
@@ -94,11 +103,12 @@ type Config struct {
 	// Response settings
 	DisallowedStatusCode  int    // HTTP status code for blocked requests
 	BanHtmlFilePath       string // Custom HTML template for blocked requests
-	CountryHeader         string // Header to write the country code to (on REQUEST)
+	CountryHeader         string // Deprecated: folded into RequestHeaderEnrich as key country
 	LogStatusDetailHeader string // Header to write detailed status to (on REQUEST): "pass:{reason}" or "block:{reason}"
 
 	// RequestHeaderEnrich maps request header names to metadata keys
-	// (country, region, city, isp, domain, asn). Empty or unavailable BIN fields are not written.
+	// (country, country_name, continent, continent_code, region, city, isp, domain, asn).
+	// Empty or unavailable fields are written as EnrichNullAlias ("null").
 	RequestHeaderEnrich map[string]string `json:"requestHeaderEnrich,omitempty" mapstructure:"requestHeaderEnrich"`
 
 	// Logging configuration
@@ -134,7 +144,7 @@ func CreateConfig() *Config {
 		RequestHeaderEnrich:  make(map[string]string),
 		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,                 // Default to checking all IPs
-		DatabaseProvider:     DatabaseProviderIP2Location,              // Only implemented provider
+		DatabaseProvider:     DatabaseProviderIP2Location,              // Default provider
 		CountryHeader:        "",                                       // Default to empty thus not setting the header
 	}
 }
@@ -161,7 +171,6 @@ type Plugin struct {
 	ignoreVerbs           map[string]struct{} // Set of HTTP verbs to ignore for blocking
 	includedPathsRegex    *regexp.Regexp      // When set, only matching {host}{path} may be blocked
 	excludedPathsRegex    *regexp.Regexp      // Matching {host}{path} skip blocking (after include)
-	countryHeader         string
 	logStatusDetailHeader string
 	requestHeaderEnrich   map[string]string // header name -> metadata key
 }
@@ -215,6 +224,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
+	requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich, logger)
 
 	applyDeprecatedIP2LocationSettings(cfg, bootstrapLogger)
 
@@ -303,7 +313,6 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		includedPathsRegex:    includedPathsRegex,
 		excludedPathsRegex:    excludedPathsRegex,
 		logger:                logger,
-		countryHeader:         cfg.CountryHeader,
 		logStatusDetailHeader: cfg.LogStatusDetailHeader,
 		requestHeaderEnrich:   requestHeaderEnrich,
 	}
@@ -377,6 +386,13 @@ func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider
 			AsnDatabaseFilePath:       cfg.Ip2locationAsnDatabaseFilePath,
 			AsnDatabaseAutoUpdate:     cfg.Ip2locationAsnDatabaseAutoUpdate,
 			AsnDatabaseAutoUpdateCode: cfg.Ip2locationAsnDatabaseAutoUpdateCode,
+		}, logger)
+	case DatabaseProviderIPinfo:
+		return ipinfo.New(ipinfo.DatabaseConfig{
+			DatabaseFilePath:        cfg.IpinfoDatabaseFilePath,
+			DatabaseAutoUpdate:      cfg.IpinfoDatabaseAutoUpdate,
+			DatabaseAutoUpdateDir:   cfg.IpinfoDatabaseAutoUpdateDir,
+			DatabaseAutoUpdateToken: cfg.IpinfoDatabaseAutoUpdateToken,
 		}, logger)
 	default:
 		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)
@@ -740,14 +756,32 @@ func normalizeRequestHeaderEnrich(in map[string]string) (map[string]string, erro
 	return out, nil
 }
 
-func (p Plugin) setPrivateGeoHeaders(req *http.Request) {
-	if p.countryHeader != "" {
-		req.Header.Set(p.countryHeader, PrivateIpCountryAlias)
+// foldCountryHeader copies deprecated countryHeader into requestHeaderEnrich as
+// key country. A set enrich mapping for the same header name wins.
+func foldCountryHeader(countryHeader string, enrich map[string]string, logger *slog.Logger) map[string]string {
+	h := strings.TrimSpace(countryHeader)
+	if h == "" {
+		return enrich
 	}
+	logger.Warn("countryHeader is deprecated; use requestHeaderEnrich with metadata key country",
+		"header", h)
+	canon := http.CanonicalHeaderKey(h)
+	if enrich == nil {
+		enrich = map[string]string{}
+	}
+	if _, exists := enrich[canon]; !exists {
+		enrich[canon] = dbprovider.MetaCountry
+	}
+	return enrich
+}
+
+func (p Plugin) setPrivateGeoHeaders(req *http.Request) {
 	for header, key := range p.requestHeaderEnrich {
 		if key == dbprovider.MetaCountry {
 			req.Header.Set(header, PrivateIpCountryAlias)
+			continue
 		}
+		req.Header.Set(header, EnrichNullAlias)
 	}
 }
 
@@ -755,13 +789,12 @@ func (p Plugin) applyGeoHeaders(req *http.Request, rec dbprovider.Record, set *b
 	if rec.Country == "" || rec.Country == PrivateIpCountryAlias {
 		return
 	}
-	if p.countryHeader != "" {
-		req.Header.Set(p.countryHeader, rec.Country)
-	}
 	for header, key := range p.requestHeaderEnrich {
-		if value := rec.Field(key); value != "" {
-			req.Header.Set(header, value)
+		value := rec.Field(key)
+		if value == "" {
+			value = EnrichNullAlias
 		}
+		req.Header.Set(header, value)
 	}
 	*set = true
 }

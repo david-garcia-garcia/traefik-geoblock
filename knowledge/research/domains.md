@@ -2,4 +2,5 @@
 
 ## ext
 - ip2location
+- ipinfo
 - traefik

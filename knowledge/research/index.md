@@ -5,6 +5,11 @@ priority: normal
 local: index_ext_ip2location.md
 description: Official IP2Location download API and database package codes this product relies on.
 
+## ipinfo
+priority: normal
+local: index_ext_ipinfo.md
+description: Official IPinfo Lite download, license, and how the database is read.
+
 ## traefik
 priority: normal
 local: index_ext_traefik.md

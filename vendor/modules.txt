@@ -1,6 +1,13 @@
 # github.com/ip2location/ip2location-go/v9 v9.7.1
 ## explicit; go 1.14
 github.com/ip2location/ip2location-go/v9
+# github.com/oschwald/maxminddb-golang v1.13.1
+## explicit; go 1.21
+github.com/oschwald/maxminddb-golang
+# golang.org/x/sys v0.21.0
+## explicit; go 1.18
+golang.org/x/sys/unix
+golang.org/x/sys/windows
 # lukechampine.com/uint128 v1.3.0
 ## explicit; go 1.12
 lukechampine.com/uint128
