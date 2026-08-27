@@ -24,7 +24,8 @@ Traefik Config key that names the implementation. Empty defaults to `ip2location
 - Set `databaseProvider` (or leave empty for `ip2location`).
 - Call `Lookup(ip)` from the plugin. Use `Record.Country` for allow/block. Map errors through `banIfError`.
 - Map headers with `requestHeaderEnrich`. Unknown keys fail `New`. Do not write empty or “unavailable” BIN fields.
-- ASN auto-update is opt-in (`ip2location_asnDatabaseAutoUpdate`). It reuses the geo dir and token. Default package code is `DBASNLITEBINIPV6`.
+- ASN auto-update is opt-in (`ip2location_asnDatabaseAutoUpdate`) and only downloads when `ip2location_databaseAutoUpdateToken` is set. The public lite CDN does not host the ASN BIN. Default package code is `DBASNLITEBINIPV6`.
+- At init the auto-update dir is preferred. `ip2location_databaseFilePath` / `ip2location_asnDatabaseFilePath` are the seed when that dir has no BIN.
 - Keep `countryHeader` as the single-header country alias.
 
 ## Pattern snippet

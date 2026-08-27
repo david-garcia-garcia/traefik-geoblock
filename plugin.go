@@ -33,16 +33,17 @@ const (
 
 // Phase constants for logging and testing
 const (
-	PhaseNone           = "none" // No specific rule matched (e.g., no IPs found)
-	PhaseAllowPrivate   = "allow_private"
-	PhaseBlockedIPBlock = "blocked_ip_block"
-	PhaseAllowedIPBlock = "allowed_ip_block"
-	PhaseAllowedCountry = "allowed_country"
-	PhaseBlockedCountry = "blocked_country"
-	PhaseDefaultAllow   = "default_allow"
-	PhaseIgnoreVerb     = "ignore_verb"
-	PhaseExcludedRegex  = "excluded_regex"
-	PhaseBypassHeader   = "bypass_header"
+	PhaseNone             = "none" // No specific rule matched (e.g., no IPs found)
+	PhaseAllowPrivate     = "allow_private"
+	PhaseBlockedIPBlock   = "blocked_ip_block"
+	PhaseAllowedIPBlock   = "allowed_ip_block"
+	PhaseAllowedCountry   = "allowed_country"
+	PhaseBlockedCountry   = "blocked_country"
+	PhaseDefaultAllow     = "default_allow"
+	PhaseIgnoreVerb       = "ignore_verb"
+	PhaseExcludedRegex    = "excluded_regex"
+	PhaseNotIncludedRegex = "not_included_regex"
+	PhaseBypassHeader     = "bypass_header"
 )
 
 // IP header strategy constants
@@ -115,8 +116,11 @@ type Config struct {
 	// HTTP verb filtering
 	IgnoreVerbs []string // List of HTTP verbs to ignore for blocking (still enriched with GeoIP)
 
-	// Path exclusion
-	ExcludedPathsRegex string // Regular expression to match paths that should skip blocking (still enriched with GeoIP)
+	// Path inclusion / exclusion. Both match "{host}{path}" (e.g. example.com/api/users).
+	// IncludedPathsRegex: when set, only matching requests are candidates for blocking.
+	// ExcludedPathsRegex: matching requests skip blocking. Runs after include.
+	IncludedPathsRegex string
+	ExcludedPathsRegex string
 }
 
 // CreateConfig creates the default plugin configuration.
@@ -155,7 +159,8 @@ type Plugin struct {
 	ipHeaders             []string            // List of headers to check for client IP addresses
 	ipHeaderStrategy      string              // Strategy for processing multiple IP addresses
 	ignoreVerbs           map[string]struct{} // Set of HTTP verbs to ignore for blocking
-	excludedPathsRegex    *regexp.Regexp      // Compiled regex for excluded paths
+	includedPathsRegex    *regexp.Regexp      // When set, only matching {host}{path} may be blocked
+	excludedPathsRegex    *regexp.Regexp      // Matching {host}{path} skip blocking (after include)
 	countryHeader         string
 	logStatusDetailHeader string
 	requestHeaderEnrich   map[string]string // header name -> metadata key
@@ -262,14 +267,18 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		ignoreVerbs[strings.ToUpper(verb)] = struct{}{}
 	}
 
-	// Compile excluded paths regex if provided
-	var excludedPathsRegex *regexp.Regexp
-	if cfg.ExcludedPathsRegex != "" {
-		var err error
-		excludedPathsRegex, err = regexp.Compile(cfg.ExcludedPathsRegex)
-		if err != nil {
-			return nil, fmt.Errorf("%s: invalid excludedPathsRegex pattern %q: %w", name, cfg.ExcludedPathsRegex, err)
-		}
+	includedPathsRegex, err := compilePathRegex(name, "includedPathsRegex", cfg.IncludedPathsRegex)
+	if err != nil {
+		return nil, err
+	}
+	if includedPathsRegex != nil {
+		logger.Debug("compiled includedPathsRegex", "pattern", cfg.IncludedPathsRegex)
+	}
+	excludedPathsRegex, err := compilePathRegex(name, "excludedPathsRegex", cfg.ExcludedPathsRegex)
+	if err != nil {
+		return nil, err
+	}
+	if excludedPathsRegex != nil {
 		logger.Debug("compiled excludedPathsRegex", "pattern", cfg.ExcludedPathsRegex)
 	}
 
@@ -291,6 +300,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		ipHeaders:             canonicalIPHeaders(cfg.IPHeaders),
 		ipHeaderStrategy:      cfg.IPHeaderStrategy,
 		ignoreVerbs:           ignoreVerbs,
+		includedPathsRegex:    includedPathsRegex,
 		excludedPathsRegex:    excludedPathsRegex,
 		logger:                logger,
 		countryHeader:         cfg.CountryHeader,
@@ -373,15 +383,35 @@ func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider
 	}
 }
 
-// isExcludedByRegex checks if the request matches the excluded paths regex.
-// The regex is matched against "{host}{path}" (e.g., "example.com/api/users").
-// Go's regexp package uses RE2 which guarantees linear time complexity,
-// making it inherently safe from ReDoS attacks.
+func compilePathRegex(pluginName, field, pattern string) (*regexp.Regexp, error) {
+	if pattern == "" {
+		return nil, nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("%s: invalid %s pattern %q: %w", pluginName, field, pattern, err)
+	}
+	return re, nil
+}
+
+// isExcludedByRegex reports whether {host}{path} matches excludedPathsRegex.
 func (p Plugin) isExcludedByRegex(host, path string) bool {
-	if p.excludedPathsRegex == nil {
+	return pathRegexMatches(p.excludedPathsRegex, host, path)
+}
+
+// isIncludedByRegex is true when includedPathsRegex is unset, or when {host}{path} matches it.
+func (p Plugin) isIncludedByRegex(host, path string) bool {
+	if p.includedPathsRegex == nil {
+		return true
+	}
+	return pathRegexMatches(p.includedPathsRegex, host, path)
+}
+
+func pathRegexMatches(re *regexp.Regexp, host, path string) bool {
+	if re == nil {
 		return false
 	}
-	return p.excludedPathsRegex.MatchString(host + path)
+	return re.MatchString(host + path)
 }
 
 // setLogHeaders sets the log status headers on the request for observability.
@@ -424,17 +454,24 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	// Check if request matches excluded paths regex (skip blocking but still enrich)
-	// Matches against "{host}{path}" (e.g., "example.com/api/users")
-	if passReason == PhaseNone {
-		if p.isExcludedByRegex(req.Host, req.URL.Path) {
-			passReason = PhaseExcludedRegex
-			logging.Trace(p.logger, "request excluded from blocking by regex",
-				"host", req.Host,
-				"path", req.URL.Path,
-				"remote_addr", req.RemoteAddr,
-				"ip_chain", ipChain)
-		}
+	// Include first: when set, only matching {host}{path} may be blocked.
+	if passReason == PhaseNone && !p.isIncludedByRegex(req.Host, req.URL.Path) {
+		passReason = PhaseNotIncludedRegex
+		logging.Trace(p.logger, "request not included for blocking by regex",
+			"host", req.Host,
+			"path", req.URL.Path,
+			"remote_addr", req.RemoteAddr,
+			"ip_chain", ipChain)
+	}
+
+	// Exclude after include: matching requests still skip blocking and stay enriched.
+	if passReason == PhaseNone && p.isExcludedByRegex(req.Host, req.URL.Path) {
+		passReason = PhaseExcludedRegex
+		logging.Trace(p.logger, "request excluded from blocking by regex",
+			"host", req.Host,
+			"path", req.URL.Path,
+			"remote_addr", req.RemoteAddr,
+			"ip_chain", ipChain)
 	}
 
 	// Check for bypass headers

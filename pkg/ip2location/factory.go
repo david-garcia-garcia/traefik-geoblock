@@ -29,8 +29,8 @@ type DatabaseConfig struct {
 	DatabaseAutoUpdateCode  string
 
 	// ASN LITE is a second BIN. Path is optional; code defaults to DefaultASNDatabaseCode.
-	// AsnDatabaseAutoUpdate is separate from geo auto-update so a 264MB ASN
-	// download is opt-in.
+	// AsnDatabaseAutoUpdate is opt-in and only downloads when a token is set
+	// (ASN LITE is not on the public lite CDN).
 	AsnDatabaseFilePath       string
 	AsnDatabaseAutoUpdate     bool
 	AsnDatabaseAutoUpdateCode string
@@ -195,25 +195,32 @@ func (df *DatabaseFactory) Close() error {
 	return nil
 }
 
-// initialize sets up the initial database using the best available version
+// initialize sets up the initial database using the best available version.
+// Auto-update dir wins when it already has a BIN. The configured file path
+// (ip2location_databaseFilePath / ip2location_asnDatabaseFilePath) is the seed
+// used only when that dir is empty or auto-update is off.
 func (df *DatabaseFactory) initialize() error {
-	// Determine the target database path
-	targetPath, err := df.resolveDatabasePath()
-	if err != nil {
-		return fmt.Errorf("failed to resolve database path: %w", err)
-	}
+	var targetPath string
 
-	df.logger.Debug("initializing database", "path", targetPath)
-
-	// Find the newest available database if auto-update is enabled (no downloads during init)
 	if df.config.DatabaseAutoUpdate {
-		if updatedPath, err := df.handleAutoUpdateInit(targetPath); err != nil {
-			df.logger.Warn("auto-update initialization failed, using fallback database", "error", err)
+		updatedPath, err := df.handleAutoUpdateInit("")
+		if err != nil {
+			df.logger.Warn("auto-update initialization failed, using configured database path", "error", err)
 		} else if updatedPath != "" {
 			targetPath = updatedPath
 			df.logger.Debug("using auto-updated database", "path", updatedPath)
 		}
 	}
+
+	if targetPath == "" {
+		resolved, err := df.resolveDatabasePath()
+		if err != nil {
+			return fmt.Errorf("failed to resolve database path: %w", err)
+		}
+		targetPath = resolved
+	}
+
+	df.logger.Debug("initializing database", "path", targetPath)
 
 	// Track the source database path before opening (only if not already set by auto-update)
 	if df.sourceDbPath == "" {

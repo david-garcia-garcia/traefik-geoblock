@@ -1,9 +1,11 @@
 package ip2location
 
 import (
+	"bytes"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
@@ -72,6 +74,8 @@ func TestNew_LookupWithASNFile(t *testing.T) {
 	if asnPath == "" {
 		for _, candidate := range []string{
 			filepath.Join("..", "..", "IP2LOCATION-LITE-ASN.IPV6.BIN"),
+			filepath.Join("..", "..", "testdata", "IP2LOCATION-LITE-ASN.IPV6.BIN"),
+			`D:\IP2LOCATION-LITE-ASN.IPV6.BIN`,
 			filepath.Join("..", "..", "IP-ASN.BIN"),
 		} {
 			if fileExists(candidate) {
@@ -139,10 +143,42 @@ func TestAsnFactoryConfig(t *testing.T) {
 		t.Error("expected AllowMissing when ASN path is empty")
 	}
 	if !cfg.DatabaseAutoUpdate {
-		t.Error("expected ASN auto-update to follow AsnDatabaseAutoUpdate")
+		t.Error("expected ASN auto-update when a token is set")
 	}
 	if cfg.DatabaseAutoUpdateDir != "/data" || cfg.DatabaseAutoUpdateToken != "tok" {
 		t.Error("expected ASN factory to reuse geo dir and token")
+	}
+}
+
+func TestNew_AsnAutoUpdateWithoutTokenLogsError(t *testing.T) {
+	CleanupFactories()
+	defer CleanupFactories()
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
+	_, err := New(DatabaseConfig{
+		DatabaseFilePath:      testDBFile,
+		AsnDatabaseAutoUpdate: true,
+	}, logger)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "level=ERROR") {
+		t.Errorf("expected ERROR log, got %q", out)
+	}
+	if !strings.Contains(out, "ip2location_databaseAutoUpdateToken") {
+		t.Errorf("expected token mentioned in error, got %q", out)
+	}
+}
+
+func TestAsnFactoryConfig_NoTokenDisablesAutoUpdate(t *testing.T) {
+	cfg := asnFactoryConfig(DatabaseConfig{
+		DatabaseAutoUpdateDir: "/data",
+		AsnDatabaseAutoUpdate: true,
+	})
+	if cfg.DatabaseAutoUpdate {
+		t.Error("ASN auto-update must stay off without a download token")
 	}
 }
 

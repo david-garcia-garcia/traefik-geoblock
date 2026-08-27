@@ -405,11 +405,11 @@ func TestIp2locationDownloadURL_TokenFileIsExactCode(t *testing.T) {
 	if got := ip2locationDownloadURL("", "DB1"); got != liteDownloadURL {
 		t.Errorf("empty token: got %q, want liteDownloadURL", got)
 	}
-	if got := ip2locationDownloadURL("", DefaultASNDatabaseCode); got != asnLiteDownloadURL {
-		t.Errorf("empty token ASN IPv6: got %q, want asnLiteDownloadURL", got)
+	if got := ip2locationDownloadURL("", DefaultASNDatabaseCode); got != "" {
+		t.Errorf("empty token ASN IPv6: got %q, want empty (token required)", got)
 	}
-	if got := ip2locationDownloadURL("", "DBASNLITEBIN"); got != asnLiteIPv4URL {
-		t.Errorf("empty token ASN IPv4: got %q, want asnLiteIPv4URL", got)
+	if got := ip2locationDownloadURL("", "DBASNLITEBIN"); got != "" {
+		t.Errorf("empty token ASN IPv4: got %q, want empty (token required)", got)
 	}
 	got := ip2locationDownloadURL(token, DefaultASNDatabaseCode)
 	u, err := url.Parse(got)
@@ -418,6 +418,19 @@ func TestIp2locationDownloadURL_TokenFileIsExactCode(t *testing.T) {
 	}
 	if file := u.Query().Get("file"); file != DefaultASNDatabaseCode {
 		t.Errorf("ASN token file=%q, want %q", file, DefaultASNDatabaseCode)
+	}
+}
+
+func TestDownloadAndUpdateDatabase_ASNRequiresToken(t *testing.T) {
+	err := downloadAndUpdateDatabase(&DatabaseConfig{
+		DatabaseAutoUpdateDir:  t.TempDir(),
+		DatabaseAutoUpdateCode: DefaultASNDatabaseCode,
+	}, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})))
+	if err == nil {
+		t.Fatal("expected error when downloading ASN without a token")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "token") {
+		t.Errorf("error should mention token, got %v", err)
 	}
 }
 

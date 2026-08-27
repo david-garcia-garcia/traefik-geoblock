@@ -39,17 +39,21 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
-**Expected throughput** (`go test -bench=BenchmarkPlugin -benchmem` on a local Intel Core Ultra 7 265K):
+**Expected throughput** (`go test -bench=BenchmarkPlugin -benchmem` on a local Intel Core Ultra 7 265K). `Lookup` always reads the full geo row (`Get_all`). `ServeHTTP` reuse is the Traefik path (request/recorder reused). Country-only vs full `requestHeaderEnrich` on the same BIN is the same lookup; extra headers are cheap.
 
-| Path | Typical rate | Typical cost |
-| --- | --- | --- |
-| `Lookup` (LITE DB1) | ~131k ops/s | ~6.7 µs, 4 allocs, 536 B |
-| `ServeHTTP` reuse (LITE DB1) | ~122k ops/s | ~6.9 µs, 5 allocs, 552 B |
-| `Lookup` (paid DB8) | ~46k ops/s | ~22 µs, 13 allocs, 1832 B |
-| `ServeHTTP` reuse + full enrich (DB8: country/region/city/isp/domain) | ~45k ops/s | ~22 µs, 20 allocs, 1944 B |
-| CI floor (`TestThroughput_*`) | 20k ops/s | fails the test if below |
+| Database | `Lookup` | `ServeHTTP` reuse | Typical cost |
+| --- | --- | --- | --- |
+| LITE DB1 (country) | ~148k ops/s | ~144k ops/s | ~6.7–7.0 µs, 4–5 allocs, ~540 B |
+| LITE DB1 + ASN LITE | ~48k ops/s | ~52k ops/s | ~19–21 µs, 9–10 allocs, ~1200 B |
+| Paid DB8 (country only) | ~37k ops/s | ~46k ops/s | ~22–27 µs, 13–14 allocs, ~1840 B |
+| Paid DB8 + full enrich (country/region/city/isp/domain) | ~46k ops/s | ~45k ops/s | ~22 µs, 20 allocs, 1944 B |
+| Paid DB8 + ASN LITE (full enrich) | ~27k ops/s | ~22k ops/s | ~38–45 µs, 18–26 allocs, ~2500 B |
 
-DB8 is a larger BIN (region/city/ISP/domain), so each `Get_all` costs more. An ASN LITE BIN adds a second lookup on top. CI still gates at 20k ops/s (`go test -run TestThroughput -v`; skipped with `-short`). The DB8 gate skips when `testdata/IP2LOCATION-DB8.BIN` is absent.
+ASN LITE IPv6 is ~264 MB and is **not** on the public lite CDN (`download.ip2location.com/lite/` 404s). A free LITE account **download token** is required (`file=DBASNLITEBINIPV6`). The plugin does not attempt an ASN download unless `ip2location_databaseAutoUpdateToken` is set. The BIN is not in the repo (GitHub 100 MB limit); keep it on a persistent volume or set `ip2location_asnDatabaseFilePath`.
+
+A second ASN `Get_asn` is the same class of cost as a geo lookup on a large BIN. LITE+ASN is about **one third** of LITE-only. DB8+ASN is the slowest of the four and sits just above the CI floor.
+
+CI still gates at **20k ops/s** (`go test -run TestThroughput -v`; skipped with `-short`). DB8 and ASN benches skip when those BINs are absent.
 
 ## Observability
 
@@ -79,6 +83,7 @@ These are evaluated before geo-blocking rules. If any match, the request passes 
 | Value | Description | Example Scenario |
 |-------|-------------|------------------|
 | `pass:ignore_verb` | HTTP method is in `ignoreVerbs` list | OPTIONS request for CORS preflight |
+| `pass:not_included_regex` | `includedPathsRegex` is set and the request did not match | Public path `/docs` when include is `/secure/.*` |
 | `pass:excluded_regex` | Request matched `excludedPathsRegex` pattern | Health check endpoint `/health` |
 | `pass:bypass_header` | Request had matching `bypassHeaders` header/value | Internal service with secret header |
 
@@ -209,7 +214,7 @@ experimental:
 - `download.ip2location.com`
 - `www.ip2location.com`
 
-> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate: false` and `ip2location_asnDatabaseAutoUpdate: false`), no external network access is required and the plugin operates entirely offline.
+> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate: false` and `ip2location_asnDatabaseAutoUpdate: false`), no external network access is required and the plugin operates entirely offline. LITE DB1 can auto-update without a token. ASN LITE auto-update is not attempted unless `ip2location_databaseAutoUpdateToken` is set (`www.ip2location.com`).
 
 ## Testing and development
 
@@ -255,7 +260,7 @@ docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock traefik:latest
 export TRAEFIK_PLUGIN_GEOBLOCK_PATH=/opt/traefik-plugins/geoblock
 ```
 
-When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN` and `geoblockban.html` files in the specified directory if they are not found in their configured locations. An ASN BIN is only opened when `ip2location_asnDatabaseFilePath` is set or ASN auto-update has downloaded one.
+When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN` and `geoblockban.html` files in the specified directory if they are not found in their configured locations. An ASN BIN is opened when `ip2location_asnDatabaseFilePath` points at one, or after ASN auto-update has downloaded one. ASN auto-update downloads only when `ip2location_databaseAutoUpdateToken` is set.
 
 ### Example Docker Compose Setup
 
@@ -303,19 +308,7 @@ http:
           # Database Configuration
           #-------------------------------
           databaseProvider: ip2location   # Only ip2location is implemented. Empty defaults to ip2location.
-          ip2location_databaseFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
-          # Deprecated aliases still work if the ip2location_ keys are unset:
-          # databaseFilePath, databaseAutoUpdate, databaseAutoUpdateDir,
-          # databaseAutoUpdateToken, databaseAutoUpdateCode.
-          # Prefer the ip2location_ keys; a startup warning is logged when aliases are set.
-          # Can be:
-          # - Full path: /path/to/IP2LOCATION-LITE-DB1.IPV6.BIN
-          # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively). 
-          # Use /plugins-storage/sources/ if you are installing from plugin repository.
-          # - Empty: automatically searches using fallback locations (see below)
-          # 
-          # Fallback search order when file is not found:
-          # 1. TRAEFIK_PLUGIN_GEOBLOCK_PATH environment variable directory
+          # IP2Location BIN path, auto-update, and ASN keys are in the IP2Location section below.
           
           #-------------------------------
           # Country-based Rules (ISO 3166-1 alpha-2 format)
@@ -395,28 +388,29 @@ http:
           # Note: Verb matching is case-insensitive
           
           #-------------------------------
-          # Path Exclusion
+          # Path Inclusion / Exclusion
           #-------------------------------
+          # Both settings are one Go RE2 regex matched against "{host}{path}"
+          # (e.g. example.com/api/users). Empty = unset (no effect).
+          # Include runs first; exclude still wins after a match.
+          # Requests that skip blocking still receive GeoIP enrichment.
+          #
+          # MATCHING FORMAT: "{host}{path}"
+          # - host: The Host header (port omitted for 80/443, may appear otherwise)
+          # - path: URL path starting with / (no query string)
+          #
+          includedPathsRegex: ""
+          # WHEN SET: only matching requests are candidates for blocking.
+          # Non-matching requests pass (pass:not_included_regex) and are still enriched.
+          # Unset/empty: every request is a candidate (same as today).
+          # Examples:
+          # - "^[^/]*/secure/.*"                 # only /secure/* on any host
+          # - "^app\\.example\\.com/admin/.*"    # only /admin/* on that host
+          #
           excludedPathsRegex: "^[^/]*/api/.*"
-          # Regular expression to match requests that should skip geoblocking
-          # Matching requests will NOT be blocked but will still receive GeoIP enrichment (countryHeader)
-          #
-          # MATCHING FORMAT: The regex matches against "{host}{path}"
-          # - host: The Host header value from the request
-          # - path: The URL path starting with / (no query string)
-          # - Example: request to example.com/api/users -> matches "example.com/api/users"
-          # - Note: Host header typically excludes port for standard ports (80/443)
-          #   but may include port for non-standard ports (e.g., "example.com:8080")
-          #
-          # This is useful for:
-          # - API endpoints that have their own authentication/authorization
-          # - Domain-specific exclusions
-          # - Public endpoints that should bypass geoblocking
-          # Note: For health checks, using bypassHeaders is recommended as it's more secure
-          # (requires a secret header value rather than just matching a public URL path)
-          #
-          # Note: Go's regexp uses RE2 which guarantees linear time complexity,
-          # making it inherently safe from ReDoS (Regular Expression Denial of Service) attacks.
+          # Matching requests skip geoblocking (pass:excluded_regex) even if they
+          # also matched includedPathsRegex. Useful for /health inside /secure/*.
+          # For health checks, bypassHeaders is more secure (secret header vs public URL).
           #
           # Examples:
           # - "^[^/]*/health$"                   # /health on any domain
@@ -460,9 +454,21 @@ http:
           # Observe allow/block decisions with logStatusDetailHeader in access logs.
 
           #-------------------------------
-          # Database Auto-Update Settings (IP2Location)
+          # IP2Location Database
           #-------------------------------
-          ip2location_databaseAutoUpdate: true                   
+          ip2location_databaseFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+          # Seed geo BIN (country; region/city/isp/domain on DB8+). Used only when
+          # auto-update is off, or the auto-update dir has no BIN yet.
+          # Deprecated aliases still work if the ip2location_ keys are unset:
+          # databaseFilePath, databaseAutoUpdate, databaseAutoUpdateDir,
+          # databaseAutoUpdateToken, databaseAutoUpdateCode.
+          # Prefer the ip2location_ keys; a startup warning is logged when aliases are set.
+          # Can be:
+          # - Full path: /path/to/IP2LOCATION-LITE-DB1.IPV6.BIN
+          # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively).
+          # Use /plugins-storage/sources/ if you are installing from plugin repository.
+          # - Empty: TRAEFIK_PLUGIN_GEOBLOCK_PATH, or skip if auto-update dir already has a BIN.
+          ip2location_databaseAutoUpdate: true                    
           # Enable automatic database updates with hot-swapping. Updates check every 24 hours
           # and immediately on startup if the current database is older than 1 month.
           # Updated databases are hot-swapped without requiring middleware restart.
@@ -471,16 +477,23 @@ http:
           # Directory to store updated databases. This must be a persistent volume in the traefik pod.
           # The plugin uses a singleton pattern - multiple middlewares with identical configurations
           # share the same database factory and hot-swap operations.
-          ip2location_databaseAutoUpdateToken: ""                # IP2Location download token (if using premium)
+          ip2location_databaseAutoUpdateToken: ""
+          # Download token from https://lite.ip2location.com (or a paid account).
+          # LITE DB1 auto-update works without a token (public CDN).
+          # ASN LITE and paid packages require this token. file= is the package code.
           ip2location_databaseAutoUpdateCode: "DB8BINIPV6"       # Official IP2Location package code for file= (e.g. DB8BINIPV6, DB1LITEBINIPV6). Sent unchanged when a token is set. Not a short product like DB8.
 
           ip2location_asnDatabaseFilePath: ""
-          # Optional path to IP2Location LITE IP-ASN BIN (https://lite.ip2location.com/database-asn).
-          # Leave empty if you do not need ASN metadata. The geo BIN does not contain ASN.
+          # Seed ASN BIN (https://lite.ip2location.com/database-asn). Same rule as
+          # ip2location_databaseFilePath: used only when the auto-update dir has no ASN BIN yet.
+          # Leave empty if you do not need ASN or you rely on token auto-update. The geo BIN has no ASN.
           ip2location_asnDatabaseAutoUpdate: false
-          # Opt-in. When true, downloads and hot-swaps the ASN BIN using the same
-          # ip2location_databaseAutoUpdateDir and token as the geo database.
-          # Default package is DBASNLITEBINIPV6 (~264MB). First start can take a while.
+          # Opt-in. Downloads and hot-swaps the ASN BIN only when
+          # ip2location_databaseAutoUpdateToken is set. The public lite CDN does
+          # not host IP2LOCATION-LITE-ASN.IPV6.BIN (404). Register at
+          # lite.ip2location.com and use file=DBASNLITEBINIPV6 (~264MB).
+          # Without a token the flag is ignored and an error is logged.
+          # Reuses ip2location_databaseAutoUpdateDir.
           ip2location_asnDatabaseAutoUpdateCode: "DBASNLITEBINIPV6"
           # Official file= package code. Use DBASNLITEBIN for the IPv4-only ASN BIN.
 
@@ -505,7 +518,8 @@ http:
           # Map request header names to geo metadata keys: country, region, city, isp, domain, asn.
           # The first public IP wins. Empty or unavailable BIN fields are not written.
           # IP2Location LITE DB1 is country-only; region/city/isp/domain need DB8 or richer.
-          # asn needs the ASN LITE BIN (ip2location_asnDatabaseFilePath or ASN auto-update).
+          # asn needs the ASN LITE BIN (ip2location_asnDatabaseFilePath, or
+          # asnDatabaseAutoUpdate plus a download token).
           
           logStatusDetailHeader: "X-Geoblock-Decision"
           # Optional header to add the decision to the REQUEST
@@ -523,13 +537,14 @@ The plugin processes requests in the following order:
 1. Check if plugin is enabled
 2. Check bypass headers
 3. Check if HTTP verb is in ignoreVerbs list (skip blocking but continue enrichment)
-4. Check if request matches excludedPathsRegex (skip blocking but continue enrichment)
-5. Extract IP addresses from configured IP headers (ipHeaders) in the order they are defined
-6. Apply IP header strategy (ipHeaderStrategy) to determine which IPs to process:
+4. If includedPathsRegex is set and the request does not match, skip blocking but continue enrichment
+5. Check if request matches excludedPathsRegex (skip blocking but continue enrichment; still applies after include)
+6. Extract IP addresses from configured IP headers (ipHeaders) in the order they are defined
+7. Apply IP header strategy (ipHeaderStrategy) to determine which IPs to process:
    - **CheckAll**: Process all found IP addresses (original behavior)
    - **CheckFirst**: Process only the first IP address found
    - **CheckFirstNonePrivate**: Process first non-private IP, fallback to first private IP if no public IPs found
-7. For each selected IP:
+8. For each selected IP:
    - Check if it's in private network range [allowPrivate]
    - Check allowed/blocked IP blocks [allowedIPBlocks + allowedIPBlocksDir, blockedIPBlocks + blockedIPBlocksDir] (most specific match wins)
    - Look up country code 
@@ -541,7 +556,8 @@ The plugin processes requests in the following order:
 - With `CheckFirst` or `CheckFirstNonePrivate` strategies: Only the selected IP(s) are evaluated; the request is denied only if the selected IP is blocked
 - Country header behavior: Header is initially set to "PRIVATE" and only overridden by the first real country found, preventing private IPs from overriding legitimate geolocation information
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
-- Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment
+- Included paths: When `includedPathsRegex` is set, only matching requests can be blocked. Other requests skip blocking but still receive GeoIP enrichment
+- Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment. Exclude is evaluated after include and still wins
 
 ---
 

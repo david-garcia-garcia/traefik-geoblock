@@ -183,6 +183,31 @@ services:
       # Pattern: ^[^/]* matches any host, then /excludedpaths/(api/.*|health)
       - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.excludedPathsRegex=^[^/]*/excludedpaths/(api/.*|health)$$"
 
+  whoami-includedpaths:
+    image: traefik/whoami
+    container_name: "simple-service-includedpaths"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-includedpaths.rule=PathPrefix(`/includedpaths`)"
+      - "traefik.http.routers.router-includedpaths.entrypoints=web"
+      - "traefik.http.routers.router-includedpaths.middlewares=geoblock-includedpaths@docker"
+      - "traefik.http.services.service-includedpaths.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.logLevel=DEBUG"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.logFormat=JSON"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.blockedCountries=US,CN,RU"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.allowedCountries=DE,FR,GB"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.defaultAllow=false"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.countryHeader=X-Ipcountry"
+      # Only /includedpaths/secure/* is a candidate for blocking
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.includedPathsRegex=^[^/]*/includedpaths/secure/.*$$"
+      # Exclude still wins after include
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.excludedPathsRegex=^[^/]*/includedpaths/secure/health$$"
+
   # NEW: Additional routes sharing existing middleware definitions
   whoami-shared1:
     image: traefik/whoami

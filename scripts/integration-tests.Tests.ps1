@@ -440,6 +440,46 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         }
     }
 
+    Context "Included Paths Regex" {
+        # /includedpaths has includedPathsRegex=^[^/]*/includedpaths/secure/.*
+        # and excludedPathsRegex=^[^/]*/includedpaths/secure/health$
+        # Include first: only /secure/* can be blocked. Exclude still wins after include.
+
+        It "Should allow US IP on a path that is not included" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/includedpaths/public" -Headers $headers
+            $result.StatusCode | Should -Be 200
+        }
+
+        It "Should still enrich country header on a path that is not included" {
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" "$script:BaseUrl/includedpaths/public") -join "`n"
+            $response | Should -Match "X-Ipcountry:\s*US"
+        }
+
+        It "Should block US IP on an included path" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/includedpaths/secure/page" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+
+        It "Should allow German IP on an included path" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/includedpaths/secure/page" -Headers $headers
+            $result.StatusCode | Should -Be 200
+        }
+
+        It "Should allow US IP on an included path that is then excluded" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/includedpaths/secure/health" -Headers $headers
+            $result.StatusCode | Should -Be 200
+        }
+
+        It "Should still enrich country header when exclude wins after include" {
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" "$script:BaseUrl/includedpaths/secure/health") -join "`n"
+            $response | Should -Match "X-Ipcountry:\s*US"
+        }
+    }
+
     Context "Request header enrichment" {
         It "Should enrich country, region, and city request headers" {
             $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }

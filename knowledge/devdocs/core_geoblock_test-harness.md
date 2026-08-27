@@ -20,7 +20,7 @@ Unit and bench tests live next to the owner package. Traefik behavior is proven 
 
 ## How to use
 
-- Change `plugin.go` policy or config → add or extend a package test in `plugin_test.go`.
+- Change `plugin.go` policy or config → add or extend a package test in the matching `plugin_*_test.go` (config, policy, ipheaders, filters, observe). Shared fixtures stay in `plugin_test.go`.
 - Change a helper in `pkg/<name>` → add or extend `pkg/<name>/*_test.go`.
 - Change lookup or `ServeHTTP` cost → run `go test -bench=BenchmarkPlugin -benchmem`. Keep `TestThroughput_*` floors conservative; raise them only after CI samples.
 - Change Traefik-visible behavior (headers, labels, blocking) → add a `whoami-*` service in `docker-compose.yml` with a unique `PathPrefix` and matching plugin labels, then a Pester `Context` / `It` in `scripts/integration-tests.Tests.ps1`.
@@ -46,7 +46,12 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 ## Key files
 
-- `plugin_test.go` — plugin `New` / `ServeHTTP` / policy
+- `plugin_test.go` — shared fixtures (`noopHandler`, BIN helpers)
+- `plugin_config_test.go` — `New`, deprecated aliases, auto-update
+- `plugin_policy_test.go` — country / IP / private allow-deny
+- `plugin_ipheaders_test.go` — IP extraction and `ipHeaderStrategy`
+- `plugin_filters_test.go` — ignore verbs, include/exclude path regex, bypass headers
+- `plugin_observe_test.go` — `logStatusDetailHeader` and `requestHeaderEnrich`
 - `perf_test.go` — throughput gates and `BenchmarkPlugin_*`
 - `pkg/*/*_test.go` — helper package tests
 - `docker-compose.yml` — Traefik + whoami routes
@@ -56,7 +61,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 ## Gotchas
 
-- LITE DB1 has country only. Region/city/ISP/domain/ASN integration asserts must not require values the BIN cannot supply. Paid DB8 lives at `testdata/IP2LOCATION-DB8.BIN` (gitignored); package tests skip if it is absent. ASN needs `IP2LOCATION-LITE-ASN.IPV6.BIN` (or `IP2LOCATION_ASN_BIN`).
+- LITE DB1 has country only. Region/city/ISP/domain/ASN integration asserts must not require values the BIN cannot supply. Paid DB8 lives at `testdata/IP2LOCATION-DB8.BIN` (gitignored); package tests skip if it is absent. ASN needs `IP2LOCATION-LITE-ASN.IPV6.BIN` (or `IP2LOCATION_ASN_BIN`). ASN auto-update does not download without a token.
 - Compose labels for the BIN are `ip2location_*` (unprefixed names are deprecated aliases).
 - Traefik `forwardedHeaders` must stay on so the plugin sees `X-Real-IP`, not the Docker network address.
 - Throughput floors catch large regressions only. Compare impact with benches on the same machine.

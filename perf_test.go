@@ -150,6 +150,54 @@ func BenchmarkPlugin_ServeHTTP_Enrich(b *testing.B) {
 	}
 }
 
+func newLITEASNPlugin(tb testing.TB) *Plugin {
+	tb.Helper()
+	asn := requireASN(tb)
+	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+		Enabled:                        true,
+		Ip2locationDatabaseFilePath:    dbFilePath,
+		Ip2locationAsnDatabaseFilePath: asn,
+		AllowedCountries:               []string{"US", "AU"},
+		DefaultAllow:                   false,
+		AllowPrivate:                   false,
+		BanIfError:                     true,
+		DisallowedStatusCode:           http.StatusForbidden,
+		IPHeaders:                      []string{"x-real-ip"},
+		IPHeaderStrategy:               IPHeaderStrategyCheckFirst,
+		LogLevel:                       "error",
+		LogFormat:                      "text",
+	}, pluginName)
+	if err != nil {
+		tb.Fatalf("failed to create LITE+ASN plugin: %v", err)
+	}
+	return handler.(*Plugin)
+}
+
+func newDB8ASNPlugin(tb testing.TB) *Plugin {
+	tb.Helper()
+	path := requireDB8(tb)
+	asn := requireASN(tb)
+	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+		Enabled:                        true,
+		Ip2locationDatabaseFilePath:    path,
+		Ip2locationAsnDatabaseFilePath: asn,
+		AllowedCountries:               []string{"US", "AU"},
+		DefaultAllow:                   false,
+		AllowPrivate:                   false,
+		BanIfError:                     true,
+		DisallowedStatusCode:           http.StatusForbidden,
+		IPHeaders:                      []string{"x-real-ip"},
+		IPHeaderStrategy:               IPHeaderStrategyCheckFirst,
+		LogLevel:                       "error",
+		LogFormat:                      "text",
+		RequestHeaderEnrich:            fullEnrichHeaders,
+	}, pluginName)
+	if err != nil {
+		tb.Fatalf("failed to create DB8+ASN plugin: %v", err)
+	}
+	return handler.(*Plugin)
+}
+
 func newDB8CountryPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	path := requireDB8(tb)
@@ -232,6 +280,71 @@ func TestThroughput_ServeHTTP_DB8FullEnrich(t *testing.T) {
 			t.Fatalf("unexpected status %d", rr.Code)
 		}
 	})
+}
+
+func BenchmarkPlugin_Lookup_LITEASN(b *testing.B) {
+	plugin := newLITEASNPlugin(b)
+	rec, err := plugin.Lookup("8.8.8.8")
+	if err != nil {
+		b.Fatal(err)
+	}
+	if rec.Asn == "" {
+		b.Fatal("expected ASN from ASN BIN")
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := plugin.Lookup("8.8.8.8"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPlugin_ServeHTTP_LITEASN(b *testing.B) {
+	plugin := newLITEASNPlugin(b)
+	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+	req.Header.Set("X-Real-IP", "8.8.8.8")
+	rr := httptest.NewRecorder()
+	plugin.ServeHTTP(rr, req)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		plugin.ServeHTTP(rr, req)
+	}
+}
+
+func BenchmarkPlugin_Lookup_DB8ASN(b *testing.B) {
+	plugin := newDB8ASNPlugin(b)
+	rec, err := plugin.Lookup("8.8.8.8")
+	if err != nil {
+		b.Fatal(err)
+	}
+	if rec.Asn == "" {
+		b.Fatal("expected ASN from ASN BIN")
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := plugin.Lookup("8.8.8.8"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPlugin_ServeHTTP_DB8ASN(b *testing.B) {
+	plugin := newDB8ASNPlugin(b)
+	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+	req.Header.Set("X-Real-IP", "8.8.8.8")
+	rr := httptest.NewRecorder()
+	plugin.ServeHTTP(rr, req)
+	if req.Header.Get("X-Geo-Asn") == "" {
+		b.Fatal("expected X-Geo-Asn from ASN BIN")
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		plugin.ServeHTTP(rr, req)
+	}
 }
 
 func BenchmarkPlugin_Lookup_DB8Country(b *testing.B) {

@@ -274,6 +274,40 @@ func TestDatabaseFactory_Initialize_Errors(t *testing.T) {
 	}
 }
 
+func TestDatabaseFactory_AutoUpdateDirPreferredOverFilePath(t *testing.T) {
+	CleanupFactories()
+	defer CleanupFactories()
+
+	tmpDir := t.TempDir()
+	versioned := filepath.Join(tmpDir, time.Now().Format("20060102")+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	if err := fileutils.Copy(testDBFile, versioned, true); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	factory, err := NewDatabaseFactory(&DatabaseConfig{
+		DatabaseFilePath:       "./nonexistent.bin",
+		DatabaseAutoUpdate:     true,
+		DatabaseAutoUpdateDir:  tmpDir,
+		DatabaseAutoUpdateCode: "DB1",
+	}, logger)
+	if err != nil {
+		t.Fatalf("auto-update dir should be enough without a valid file path: %v", err)
+	}
+	defer factory.Close()
+
+	if factory.GetSourceDbPath() != versioned {
+		t.Errorf("source: got %q, want %q", factory.GetSourceDbPath(), versioned)
+	}
+	rec, err := factory.GetWrapper().Get_country_short("8.8.8.8")
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if rec.Country_short != "US" {
+		t.Errorf("country: got %q", rec.Country_short)
+	}
+}
+
 func TestDatabaseFactory_AllowMissingNoFile(t *testing.T) {
 	CleanupFactories()
 	defer CleanupFactories()

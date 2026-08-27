@@ -16,10 +16,8 @@ import (
 )
 
 const (
-	liteDownloadURL    = "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
-	asnLiteDownloadURL = "https://download.ip2location.com/lite/IP2LOCATION-LITE-ASN.IPV6.BIN.ZIP"
-	asnLiteIPv4URL     = "https://download.ip2location.com/lite/IP2LOCATION-LITE-ASN.BIN.ZIP"
-	tokenDownloadURL   = "https://www.ip2location.com/download?token=%s&file=%s" // #nosec G101
+	liteDownloadURL  = "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
+	tokenDownloadURL = "https://www.ip2location.com/download?token=%s&file=%s" // #nosec G101
 
 	// DefaultASNDatabaseCode is the official IP2Location package code for
 	// ASN LITE IPv6 BIN (file=DBASNLITEBINIPV6).
@@ -33,16 +31,14 @@ const (
 )
 
 // ip2locationDownloadURL builds the auto-update download URL.
-// With a token, file= is dbCode unchanged (the official package code).
+// Geo LITE DB1 is on the public lite CDN (no token). ASN LITE is not;
+// it requires a download token and file= the official package code.
 func ip2locationDownloadURL(token, dbCode string) string {
 	if token != "" {
 		return fmt.Sprintf(tokenDownloadURL, token, dbCode)
 	}
 	if isASNDatabaseCode(dbCode) {
-		if strings.EqualFold(dbCode, "DBASNLITEBIN") {
-			return asnLiteIPv4URL
-		}
-		return asnLiteDownloadURL
+		return ""
 	}
 	return liteDownloadURL
 }
@@ -136,6 +132,9 @@ func findLatestDatabase(dir string, dbCode string) (string, error) {
 
 func downloadAndUpdateDatabase(cfg *DatabaseConfig, logger *slog.Logger) error {
 	dbCode := defaultDatabaseCode(cfg.DatabaseAutoUpdateCode)
+	if isASNDatabaseCode(dbCode) && cfg.DatabaseAutoUpdateToken == "" {
+		return fmt.Errorf("ASN database download requires ip2location_databaseAutoUpdateToken (file=%s is not on the public lite CDN)", dbCode)
+	}
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(cfg.DatabaseAutoUpdateDir, 0755); err != nil {

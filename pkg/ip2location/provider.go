@@ -22,6 +22,10 @@ func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error
 
 	p := &provider{geo: geoFactory.GetWrapper()}
 
+	if config.AsnDatabaseAutoUpdate && config.DatabaseAutoUpdateToken == "" {
+		logger.Error("ip2location_asnDatabaseAutoUpdate is true but ip2location_databaseAutoUpdateToken is empty; ASN download skipped (LITE ASN is not on the public CDN)")
+	}
+
 	asnFactory, err := GetDatabaseFactory(asnFactoryConfig(config), logger)
 	if err != nil {
 		return nil, err
@@ -45,9 +49,11 @@ func asnFactoryConfig(geo DatabaseConfig) *DatabaseConfig {
 	if code == "" {
 		code = DefaultASNDatabaseCode
 	}
+	// ASN LITE is not on download.ip2location.com/lite/. Only download with a token.
+	auto := geo.AsnDatabaseAutoUpdate && geo.DatabaseAutoUpdateToken != ""
 	return &DatabaseConfig{
 		DatabaseFilePath:        geo.AsnDatabaseFilePath,
-		DatabaseAutoUpdate:      geo.AsnDatabaseAutoUpdate,
+		DatabaseAutoUpdate:      auto,
 		DatabaseAutoUpdateDir:   geo.DatabaseAutoUpdateDir,
 		DatabaseAutoUpdateToken: geo.DatabaseAutoUpdateToken,
 		DatabaseAutoUpdateCode:  code,
