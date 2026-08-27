@@ -1,11 +1,11 @@
-# 🛡️ Traefik Geoblock Plugin
+# 🌍 Traefik Geoblock
 
 [![Build Status](https://github.com/david-garcia-garcia/traefik-geoblock/actions/workflows/ci.yml/badge.svg)](https://github.com/david-garcia-garcia/traefik-geoblock/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/david-garcia-garcia/traefik-geoblock)](https://goreportcard.com/report/github.com/david-garcia-garcia/traefik-geoblock)
 [![Latest GitHub release](https://img.shields.io/github/v/release/david-garcia-garcia/traefik-geoblock?sort=semver)](https://github.com/david-garcia-garcia/traefik-geoblock/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-brightgreen.svg)](LICENSE)  
 
-A Traefik plugin that allows or blocks requests based on IP geolocation using IP2Location database.
+A Traefik middleware that looks up the client IP in a **local** GeoIP database (IP2Location or IPinfo) and writes country, city, ASN, and related fields onto the **request**. Use that to make **Traefik access logs and your applications geo-aware** — no per-request GeoIP API. The same lookup can **allow or block** by country or CIDR when you want it to.
 
 > [!TIP]
 > 
@@ -13,7 +13,7 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 > 
 > The basic middlewares you need to secure your Traefik ingress:
 > 
-> 🌍 **Geoblock**: [david-garcia-garcia/traefik-geoblock](https://github.com/david-garcia-garcia/traefik-geoblock) - Block or allow requests based on IP geolocation  
+> 🌍 **Geoblock**: [david-garcia-garcia/traefik-geoblock](https://github.com/david-garcia-garcia/traefik-geoblock) - Geo-enrich requests for logs and backends; optionally allow or block by country  
 > 🛡️ **CrowdSec**: [maxlerebourg/crowdsec-bouncer-traefik-plugin](https://github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin) - Real-time threat intelligence and automated blocking  
 > 🔒 **ModSecurity CRS**: [david-garcia-garcia/traefik-modsecurity](https://github.com/david-garcia-garcia/traefik-modsecurity) - Web Application Firewall with OWASP Core Rule Set  
 > 🚦 **Ratelimit**: [Traefik Rate Limit](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/) - Control request rates and prevent abuse
@@ -32,10 +32,10 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 
 **Designed for high-performance production environments:**
 
-- **No external API calls** - All geolocation lookups are performed using local IP2Location database files, ensuring zero latency from external services
-- **Minimal memory footprint** - No internal caching mechanisms; leverages the IP2Location library's efficient binary database format for direct lookups
-- **Zero network dependencies** - Once configured, operates entirely offline with no external service dependencies
-- **Hot-swappable database updates** - Database updates occur without middleware restart or service interruption
+- **No per-request GeoIP API** — lookups use a local IP2Location BIN or IPinfo MMDB
+- **Minimal memory footprint** — no application-level cache; the database format is read in place
+- **Offline after load** — no outbound call unless you enable auto-update
+- **Hot-swappable database updates** — new files load without restarting Traefik
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
@@ -49,15 +49,17 @@ This architecture ensures consistent response times and eliminates external serv
 | Paid DB8 + full enrich (country/region/city/isp/domain) | ~46k ops/s | ~45k ops/s | ~22 µs, 20 allocs, 1944 B |
 | Paid DB8 + ASN LITE (full enrich) | ~27k ops/s | ~22k ops/s | ~38–45 µs, 18–26 allocs, ~2500 B |
 
-## Observability
+## Geo enrichment and observability
 
-The plugin is designed to provide detailed observability through **Traefik access logs** by adding headers to the **request** (not the response). This means:
+Every request that reaches the plugin gets a local GeoIP lookup. The result is written onto the **request** (`requestHeaderEnrich`), not the HTTP response:
 
-- Headers are visible in Traefik access logs but **not sent back to clients**
-- You can track geolocation and blocking decisions for all traffic
-- Useful for security analysis, debugging, and compliance reporting
+- **Applications** behind Traefik see the same headers (`X-Geo-Country`, city, ASN, …) and can branch on them without calling a GeoIP service.
+- **Traefik access logs** can `keep` those names so every line is geo-aware (dashboards, SIEM, compliance).
+- Headers are **not** copied onto the response, so browsers and other clients do not see them.
 
-> **Recommended Approach**: Set `logStatusDetailHeader` and keep that name in Traefik access logs. That is the only plugin decision header. It covers both allowed and blocked requests (`pass:{reason}` / `block:{reason}`).
+Blocking is optional. You can run the middleware with `defaultAllow: true` and empty country lists and still enrich.
+
+> **Recommended**: map the fields you need with `requestHeaderEnrich`, and set `logStatusDetailHeader` if you also want the allow/block reason (`pass:{reason}` / `block:{reason}`). Keep those header names in Traefik access logs.
 
 ### Available Headers
 
@@ -113,23 +115,24 @@ accessLog:
   fields:
     headers:
       names:
-        X-IPCountry: keep
+        X-Geo-Country: keep
+        X-Geo-City: keep
+        X-Geo-Asn: keep
         X-Geoblock-Decision: keep
 ```
 
-This gives you full visibility into geoblocking decisions without exposing internal logic to clients.
+Access logs then carry geo fields and the decision reason. The backend already received the same request headers. Clients do not.
 
 ## Features
 
-- Block or allow requests based on country of origin (using ISO 3166-1 alpha-2 country codes)
-- Whitelist specific IP ranges (CIDR notation) - supports both inline configuration and directory-based files
-- Blacklist specific IP ranges (CIDR notation) - supports both inline configuration and directory-based files
+- Local GeoIP lookup (IP2Location or IPinfo) on every request — no outbound GeoIP API
+- **Geo enrichment** (`requestHeaderEnrich`): country, country name, continent, region, city, ISP, domain, ASN on the request for access logs and backend apps
+- Optional **geoblock**: allow or deny by ISO 3166-1 alpha-2 country and by CIDR (inline or directory files)
 - Optional bypass using custom headers
 - Configurable handling of private/internal networks
-- Customizable error responses
-- Flexible logging options
-- Hot-swap database updates - automatic IP2Location database updates with zero downtime
-- Path exclusion via regex - exclude specific paths from geoblocking while maintaining GeoIP enrichment
+- Customizable error responses when a request is blocked
+- Hot-swap database updates without restarting Traefik
+- Path include/exclude via regex — skip blocking on those paths, keep enrichment
 
 ## Installation
 
@@ -568,7 +571,7 @@ http:
           # Map request header names to geo metadata keys:
           # country, country_name, continent, continent_code, region, city, isp, domain, asn.
           # The first public IP wins. Every mapped header is written; empty or
-          # unavailable fields are the string null (observability tools need the header present).
+          # unavailable fields are the string null (logs and backends need the header present).
           # IP2Location LITE DB1 is country-only; region/city/isp/domain need DB8 or richer.
           # asn needs the ASN LITE BIN (ip2location_asnDatabaseFilePath, or
           # asnDatabaseAutoUpdate plus a download token).
