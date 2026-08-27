@@ -102,32 +102,7 @@ func UpdateIfNeeded(dbPath string, runSync bool, logger *slog.Logger, config *Da
 // findLatestDatabase finds the most recent database file in the specified directory
 func findLatestDatabase(dir string, dbCode string) (string, error) {
 	dbCode = defaultDatabaseCode(dbCode)
-
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	files, err := filepath.Glob(filepath.Join(dir, fmt.Sprintf("*IP2LOCATION-LITE-%s.IPV6.BIN", dbCode)))
-	if err != nil {
-		return "", err
-	}
-
-	var latest string
-	var latestDate time.Time
-
-	for _, f := range files {
-		date, err := dbutils.GetDateFromName(f)
-		if err != nil {
-			continue
-		}
-
-		if latest == "" || date.After(latestDate) {
-			latest = f
-			latestDate = date
-		}
-	}
-
-	return latest, nil
+	return dbutils.FindLatestDatedFile(dir, fmt.Sprintf("*IP2LOCATION-LITE-%s.IPV6.BIN", dbCode))
 }
 
 func downloadAndUpdateDatabase(cfg *DatabaseConfig, logger *slog.Logger) error {

@@ -215,6 +215,8 @@ The plugin looks up IPs with one of three providers (`databaseProvider`):
 | IPinfo | `ipinfo` | `ipinfo_{code}.mmdb` — `lite` (bundled seed, country + ASN), `core`, or `plus` (region/city filled) |
 | MaxMind | `maxmind` | `GeoIP2-Country-Test.mmdb` (official **dummy** Country fixture, not a live GeoLite file). Operator-supplied GeoLite2/GeoIP2 Country or City MMDBs use nested `country.iso_code`. |
 
+This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com
+
 Only the selected provider’s files are opened. Unused vendor paths are ignored.
 
 **Finding the bundled files.** Traefik does not put the plugin tree on the process working directory. Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to the directory that contains the plugin (the local clone, or the registry unpack such as `/plugins-storage/sources/github.com/david-garcia-garcia/traefik-geoblock`). The plugin searches that directory for the bundled filenames when no other file is configured. Without this variable, empty seed paths fail unless the file is already on an auto-update volume.

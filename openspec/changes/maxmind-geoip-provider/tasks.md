@@ -15,6 +15,7 @@
 - [x] 3.1 README: third provider, dummy seed, token `accountId:licenseKey`, no P3TERX, GeoLite attribution if we mention GeoLite editions.
 - [x] 3.2 Compose `/maxmind` + Pester using a dummy-fixture IP.
 - [x] 3.3 Update `knowledge/devdocs/core_geoblock_database_provider.md` and plugin packages key files.
+- [x] 3.4 Write `knowledge/research/ext_maxmind_geolite2-database/` (download, schema, EULA).
 
 ## 4. Tests
 

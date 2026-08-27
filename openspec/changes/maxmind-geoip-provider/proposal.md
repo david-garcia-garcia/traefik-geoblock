@@ -30,3 +30,4 @@ Token `file=` (`core_geoblock_database_token-download-file`) does not change. IP
 - New `pkg/maxmind`.
 - `README.md`, `docker-compose.yml` `/maxmind`, Pester. Dummy test IPs only on that route.
 - Bundled `GeoIP2-Country-Test.mmdb` from maxmind/MaxMind-DB test-data.
+- Research notes: `knowledge/research/ext_maxmind_geolite2-database/` (official download, GeoIP2 schema, EULA).

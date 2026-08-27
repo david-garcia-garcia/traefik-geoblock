@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"net/http"
 	"os"
 	"path"
@@ -40,39 +39,8 @@ func parseAccountToken(token string) (accountID, licenseKey string, ok bool) {
 	return token[:i], token[i+1:], true
 }
 
-func mmdbBuildDate(reader *maxminddb.Reader) (time.Time, error) {
-	if reader == nil || reader.Metadata.BuildEpoch == 0 {
-		return time.Time{}, fmt.Errorf("MaxMind MMDB has no build_epoch")
-	}
-	epoch := reader.Metadata.BuildEpoch
-	if uint64(epoch) > uint64(math.MaxInt64) {
-		return time.Time{}, fmt.Errorf("MaxMind MMDB build_epoch overflows int64")
-	}
-	//nolint:gosec // G115: epoch is bounded to MaxInt64 above
-	return time.Unix(int64(epoch), 0).UTC(), nil
-}
-
 func findLatestDatabase(dir, code string) (string, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create MaxMind auto-update dir: %w", err)
-	}
-	files, err := filepath.Glob(filepath.Join(dir, "*_"+fileNameForCode(code)))
-	if err != nil {
-		return "", err
-	}
-	var latest string
-	var latestDate time.Time
-	for _, f := range files {
-		date, err := dbutils.GetDateFromName(f)
-		if err != nil {
-			continue
-		}
-		if latest == "" || date.After(latestDate) {
-			latest = f
-			latestDate = date
-		}
-	}
-	return latest, nil
+	return dbutils.FindLatestDatedFile(dir, "*_"+fileNameForCode(code))
 }
 
 func downloadAndUpdateDatabase(cfg DatabaseConfig, logger *slog.Logger) (string, error) {
@@ -145,7 +113,7 @@ func downloadAndUpdateDatabase(cfg DatabaseConfig, logger *slog.Logger) (string,
 	if err != nil {
 		return "", fmt.Errorf("downloaded file is not a valid MMDB: %w", err)
 	}
-	buildDate, err := mmdbBuildDate(reader)
+	buildDate, err := dbutils.MMDBBuildDate(reader.Metadata.BuildEpoch)
 	_ = reader.Close()
 	if err != nil {
 		return "", err
