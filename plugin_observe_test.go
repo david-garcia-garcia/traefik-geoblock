@@ -477,6 +477,11 @@ func (s stubGeoProvider) Lookup(string) (dbprovider.Record, error) {
 
 func (s stubGeoProvider) Close() error { return nil }
 
+const (
+	testGoogleIsp    = "Google LLC"
+	testGoogleDomain = "google.com"
+)
+
 func TestRequestHeaderEnrich(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	emptyBlocks, err := iplookup.NewIpLookupFileMonitor(nil, "", logger)
@@ -490,7 +495,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 			enabled: true,
 			db: stubGeoProvider{rec: dbprovider.Record{
 				Country: "US", Region: "California", City: "Mountain View",
-				Isp: "Google LLC", Domain: "google.com", Asn: "15169",
+				Isp: testGoogleIsp, Domain: testGoogleDomain, Asn: "15169",
 			}},
 			defaultAllow:     true,
 			allowPrivate:     false,
@@ -524,10 +529,10 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		if got := req.Header.Get("X-Geo-City"); got != "Mountain View" {
 			t.Errorf("city: got %q", got)
 		}
-		if got := req.Header.Get("X-Geo-Isp"); got != "Google LLC" {
+		if got := req.Header.Get("X-Geo-Isp"); got != testGoogleIsp {
 			t.Errorf("isp: got %q", got)
 		}
-		if got := req.Header.Get("X-Geo-Domain"); got != "google.com" {
+		if got := req.Header.Get("X-Geo-Domain"); got != testGoogleDomain {
 			t.Errorf("domain: got %q", got)
 		}
 		if got := req.Header.Get("X-Geo-Asn"); got != "15169" {
@@ -627,10 +632,10 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		if req.Header.Get("X-Geo-City") != "Mountain View" {
 			t.Errorf("city: got %q", req.Header.Get("X-Geo-City"))
 		}
-		if req.Header.Get("X-Geo-Isp") != "Google LLC" {
+		if req.Header.Get("X-Geo-Isp") != testGoogleIsp {
 			t.Errorf("isp: got %q", req.Header.Get("X-Geo-Isp"))
 		}
-		if req.Header.Get("X-Geo-Domain") != "google.com" {
+		if req.Header.Get("X-Geo-Domain") != testGoogleDomain {
 			t.Errorf("domain: got %q", req.Header.Get("X-Geo-Domain"))
 		}
 		if req.Header.Get("X-Geo-Asn") != EnrichNullAlias {
@@ -640,13 +645,13 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("IPinfo Lite writes valued fields and null for empty region city", func(t *testing.T) {
 		handler, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:              true,
-			DatabaseProvider:     DatabaseProviderIPinfo,
+			Enabled:                true,
+			DatabaseProvider:       DatabaseProviderIPinfo,
 			IpinfoDatabaseFilePath: ipinfoFilePath,
-			DefaultAllow:         true,
-			DisallowedStatusCode: http.StatusForbidden,
-			IPHeaders:            []string{"x-real-ip"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+			DefaultAllow:           true,
+			DisallowedStatusCode:   http.StatusForbidden,
+			IPHeaders:              []string{"x-real-ip"},
+			IPHeaderStrategy:       IPHeaderStrategyCheckFirst,
 			RequestHeaderEnrich: map[string]string{
 				"X-Geo-Country":        "country",
 				"X-Geo-Country-Name":   "country_name",
@@ -678,10 +683,10 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		if req.Header.Get("X-Geo-Continent-Code") != "NA" {
 			t.Errorf("continent_code: got %q", req.Header.Get("X-Geo-Continent-Code"))
 		}
-		if req.Header.Get("X-Geo-Isp") != "Google LLC" {
+		if req.Header.Get("X-Geo-Isp") != testGoogleIsp {
 			t.Errorf("isp: got %q", req.Header.Get("X-Geo-Isp"))
 		}
-		if req.Header.Get("X-Geo-Domain") != "google.com" {
+		if req.Header.Get("X-Geo-Domain") != testGoogleDomain {
 			t.Errorf("domain: got %q", req.Header.Get("X-Geo-Domain"))
 		}
 		if req.Header.Get("X-Geo-Asn") != "AS15169" {

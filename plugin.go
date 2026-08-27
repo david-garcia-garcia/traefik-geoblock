@@ -557,7 +557,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 			if p.banIfError && passReason == PhaseNone {
 				p.setLogHeaders(req, LogStatusBlock, "error")
-				p.serveBanHtml(rw, ip, "Unknown", "error", req.Method)
+				p.serveBanHtml(rw, ip, "Unknown", req.Method)
 				return
 			}
 			// For non-CheckAll strategies, continue to next IP on error
@@ -569,7 +569,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 		if !allowed && passReason == PhaseNone {
 			p.setLogHeaders(req, LogStatusBlock, phase)
-			p.serveBanHtml(rw, ip, country, phase, req.Method)
+			p.serveBanHtml(rw, ip, country, req.Method)
 			return
 		}
 
@@ -813,7 +813,7 @@ func (p Plugin) isBlockedIPBlocks(ipAddr net.IP) (bool, int, error) {
 }
 
 // Update the serveBanHtml function to use simple string replacement
-func (p Plugin) serveBanHtml(rw http.ResponseWriter, ip, country, phase string, requestMethod string) {
+func (p Plugin) serveBanHtml(rw http.ResponseWriter, ip, country, requestMethod string) {
 	if p.banHtmlContent != "" && requestMethod == http.MethodGet {
 		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 		rw.WriteHeader(p.disallowedStatusCode)

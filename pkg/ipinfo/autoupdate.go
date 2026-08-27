@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -39,7 +40,12 @@ func mmdbBuildDate(reader *maxminddb.Reader) (time.Time, error) {
 	if reader == nil || reader.Metadata.BuildEpoch == 0 {
 		return time.Time{}, fmt.Errorf("IPinfo MMDB has no build_epoch")
 	}
-	return time.Unix(int64(reader.Metadata.BuildEpoch), 0).UTC(), nil
+	epoch := reader.Metadata.BuildEpoch
+	if uint64(epoch) > uint64(math.MaxInt64) {
+		return time.Time{}, fmt.Errorf("IPinfo MMDB build_epoch overflows int64")
+	}
+	//nolint:gosec // G115: epoch is bounded to MaxInt64 above
+	return time.Unix(int64(epoch), 0).UTC(), nil
 }
 
 func findLatestDatabase(dir, code string) (string, error) {

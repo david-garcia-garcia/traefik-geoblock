@@ -11,10 +11,9 @@ import (
 // CI floors. Set from local/CI measurements with headroom for shared runners.
 // Raise them after you have a few CI runs; keep them well below observed ops/s.
 const (
-	minLookupOpsPerSec  = 20000
-	minRequestOpsPerSec = 20000
-	throughputWindow    = 400 * time.Millisecond
-	throughputWarmup    = 2000
+	minThroughputOpsPerSec = 20000
+	throughputWindow       = 400 * time.Millisecond
+	throughputWarmup       = 2000
 )
 
 func newThroughputPlugin(tb testing.TB) *Plugin {
@@ -42,7 +41,7 @@ func newThroughputPlugin(tb testing.TB) *Plugin {
 	return plugin
 }
 
-func requireMinThroughput(t *testing.T, name string, minOpsPerSec float64, op func()) {
+func requireMinThroughput(t *testing.T, name string, op func()) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("throughput gates skipped in short mode")
@@ -60,9 +59,9 @@ func requireMinThroughput(t *testing.T, name string, minOpsPerSec float64, op fu
 	}
 	elapsed := time.Since(start).Seconds()
 	ops := float64(n) / elapsed
-	t.Logf("%s: %.0f ops/s (%d ops in %.3fs; min %.0f)", name, ops, n, elapsed, minOpsPerSec)
-	if ops < minOpsPerSec {
-		t.Fatalf("%s throughput %.0f ops/s is below the CI floor of %.0f ops/s", name, ops, minOpsPerSec)
+	t.Logf("%s: %.0f ops/s (%d ops in %.3fs; min %.0f)", name, ops, n, elapsed, float64(minThroughputOpsPerSec))
+	if ops < minThroughputOpsPerSec {
+		t.Fatalf("%s throughput %.0f ops/s is below the CI floor of %.0f ops/s", name, ops, float64(minThroughputOpsPerSec))
 	}
 }
 
@@ -70,7 +69,7 @@ func TestThroughput_IPLookup(t *testing.T) {
 	plugin := newThroughputPlugin(t)
 	ips := []string{"1.1.1.1", "8.8.8.8", "9.9.9.9"}
 	i := 0
-	requireMinThroughput(t, "Lookup", minLookupOpsPerSec, func() {
+	requireMinThroughput(t, "Lookup", func() {
 		_, err := plugin.Lookup(ips[i%len(ips)])
 		if err != nil {
 			t.Fatalf("Lookup failed: %v", err)
@@ -81,7 +80,7 @@ func TestThroughput_IPLookup(t *testing.T) {
 
 func TestThroughput_ServeHTTP(t *testing.T) {
 	plugin := newThroughputPlugin(t)
-	requireMinThroughput(t, "ServeHTTP", minRequestOpsPerSec, func() {
+	requireMinThroughput(t, "ServeHTTP", func() {
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Real-IP", "8.8.8.8")
 		rr := httptest.NewRecorder()
@@ -257,7 +256,7 @@ func TestThroughput_ServeHTTP_DB8Country(t *testing.T) {
 	req.Header.Set("X-Real-IP", "8.8.8.8")
 	rr := httptest.NewRecorder()
 	plugin.ServeHTTP(rr, req)
-	requireMinThroughput(t, "ServeHTTP_DB8Country", minRequestOpsPerSec, func() {
+	requireMinThroughput(t, "ServeHTTP_DB8Country", func() {
 		plugin.ServeHTTP(rr, req)
 		if rr.Code != http.StatusTeapot {
 			t.Fatalf("unexpected status %d", rr.Code)
@@ -274,7 +273,7 @@ func TestThroughput_ServeHTTP_DB8FullEnrich(t *testing.T) {
 	if req.Header.Get("X-Geo-Isp") == "" || req.Header.Get("X-Geo-Domain") == "" {
 		t.Fatalf("expected DB8 to write isp/domain, isp=%q domain=%q", req.Header.Get("X-Geo-Isp"), req.Header.Get("X-Geo-Domain"))
 	}
-	requireMinThroughput(t, "ServeHTTP_DB8FullEnrich", minRequestOpsPerSec, func() {
+	requireMinThroughput(t, "ServeHTTP_DB8FullEnrich", func() {
 		plugin.ServeHTTP(rr, req)
 		if rr.Code != http.StatusTeapot {
 			t.Fatalf("unexpected status %d", rr.Code)

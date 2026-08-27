@@ -31,9 +31,9 @@ func (l *InstanceLock) LoadOrStore(has func() bool, store func() error) error {
 	return store()
 }
 
-// Reset runs clear under the write lock (tests / shutdown).
-func (l *InstanceLock) Reset(clear func()) {
+// Reset runs fn under the write lock (tests / shutdown).
+func (l *InstanceLock) Reset(fn func()) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	clear()
+	fn()
 }

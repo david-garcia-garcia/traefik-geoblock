@@ -197,7 +197,7 @@ func TestPackageDownloadURL(t *testing.T) {
 func TestFindLatestDatabase(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"20230101_ipinfo_lite.mmdb", "20230301_ipinfo_lite.mmdb", "20230401_ipinfo_core.mmdb", "skip.mmdb"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
