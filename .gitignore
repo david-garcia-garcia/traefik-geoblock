@@ -14,3 +14,15 @@ dist/
 
 # Vendor needs to be commited for the plugin to work
 # vendor/
+
+# Paid IP2Location BINs (not redistributable)
+testdata/IP2LOCATION-DB8*.BIN
+testdata/IP2LOCATION-DB8*.BIN.ZIP
+testdata/IP-COUNTRY-REGION-CITY-*.BIN
+
+# ASN LITE IPv6 BIN is ~264MB (GitHub 100MB limit). Download with a token.
+IP2LOCATION-LITE-ASN*.BIN
+testdata/IP2LOCATION-LITE-ASN*.BIN
+
+# Local download tokens (copy from .env.example). Never commit.
+.env

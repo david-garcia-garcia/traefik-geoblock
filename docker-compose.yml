@@ -1,6 +1,6 @@
 services:
   traefik:
-    image: "traefik:v3.6.9"
+    image: "traefik:v3.7.11"
     container_name: "traefik"
     restart: unless-stopped
     command:
@@ -9,8 +9,15 @@ services:
       - "--accesslog.filepath=/var/log/traefik/access.log"
       - "--accesslog.format=json"
       - "--accesslog.fields.headers.names.X-Ipcountry=keep"
-      - "--accesslog.fields.headers.names.X-Geoblock-Action=keep"
-      - "--accesslog.fields.headers.names.X-Geoblock-Status=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Country=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Region=keep"
+      - "--accesslog.fields.headers.names.X-Geo-City=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Asn=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Isp=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Domain=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Country-Name=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Continent=keep"
+      - "--accesslog.fields.headers.names.X-Geo-Continent-Code=keep"
       - "--accesslog.fields.headers.names.X-Geoblock-Decision=keep"
       - "--api.insecure=true"
       - "--providers.docker=true"
@@ -26,9 +33,10 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - logs-local:/var/log/traefik
-      - geoblock-logs:/var/log/geoblock
       - './geoblockban.html:/geoblockban.html:ro'
       - ./:/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock
+      - ip2-token:/data/ip2database-token
+      - ipinfo-update:/data/ipinfo
     ports:
       - 8000:80
       - 8080:8080
@@ -45,9 +53,8 @@ services:
       - "traefik.http.services.service-foo.loadbalancer.server.port=80"
       - "traefik.http.middlewares.geoblock2.plugin.geoblock.enabled=true"
       - "traefik.http.middlewares.geoblock2.plugin.geoblock.logLevel=DEBUG"
-      - "traefik.http.middlewares.geoblock2.plugin.geoblock.logPath="
       - "traefik.http.middlewares.geoblock2.plugin.geoblock.logFormat=JSON"
-      - "traefik.http.middlewares.geoblock2.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock2.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock2.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
       - "traefik.http.middlewares.geoblock2.plugin.geoblock.allowPrivate=true"
       - "traefik.http.middlewares.geoblock2.plugin.geoblock.blockedCountries=US,CN,RU"
@@ -66,16 +73,15 @@ services:
       - "traefik.http.services.service-bar.loadbalancer.server.port=80"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.enabled=true"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.logLevel=DEBUG"
-      - "traefik.http.middlewares.geoblock.plugin.geoblock.logPath="
       - "traefik.http.middlewares.geoblock.plugin.geoblock.logFormat=JSON"
-      - "traefik.http.middlewares.geoblock.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.allowPrivate=true"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.blockedCountries=US,CN,RU"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.allowedCountries=DE,FR,GB"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.defaultAllow=false"
-      - "traefik.http.middlewares.geoblock.plugin.geoblock.databaseAutoUpdate=true"
-      - "traefik.http.middlewares.geoblock.plugin.geoblock.databaseAutoUpdateDir=/data/ip2database"
+      - "traefik.http.middlewares.geoblock.plugin.geoblock.ip2location_databaseAutoUpdate=true"
+      - "traefik.http.middlewares.geoblock.plugin.geoblock.ip2location_databaseAutoUpdateDir=/data/ip2database"
 
   whoami-logtest:
     image: traefik/whoami
@@ -89,10 +95,8 @@ services:
       - "traefik.http.services.service-logtest.loadbalancer.server.port=80"
       - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.enabled=true"
       - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.logLevel=INFO"
-      - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.logPath=/var/log/geoblock/geoblock.log"
       - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.logFormat=json"
-      - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.logBannedRequests=true"
-      - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
       - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.allowPrivate=true"
       - "traefik.http.middlewares.geoblock-logtest.plugin.geoblock.blockedCountries=US,CN,RU"
@@ -111,10 +115,8 @@ services:
       - "traefik.http.services.service-countryHeaderTest.loadbalancer.server.port=80"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.enabled=true"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.logLevel=DEBUG"
-      - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.logPath="
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.logFormat=JSON"
-      - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.logBannedRequests=true"
-      - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.allowPrivate=true"
       - "traefik.http.middlewares.geoblock-countryHeaderTest.plugin.geoblock.blockedCountries=US,CN,RU"
@@ -134,16 +136,13 @@ services:
       - "traefik.http.services.service-remediationHeaderTest.loadbalancer.server.port=80"
       - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.enabled=true"
       - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.logLevel=DEBUG"
-      - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.logPath="
       - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.logFormat=JSON"
-      - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.logBannedRequests=true"
-      - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
       - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.allowPrivate=true"
       - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.blockedCountries=US,CN,RU"
       - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.allowedCountries=DE,FR,GB"
       - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.defaultAllow=false"
-      - "traefik.http.middlewares.geoblock-remediationHeaderTest.plugin.geoblock.remediationHeadersCustomName=X-Geoblock-Action"
 
   whoami-blockall:
     image: traefik/whoami
@@ -157,10 +156,8 @@ services:
       - "traefik.http.services.service-blockall.loadbalancer.server.port=80"
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.enabled=true"
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.logLevel=INFO"
-      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.logPath="
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.logFormat=JSON"
-      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.logBannedRequests=true"
-      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.allowPrivate=false"
       - "traefik.http.middlewares.geoblock-blockall.plugin.geoblock.allowedCountries="
@@ -179,10 +176,8 @@ services:
       - "traefik.http.services.service-excludedpaths.loadbalancer.server.port=80"
       - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.enabled=true"
       - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.logLevel=DEBUG"
-      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.logPath="
       - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.logFormat=JSON"
-      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.logBannedRequests=true"
-      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
       - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.allowPrivate=true"
       - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.blockedCountries=US,CN,RU"
@@ -192,6 +187,63 @@ services:
       # Exclude paths matching {host}/excludedpaths/api/.* or {host}/excludedpaths/health
       # Pattern: ^[^/]* matches any host, then /excludedpaths/(api/.*|health)
       - "traefik.http.middlewares.geoblock-excludedpaths.plugin.geoblock.excludedPathsRegex=^[^/]*/excludedpaths/(api/.*|health)$$"
+
+  whoami-includedpaths:
+    image: traefik/whoami
+    container_name: "simple-service-includedpaths"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-includedpaths.rule=PathPrefix(`/includedpaths`)"
+      - "traefik.http.routers.router-includedpaths.entrypoints=web"
+      - "traefik.http.routers.router-includedpaths.middlewares=geoblock-includedpaths@docker"
+      - "traefik.http.services.service-includedpaths.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.logLevel=DEBUG"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.logFormat=JSON"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.blockedCountries=US,CN,RU"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.allowedCountries=DE,FR,GB"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.defaultAllow=false"
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.countryHeader=X-Ipcountry"
+      # Only /includedpaths/secure/* is a candidate for blocking
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.includedPathsRegex=^[^/]*/includedpaths/secure/.*$$"
+      # Exclude still wins after include
+      - "traefik.http.middlewares.geoblock-includedpaths.plugin.geoblock.excludedPathsRegex=^[^/]*/includedpaths/secure/health$$"
+
+  whoami-ipinfo:
+    image: traefik/whoami
+    container_name: "simple-service-ipinfo"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-ipinfo.rule=PathPrefix(`/ipinfo`)"
+      - "traefik.http.routers.router-ipinfo.entrypoints=web"
+      - "traefik.http.routers.router-ipinfo.middlewares=geoblock-ipinfo@docker"
+      - "traefik.http.services.service-ipinfo.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.databaseProvider=ipinfo"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/ipinfo_lite.mmdb"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseAutoUpdate=true"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseAutoUpdateDir=/data/ipinfo"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseAutoUpdateToken=${IPINFO_DOWNLOAD_TOKEN:-}"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseAutoUpdateCode=${IPINFO_DATABASE_CODE:-lite}"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.blockedCountries=US"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.allowedCountries=DE"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.defaultAllow=false"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.countryHeader=X-Ipcountry"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Country=country"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Country-Name=country_name"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Continent=continent"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Continent-Code=continent_code"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Region=region"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-City=city"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Isp=isp"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Domain=domain"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.requestHeaderEnrich.X-Geo-Asn=asn"
 
   # NEW: Additional routes sharing existing middleware definitions
   whoami-shared1:
@@ -240,21 +292,72 @@ services:
       - "traefik.http.services.service-logheaders.loadbalancer.server.port=80"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.enabled=true"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.logLevel=DEBUG"
-      - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.logPath="
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.logFormat=JSON"
-      - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.allowPrivate=true"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.blockedCountries=US"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.allowedCountries=DE,AU"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.defaultAllow=false"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.countryHeader=X-Ipcountry"
-      - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.logStatusHeader=X-Geoblock-Status"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.logStatusDetailHeader=X-Geoblock-Decision"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.ignoreVerbs=OPTIONS"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.excludedPathsRegex=/logheaders/api/.*"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.bypassHeaders.X-Geoblock-Bypass=secret-bypass-token"
       - "traefik.http.middlewares.geoblock-logheaders.plugin.geoblock.blockedIPBlocks=3.5.140.0/24"
 
+  whoami-enrichTest:
+    image: traefik/whoami
+    container_name: "simple-service-enrichTest"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-enrichTest.rule=PathPrefix(`/enrichTest`)"
+      - "traefik.http.routers.router-enrichTest.entrypoints=web"
+      - "traefik.http.routers.router-enrichTest.middlewares=geoblock-enrichTest@docker"
+      - "traefik.http.services.service-enrichTest.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.logLevel=INFO"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.defaultAllow=true"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Country=country"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Region=region"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-City=city"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Asn=asn"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Isp=isp"
+      - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Domain=domain"
+
+  # Local-only: started with `docker compose --profile local-tokens up`
+  # when .env has IP2LOCATION_DOWNLOAD_TOKEN. CI does not enable this profile.
+  whoami-tokendb:
+    image: traefik/whoami
+    container_name: "simple-service-tokendb"
+    restart: unless-stopped
+    profiles:
+      - local-tokens
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-tokendb.rule=PathPrefix(`/tokendb`)"
+      - "traefik.http.routers.router-tokendb.entrypoints=web"
+      - "traefik.http.routers.router-tokendb.middlewares=geoblock-tokendb@docker"
+      - "traefik.http.services.service-tokendb.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.logLevel=DEBUG"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.logFormat=JSON"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.blockedCountries=US,CN,RU"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.allowedCountries=DE,FR,GB"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.defaultAllow=false"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseAutoUpdate=true"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseAutoUpdateDir=/data/ip2database-token"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseAutoUpdateToken=${IP2LOCATION_DOWNLOAD_TOKEN:-}"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseAutoUpdateCode=${IP2LOCATION_DATABASE_CODE:-DB8BINIPV6}"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_asnDatabaseAutoUpdate=true"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_asnDatabaseAutoUpdateCode=DBASNLITEBINIPV6"
+
 volumes:
   logs-local:
-  geoblock-logs:
+  ip2-token:
+  ipinfo-update:

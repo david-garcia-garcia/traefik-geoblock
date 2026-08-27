@@ -1,11 +1,11 @@
-# 🛡️ Traefik Geoblock Plugin
+# 🌍 Traefik Geoblock
 
 [![Build Status](https://github.com/david-garcia-garcia/traefik-geoblock/actions/workflows/ci.yml/badge.svg)](https://github.com/david-garcia-garcia/traefik-geoblock/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/david-garcia-garcia/traefik-geoblock)](https://goreportcard.com/report/github.com/david-garcia-garcia/traefik-geoblock)
 [![Latest GitHub release](https://img.shields.io/github/v/release/david-garcia-garcia/traefik-geoblock?sort=semver)](https://github.com/david-garcia-garcia/traefik-geoblock/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-brightgreen.svg)](LICENSE)  
 
-A Traefik plugin that allows or blocks requests based on IP geolocation using IP2Location database.
+A Traefik middleware that looks up the client IP in a **local** GeoIP database (IP2Location or IPinfo) and writes country, city, ASN, and related fields onto the **request**. Use that to make **Traefik access logs and your applications geo-aware** — no per-request GeoIP API. The same lookup can **allow or block** by country or CIDR when you want it to.
 
 > [!TIP]
 > 
@@ -13,7 +13,7 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 > 
 > The basic middlewares you need to secure your Traefik ingress:
 > 
-> 🌍 **Geoblock**: [david-garcia-garcia/traefik-geoblock](https://github.com/david-garcia-garcia/traefik-geoblock) - Block or allow requests based on IP geolocation  
+> 🌍 **Geoblock**: [david-garcia-garcia/traefik-geoblock](https://github.com/david-garcia-garcia/traefik-geoblock) - Geo-enrich requests for logs and backends; optionally allow or block by country  
 > 🛡️ **CrowdSec**: [maxlerebourg/crowdsec-bouncer-traefik-plugin](https://github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin) - Real-time threat intelligence and automated blocking  
 > 🔒 **ModSecurity CRS**: [david-garcia-garcia/traefik-modsecurity](https://github.com/david-garcia-garcia/traefik-modsecurity) - Web Application Firewall with OWASP Core Rule Set  
 > 🚦 **Ratelimit**: [Traefik Rate Limit](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/) - Control request rates and prevent abuse
@@ -32,38 +32,42 @@ A Traefik plugin that allows or blocks requests based on IP geolocation using IP
 
 **Designed for high-performance production environments:**
 
-- **No external API calls** - All geolocation lookups are performed using local IP2Location database files, ensuring zero latency from external services
-- **Minimal memory footprint** - No internal caching mechanisms; leverages the IP2Location library's efficient binary database format for direct lookups
-- **Zero network dependencies** - Once configured, operates entirely offline with no external service dependencies
-- **Hot-swappable database updates** - Database updates occur without middleware restart or service interruption
+- **No per-request GeoIP API** — lookups use a local IP2Location BIN or IPinfo MMDB
+- **Minimal memory footprint** — no application-level cache; the database format is read in place
+- **Offline after load** — no outbound call unless you enable auto-update
+- **Hot-swappable database updates** — new files load without restarting Traefik
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
-## Performance & Scalability
+**Expected throughput** (`go test -bench=BenchmarkPlugin -benchmem` on a local Intel Core Ultra 7 265K). `Lookup` always reads the full geo row (`Get_all`). `ServeHTTP` reuse is the Traefik path (request/recorder reused). Country-only vs full `requestHeaderEnrich` on the same BIN is the same lookup; extra headers are cheap.
 
-## Observability
+| Database | `Lookup` | `ServeHTTP` reuse | Typical cost |
+| --- | --- | --- | --- |
+| LITE DB1 (country) | ~148k ops/s | ~144k ops/s | ~6.7–7.0 µs, 4–5 allocs, ~540 B |
+| LITE DB1 + ASN LITE | ~48k ops/s | ~52k ops/s | ~19–21 µs, 9–10 allocs, ~1200 B |
+| Paid DB8 (country only) | ~37k ops/s | ~46k ops/s | ~22–27 µs, 13–14 allocs, ~1840 B |
+| Paid DB8 + full enrich (country/region/city/isp/domain) | ~46k ops/s | ~45k ops/s | ~22 µs, 20 allocs, 1944 B |
+| Paid DB8 + ASN LITE (full enrich) | ~27k ops/s | ~22k ops/s | ~38–45 µs, 18–26 allocs, ~2500 B |
 
-The plugin is designed to provide detailed observability through **Traefik access logs** by adding headers to the **request** (not the response). This means:
+## Geo enrichment and observability
 
-- Headers are visible in Traefik access logs but **not sent back to clients**
-- You can track geolocation and blocking decisions for all traffic
-- Useful for security analysis, debugging, and compliance reporting
+Every request that reaches the plugin gets a local GeoIP lookup. The result is written onto the **request** (`requestHeaderEnrich`), not the HTTP response:
 
-> **Recommended Approach**: Using `logStatusHeader` and `logStatusDetailHeader` with Traefik access logs is the recommended way to observe plugin behavior. This provides complete visibility into both allowed and blocked requests with detailed decision reasons. The built-in `logBannedRequests` feature only logs blocked requests and is considered a legacy approach.
+- **Applications** behind Traefik see the same headers (`X-Geo-Country`, city, ASN, …) and can branch on them without calling a GeoIP service.
+- **Traefik access logs** can `keep` those names so every line is geo-aware (dashboards, SIEM, compliance).
+- Headers are **not** copied onto the response, so browsers and other clients do not see them.
+
+Blocking is optional. You can run the middleware with `defaultAllow: true` and empty country lists and still enrich.
+
+> **Recommended**: map the fields you need with `requestHeaderEnrich`, and set `logStatusDetailHeader` if you also want the allow/block reason (`pass:{reason}` / `block:{reason}`). Keep those header names in Traefik access logs.
 
 ### Available Headers
 
 | Config Setting | Purpose | Example Values |
 |----------------|---------|----------------|
-| `countryHeader` | Country code of the request origin | `US`, `DE`, `PRIVATE` |
-| `logStatusHeader` | Simple pass/block status | `pass`, `block` |
-| `logStatusDetailHeader` | Detailed decision with reason | `pass:allowed_country`, `block:blocked_country` |
-
-### logStatusHeader Values
-
-Simple status indicating whether the request was allowed or blocked:
-- `pass` - Request was allowed through
-- `block` - Request was blocked
+| `requestHeaderEnrich` | Geo metadata on the request. Every mapped header is written. Missing values are `null`. Country on a private IP is `PRIVATE`. | `X-Geo-Country: US`, `X-Geo-Region: null` |
+| `countryHeader` | **Deprecated.** Use `requestHeaderEnrich` with key `country` | `US`, `DE`, `PRIVATE` |
+| `logStatusDetailHeader` | Decision with reason | `pass:allowed_country`, `block:blocked_country` |
 
 ### logStatusDetailHeader Values
 
@@ -76,6 +80,7 @@ These are evaluated before geo-blocking rules. If any match, the request passes 
 | Value | Description | Example Scenario |
 |-------|-------------|------------------|
 | `pass:ignore_verb` | HTTP method is in `ignoreVerbs` list | OPTIONS request for CORS preflight |
+| `pass:not_included_regex` | `includedPathsRegex` is set and the request did not match | Public path `/docs` when include is `/secure/.*` |
 | `pass:excluded_regex` | Request matched `excludedPathsRegex` pattern | Health check endpoint `/health` |
 | `pass:bypass_header` | Request had matching `bypassHeaders` header/value | Internal service with secret header |
 
@@ -110,24 +115,24 @@ accessLog:
   fields:
     headers:
       names:
-        X-IPCountry: keep
-        X-Geoblock-Status: keep
+        X-Geo-Country: keep
+        X-Geo-City: keep
+        X-Geo-Asn: keep
         X-Geoblock-Decision: keep
 ```
 
-This gives you full visibility into geoblocking decisions without exposing internal logic to clients.
+Access logs then carry geo fields and the decision reason. The backend already received the same request headers. Clients do not.
 
 ## Features
 
-- Block or allow requests based on country of origin (using ISO 3166-1 alpha-2 country codes)
-- Whitelist specific IP ranges (CIDR notation) - supports both inline configuration and directory-based files
-- Blacklist specific IP ranges (CIDR notation) - supports both inline configuration and directory-based files
+- Local GeoIP lookup (IP2Location or IPinfo) on every request — no outbound GeoIP API
+- **Geo enrichment** (`requestHeaderEnrich`): country, country name, continent, region, city, ISP, domain, ASN on the request for access logs and backend apps
+- Optional **geoblock**: allow or deny by ISO 3166-1 alpha-2 country and by CIDR (inline or directory files)
 - Optional bypass using custom headers
 - Configurable handling of private/internal networks
-- Customizable error responses
-- Flexible logging options
-- Hot-swap database updates - automatic IP2Location database updates with zero downtime
-- Path exclusion via regex - exclude specific paths from geoblocking while maintaining GeoIP enrichment
+- Customizable error responses when a request is blocked
+- Hot-swap database updates without restarting Traefik
+- Path include/exclude via regex — skip blocking on those paths, keep enrichment
 
 ## Installation
 
@@ -200,14 +205,46 @@ experimental:
         useunsafe: true
 ```
 
+## GeoIP database configuration and updates
+
+The plugin looks up IPs with one of two providers (`databaseProvider`):
+
+| Provider | Config value | Bundled seed (when available) |
+| --- | --- | --- |
+| IP2Location (default) | `ip2location` or empty | `IP2LOCATION-LITE-DB1.IPV6.BIN` (country). ASN is a separate BIN and is **not** bundled. |
+| IPinfo | `ipinfo` | `ipinfo_{code}.mmdb` — `lite` (bundled seed, country + ASN), `core`, or `plus` (region/city filled) |
+
+Only the selected provider’s files are opened. Unused vendor paths are ignored.
+
+**Finding the bundled files.** Traefik does not put the plugin tree on the process working directory. Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to the directory that contains the plugin (the local clone, or the registry unpack such as `/plugins-storage/sources/github.com/david-garcia-garcia/traefik-geoblock`). The plugin searches that directory for the bundled filenames when no other file is configured. Without this variable, empty seed paths fail unless the file is already on an auto-update volume.
+
+**Recommendation: configure auto-update** and point the auto-update directory at a persistent volume. The bundled snapshots (and any static seed file you copy in) go stale. Auto-update downloads a current database, stores a dated copy, and hot-swaps it without restarting Traefik.
+
+How auto-update works:
+
+- Turn it on with `ip2location_databaseAutoUpdate` / `ip2location_asnDatabaseAutoUpdate` / `ipinfo_databaseAutoUpdate`, and set the matching `*AutoUpdateDir` (required; must survive container restarts).
+- On startup the plugin uses the newest dated file already in that directory. A 24-hour ticker then checks again.
+- IP2Location LITE DB1 downloads from the public CDN with no token. ASN LITE and paid IP2Location packages need `ip2location_databaseAutoUpdateToken` and the official `file=` package code. IPinfo Lite downloads only when `ipinfo_databaseAutoUpdateToken` is set; without a token an error is logged and the seed stays in use.
+- New files are stored as `YYYYMMDD_…` in the auto-update directory. The prefix is the date inside the file (IP2Location BIN header, IPinfo MMDB `build_epoch`). IP2Location downloads when the open BIN is older than 30 days. IPinfo skips the download when that dated MMDB is less than 24 hours old.
+- Same config shares one factory (one ticker). See [Network Requirements](#network-requirements) for the download hosts.
+
+`ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, and `ipinfo_databaseFilePath` are **seeds / fallbacks**, not the live copy once auto-update has stored a file. Resolution order for each database the provider needs:
+
+1. **Auto-update directory** — newest dated file already there (when auto-update is on).
+2. **Configured seed path** — the matching `*_databaseFilePath` (file, or a directory searched for the default filename).
+3. **Bundled database** — the committed seed, when that provider ships one, found via `TRAEFIK_PLUGIN_GEOBLOCK_PATH`.
+
+If none of those exist, plugin creation fails (except an empty IP2Location ASN path, which means “no ASN”).
+
 ## Network Requirements
 
 **For automatic database updates to function, ensure your firewall allows outbound HTTPS connections to:**
 
-- `download.ip2location.com`
-- `www.ip2location.com`
+- `download.ip2location.com` — IP2Location LITE DB1 (no token)
+- `www.ip2location.com` — IP2Location token downloads (paid packages and ASN LITE)
+- `ipinfo.io` — IPinfo Lite MMDB (token required; the response redirects to IPinfo’s download CDN)
 
-> **Note:** If automatic updates are disabled (`databaseAutoUpdate: false`), no external network access is required and the plugin operates entirely offline.
+> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate`, `ip2location_asnDatabaseAutoUpdate`, and `ipinfo_databaseAutoUpdate` all false), no external network access is required and the plugin operates entirely offline. IP2Location LITE DB1 can auto-update without a token. ASN LITE and IPinfo Lite downloads are not attempted unless their download token is set.
 
 ## Testing and development
 
@@ -222,8 +259,18 @@ The codebase includes a full set of integration and unit tests:
 # Run unit tests
 go test
 
+# Throughput gates (also run in CI; skipped with -short)
+go test -run TestThroughput -v
+
+# Compare lookup/request cost before and after a change
+go test -bench=BenchmarkPlugin -benchmem
+
 # Run integration tests
-.\Test-Integration.ps
+.\Test-Integration.ps1
+```
+
+Token-protected downloads (IP2Location paid/LITE-with-token, ASN LITE, IPinfo Lite) are optional and local-only. Copy `.env.example` to `.env`, set the tokens, then run `.\Test-Integration.ps1`. Compose starts profile `local-tokens` (`/tokendb`) when `IP2LOCATION_DOWNLOAD_TOKEN` is set. Pester waits for Traefik log lines (`database updated successfully`, `hot-swapped`, `IPinfo database updated`). Cases skip when the matching token is empty. CI does not load `.env`.
+
 ```
 
 ## Configuration
@@ -247,7 +294,7 @@ docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock traefik:latest
 export TRAEFIK_PLUGIN_GEOBLOCK_PATH=/opt/traefik-plugins/geoblock
 ```
 
-When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN` and `geoblockban.html` files in the specified directory if they are not found in their configured locations.
+When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN`, `ipinfo_lite.mmdb`, and `geoblockban.html` in the specified directory if they are not found in their configured locations. An ASN BIN is opened when `ip2location_asnDatabaseFilePath` points at one, or after ASN auto-update has downloaded one. ASN auto-update downloads only when `ip2location_databaseAutoUpdateToken` is set. IPinfo auto-update downloads only when `ipinfo_databaseAutoUpdateToken` is set.
 
 ### Example Docker Compose Setup
 
@@ -294,15 +341,8 @@ http:
           #-------------------------------
           # Database Configuration
           #-------------------------------
-          databaseFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
-          # Can be:
-          # - Full path: /path/to/IP2LOCATION-LITE-DB1.IPV6.BIN
-          # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively). 
-          # Use /plugins-storage/sources/ if you are installing from plugin repository.
-          # - Empty: automatically searches using fallback locations (see below)
-          # 
-          # Fallback search order when file is not found:
-          # 1. TRAEFIK_PLUGIN_GEOBLOCK_PATH environment variable directory
+          databaseProvider: ip2location   # ip2location (default) or ipinfo. Empty defaults to ip2location.
+          # Vendor keys are prefixed: ip2location_* or ipinfo_*. See those sections below.
           
           #-------------------------------
           # Country-based Rules (ISO 3166-1 alpha-2 format)
@@ -382,28 +422,31 @@ http:
           # Note: Verb matching is case-insensitive
           
           #-------------------------------
-          # Path Exclusion
+          # Path Inclusion / Exclusion
           #-------------------------------
+          # Both settings are one Go RE2 regex matched against "{host}{path}"
+          # (e.g. example.com/api/users). Empty = unset (no effect).
+          # Include runs first; exclude still wins after a match.
+          # Requests that skip blocking still receive GeoIP enrichment.
+          #
+          # MATCHING FORMAT: "{host}{path}"
+          # - host: The Host header (port omitted for 80/443, may appear otherwise)
+          # - path: URL path starting with / (no query string)
+          #
+          includedPathsRegex: ""
+          # WHEN SET: only matching requests are candidates for blocking.
+          # Non-matching requests pass (pass:not_included_regex) and are still enriched.
+          # Unset/empty: every request is a candidate (same as today).
+          # A public URL match is not a secret: anyone who can guess the path
+          # skips blocking. For health checks, bypassHeaders is stronger.
+          # Examples:
+          # - "^[^/]*/secure/.*"                 # only /secure/* on any host
+          # - "^app\\.example\\.com/admin/.*"    # only /admin/* on that host
+          #
           excludedPathsRegex: "^[^/]*/api/.*"
-          # Regular expression to match requests that should skip geoblocking
-          # Matching requests will NOT be blocked but will still receive GeoIP enrichment (countryHeader)
-          #
-          # MATCHING FORMAT: The regex matches against "{host}{path}"
-          # - host: The Host header value from the request
-          # - path: The URL path starting with / (no query string)
-          # - Example: request to example.com/api/users -> matches "example.com/api/users"
-          # - Note: Host header typically excludes port for standard ports (80/443)
-          #   but may include port for non-standard ports (e.g., "example.com:8080")
-          #
-          # This is useful for:
-          # - API endpoints that have their own authentication/authorization
-          # - Domain-specific exclusions
-          # - Public endpoints that should bypass geoblocking
-          # Note: For health checks, using bypassHeaders is recommended as it's more secure
-          # (requires a secret header value rather than just matching a public URL path)
-          #
-          # Note: Go's regexp uses RE2 which guarantees linear time complexity,
-          # making it inherently safe from ReDoS (Regular Expression Denial of Service) attacks.
+          # Matching requests skip geoblocking (pass:excluded_regex) even if they
+          # also matched includedPathsRegex. Useful for /health inside /secure/*.
+          # For health checks, bypassHeaders is more secure (secret header vs public URL).
           #
           # Examples:
           # - "^[^/]*/health$"                   # /health on any domain
@@ -440,62 +483,107 @@ http:
           #-------------------------------
           # Logging Configuration
           #-------------------------------
-          logLevel: "info"                  # Available: debug, info, warn, error
+          logLevel: "info"                  # Available: trace, debug, info, warn, error
+          # Per-request ServeHTTP logs (bypass, exclude, ignore verb) are trace.
           logFormat: "json"                 # Available: json, text
-          logPath: "/var/log/geoblock.log"  # Empty for Traefik's standard output
-          logBannedRequests: true           # Log blocked requests. They will be logged at info level.
-          # NOTE: logBannedRequests is not the recommended way to observe plugin behavior.
-          # Use logStatusHeader and logStatusDetailHeader with Traefik access logs instead,
-          # which provides visibility into both allowed AND blocked requests with detailed reasons.
-          fileLogBufferSizeBytes: 1024      # Buffer size for file logging in bytes (default: 1024)
-          fileLogBufferTimeoutSeconds: 2    # Buffer timeout for file logging in seconds (default: 2)
-          # File logging uses buffered writes for better performance. The buffer is flushed when:
-          # - The buffer reaches fileLogBufferSizeBytes size
-          # - fileLogBufferTimeoutSeconds seconds have passed since the last flush
-          # - The logger is closed/shutdown
+          # Plugin logs go to stdout (Traefik's process log). There is no file logger.
+          # Observe allow/block decisions with logStatusDetailHeader in access logs.
 
           #-------------------------------
-          # Database Auto-Update Settings
+          # IP2Location Database
           #-------------------------------
-          databaseAutoUpdate: true                   
+          ip2location_databaseFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+          # Seed geo BIN (country; region/city/isp/domain on DB8+). Used only when
+          # auto-update is off, or the auto-update dir has no BIN yet.
+          # Deprecated aliases still work if the ip2location_ keys are unset:
+          # databaseFilePath, databaseAutoUpdate, databaseAutoUpdateDir,
+          # databaseAutoUpdateToken, databaseAutoUpdateCode.
+          # Prefer the ip2location_ keys; a startup warning is logged when aliases are set.
+          # Can be:
+          # - Full path: /path/to/IP2LOCATION-LITE-DB1.IPV6.BIN
+          # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively).
+          # Use /plugins-storage/sources/ if you are installing from plugin repository.
+          # - Empty: TRAEFIK_PLUGIN_GEOBLOCK_PATH, or skip if auto-update dir already has a BIN.
+          ip2location_databaseAutoUpdate: true                    
           # Enable automatic database updates with hot-swapping. Updates check every 24 hours
           # and immediately on startup if the current database is older than 1 month.
           # Updated databases are hot-swapped without requiring middleware restart.
           # Make sure you whitelist in your FW domains ["download.ip2location.com", "www.ip2location.com"]
-          databaseAutoUpdateDir: "/data/ip2database" 
+          ip2location_databaseAutoUpdateDir: "/data/ip2database" 
           # Directory to store updated databases. This must be a persistent volume in the traefik pod.
           # The plugin uses a singleton pattern - multiple middlewares with identical configurations
           # share the same database factory and hot-swap operations.
-          databaseAutoUpdateToken: ""                # IP2Location download token (if using premium)
-          databaseAutoUpdateCode: "DB8BINIPV6"       # Official IP2Location package code for file= (e.g. DB8BINIPV6, DB1LITEBINIPV6). Sent unchanged when a token is set. Not a short product like DB8.
+          ip2location_databaseAutoUpdateToken: ""
+          # Download token from https://lite.ip2location.com (or a paid account).
+          # LITE DB1 auto-update works without a token (public CDN).
+          # ASN LITE and paid packages require this token. file= is the package code.
+          ip2location_databaseAutoUpdateCode: "DB8BINIPV6"       # Official IP2Location package code for file= (e.g. DB8BINIPV6, DB1LITEBINIPV6). Sent unchanged when a token is set. Not a short product like DB8.
+
+          ip2location_asnDatabaseFilePath: ""
+          # Seed ASN BIN (https://lite.ip2location.com/database-asn). Same rule as
+          # ip2location_databaseFilePath: used only when the auto-update dir has no ASN BIN yet.
+          # Leave empty if you do not need ASN or you rely on token auto-update. The geo BIN has no ASN.
+          ip2location_asnDatabaseAutoUpdate: false
+          # Opt-in. Downloads and hot-swaps the ASN BIN only when
+          # ip2location_databaseAutoUpdateToken is set. The public lite CDN does
+          # not host IP2LOCATION-LITE-ASN.IPV6.BIN (404). Register at
+          # lite.ip2location.com and use file=DBASNLITEBINIPV6 (~264MB).
+          # Without a token the flag is ignored and an error is logged.
+          # Reuses ip2location_databaseAutoUpdateDir.
+          ip2location_asnDatabaseAutoUpdateCode: "DBASNLITEBINIPV6"
+          # Official file= package code. Use DBASNLITEBIN for the IPv4-only ASN BIN.
+
+          #-------------------------------
+          # IPinfo Database
+          #-------------------------------
+          # Official package code (same idea as ip2location_databaseAutoUpdateCode):
+          # lite (default, free, CC-BY-SA 4.0), core, plus.
+          # Seed and dated files are ipinfo_{code}.mmdb
+          # (https://ipinfo.io/data/ipinfo_{code}.mmdb?token=$TOKEN).
+          # The repo ships ipinfo_lite.mmdb. Empty path uses that file when code is lite.
+          # Core/Plus fill region and city; Lite leaves those empty.
+          ipinfo_databaseFilePath: ""
+          ipinfo_databaseAutoUpdate: false
+          ipinfo_databaseAutoUpdateDir: "/data/ipinfo"
+          ipinfo_databaseAutoUpdateToken: ""
+          # Account token. Required to download. Lite cap: 10 downloads/day/IP.
+          # Without a token an error is logged and the seed file is used.
+          ipinfo_databaseAutoUpdateCode: "lite"
 
           #-------------------------------
           # Request header settings
           #-------------------------------  
-          countryHeader: "X-IPCountry"  
-          # Optional header to add the country code to the REQUEST (available in Traefik access logs)
-          # This header is added to the request that gets forwarded to your backend service
-          # You can use this to see where all your traffic is coming from in access logs
-          # Example access log config: accesslog.fields.headers.names.X-IPCountry=keep
-          # Note: Header is initially set to "PRIVATE" and only overridden by the first real country found
-          # This ensures private IPs processed later cannot override legitimate country information
-          
-          logStatusHeader: "X-Geoblock-Status"
-          # Optional header to add simple pass/block status to the REQUEST
-          # Values: "pass" or "block"
-          # Useful for quick filtering in logs without parsing the detailed reason
-          # Example access log config: accesslog.fields.headers.names.X-Geoblock-Status=keep
+          countryHeader: "X-IPCountry"
+          # Deprecated. Prefer requestHeaderEnrich (below) with metadata key country.
+          # If set, the plugin copies this header name onto requestHeaderEnrich as country
+          # unless that header is already mapped. An explicit enrich mapping wins.
+
+          requestHeaderEnrich:
+            X-Geo-Country: country
+            X-Geo-Country-Name: country_name
+            X-Geo-Continent: continent
+            X-Geo-Continent-Code: continent_code
+            X-Geo-Region: region
+            X-Geo-City: city
+            X-Geo-Isp: isp
+            X-Geo-Domain: domain
+            X-Geo-Asn: asn
+          # Map request header names to geo metadata keys:
+          # country, country_name, continent, continent_code, region, city, isp, domain, asn.
+          # The first public IP wins. Every mapped header is written; empty or
+          # unavailable fields are the string null (logs and backends need the header present).
+          # IP2Location LITE DB1 is country-only; region/city/isp/domain need DB8 or richer.
+          # asn needs the ASN LITE BIN (ip2location_asnDatabaseFilePath, or
+          # asnDatabaseAutoUpdate plus a download token).
+          # IPinfo Lite fills country, country_name, continent, continent_code,
+          # isp (as_name), domain (as_domain), and asn (AS15169 form).
+          # region and city stay empty.
           
           logStatusDetailHeader: "X-Geoblock-Decision"
-          # Optional header to add detailed decision result to the REQUEST
+          # Optional header to add the decision to the REQUEST
           # Format: "pass:{reason}" or "block:{reason}"
           # See the Observability section for all possible values
           # Example access log config: accesslog.fields.headers.names.X-Geoblock-Decision=keep
-          
-          # DEPRECATED - use logStatusHeader/logStatusDetailHeader instead
-          # remediationHeadersCustomName: "X-Geoblock-Action"
-          # This added a header to the RESPONSE which exposed internal details to clients.
-          # The new headers add to the REQUEST so they're visible in access logs but not sent to clients.
 
 
 ```
@@ -507,13 +595,14 @@ The plugin processes requests in the following order:
 1. Check if plugin is enabled
 2. Check bypass headers
 3. Check if HTTP verb is in ignoreVerbs list (skip blocking but continue enrichment)
-4. Check if request matches excludedPathsRegex (skip blocking but continue enrichment)
-5. Extract IP addresses from configured IP headers (ipHeaders) in the order they are defined
-6. Apply IP header strategy (ipHeaderStrategy) to determine which IPs to process:
+4. If includedPathsRegex is set and the request does not match, skip blocking but continue enrichment
+5. Check if request matches excludedPathsRegex (skip blocking but continue enrichment; still applies after include)
+6. Extract IP addresses from configured IP headers (ipHeaders) in the order they are defined
+7. Apply IP header strategy (ipHeaderStrategy) to determine which IPs to process:
    - **CheckAll**: Process all found IP addresses (original behavior)
    - **CheckFirst**: Process only the first IP address found
    - **CheckFirstNonePrivate**: Process first non-private IP, fallback to first private IP if no public IPs found
-7. For each selected IP:
+8. For each selected IP:
    - Check if it's in private network range [allowPrivate]
    - Check allowed/blocked IP blocks [allowedIPBlocks + allowedIPBlocksDir, blockedIPBlocks + blockedIPBlocksDir] (most specific match wins)
    - Look up country code 
@@ -525,53 +614,13 @@ The plugin processes requests in the following order:
 - With `CheckFirst` or `CheckFirstNonePrivate` strategies: Only the selected IP(s) are evaluated; the request is denied only if the selected IP is blocked
 - Country header behavior: Header is initially set to "PRIVATE" and only overridden by the first real country found, preventing private IPs from overriding legitimate geolocation information
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
-- Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment
-
-### Log Format (Legacy)
-
-> **Note**: This section documents the built-in `logBannedRequests` feature which only logs blocked requests. For comprehensive observability of both allowed and blocked requests, use `logStatusHeader` and `logStatusDetailHeader` with Traefik access logs instead. See the [Observability](#observability) section for details.
-
-When using JSON logging, the following fields are included in **blocked request** log entries (note: allowed requests are not logged):
-
-- `time`: Timestamp of the request in ISO 8601 format
-- `level`: Log level (debug, info, warn, error)
-- `msg`: Log message describing the action
-- `plugin`: Plugin identifier
-- `ip`: The IP address that triggered the action
-- `ip_chain`: Full chain of IP addresses from X-Forwarded-For header
-- `country`: Country code or "PRIVATE" for internal networks
-- `host`: Request host header
-- `method`: HTTP method used
-- `phase`: Processing phase where the action occurred:
-  - `allow_private`: Private network check
-  - `blocked_ip_block`: IP block rules check (blocked)
-  - `allowed_ip_block`: IP block rules check (allowed)
-  - `blocked_country`: Country rules check (blocked)
-  - `allowed_country`: Country rules check (allowed)
-  - `default_allow`: Default allow/deny rule
-- `path`: Request path
-
-Example log entry:
-```json
-{
-    "time": "2025-03-01T19:24:04.414051815Z",
-    "level": "INFO",
-    "msg": "blocked request",
-    "plugin": "geoblock@docker",
-    "ip": "172.18.0.1",
-    "ip_chain": "",
-    "country": "PRIVATE",
-    "host": "localhost:8000",
-    "method": "GET",
-    "phase": "allow_private",
-    "path": "/bar"
-}
-```
-
-
+- Included paths: When `includedPathsRegex` is set, only matching requests can be blocked. Other requests skip blocking but still receive GeoIP enrichment. The regex is a public URL match, not a secret — `bypassHeaders` is stronger for health checks
+- Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment. Exclude is evaluated after include and still wins. Same as include: a public URL is not a secret; `bypassHeaders` is stronger for health checks
 
 ---
 
 📄 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 🌍 This project includes IP2Location LITE data available from [`lite.ip2location.com`](https://lite.ip2location.com/database/ip-country).
+
+🌍 This project includes [IPinfo Lite](https://ipinfo.io) data (CC-BY-SA 4.0). IP address data powered by [IPinfo](https://ipinfo.io).

@@ -169,10 +169,35 @@ try {
         exit 1
     }
 
+    # Load local .env for compose interpolation and Pester skip flags. Do not print values.
+    $dotEnv = Join-Path $PSScriptRoot ".env"
+    if (Test-Path $dotEnv) {
+        Write-Step "Loading .env (keys only; values not logged)"
+        Get-Content $dotEnv | ForEach-Object {
+            $line = $_.Trim()
+            if ($line -eq "" -or $line.StartsWith("#")) { return }
+            if ($line.StartsWith("export ")) { $line = $line.Substring(7).Trim() }
+            $eq = $line.IndexOf("=")
+            if ($eq -lt 1) { return }
+            $name = $line.Substring(0, $eq).Trim()
+            $value = $line.Substring($eq + 1).Trim().Trim('"').Trim("'")
+            $existing = [Environment]::GetEnvironmentVariable($name, "Process")
+            if ([string]::IsNullOrWhiteSpace($existing)) {
+                [Environment]::SetEnvironmentVariable($name, $value, "Process")
+                Set-Item -Path "env:$name" -Value $value
+            }
+        }
+    }
+
     # Start Docker services
     Write-Step "Starting Docker Compose services..."
     try {
-        docker compose up -d
+        if (-not [string]::IsNullOrWhiteSpace($env:IP2LOCATION_DOWNLOAD_TOKEN)) {
+            Write-Step "Enabling compose profile local-tokens (IP2Location token is set)"
+            docker compose --profile local-tokens up -d
+        } else {
+            docker compose up -d
+        }
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to start Docker services"
         }
