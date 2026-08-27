@@ -3,6 +3,7 @@ package dbutils
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -114,4 +115,41 @@ func GetDateFromName(dbPath string) (time.Time, error) {
 	}
 
 	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), nil
+}
+
+// MMDBBuildDate is the MMDB metadata build_epoch as UTC.
+func MMDBBuildDate(buildEpoch uint) (time.Time, error) {
+	if buildEpoch == 0 {
+		return time.Time{}, fmt.Errorf("MMDB has no build_epoch")
+	}
+	if uint64(buildEpoch) > uint64(math.MaxInt64) {
+		return time.Time{}, fmt.Errorf("MMDB build_epoch overflows int64")
+	}
+	//nolint:gosec // G115: epoch is bounded to MaxInt64 above
+	return time.Unix(int64(buildEpoch), 0).UTC(), nil
+}
+
+// FindLatestDatedFile returns the newest YYYYMMDD_* file in dir matching globPattern
+// (a filename glob, not a full path). Empty string means none matched.
+func FindLatestDatedFile(dir, globPattern string) (string, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory: %w", err)
+	}
+	files, err := filepath.Glob(filepath.Join(dir, globPattern))
+	if err != nil {
+		return "", err
+	}
+	var latest string
+	var latestDate time.Time
+	for _, f := range files {
+		date, err := GetDateFromName(f)
+		if err != nil {
+			continue
+		}
+		if latest == "" || date.After(latestDate) {
+			latest = f
+			latestDate = date
+		}
+	}
+	return latest, nil
 }

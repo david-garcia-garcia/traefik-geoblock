@@ -17,6 +17,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 //go:generate go run ./tools/dbdownload/main.go -o ./IP2LOCATION-LITE-DB1.IPV6.BIN
@@ -26,6 +27,7 @@ const (
 	EnrichNullAlias             = "null"
 	DatabaseProviderIP2Location = "ip2location"
 	DatabaseProviderIPinfo      = "ipinfo"
+	DatabaseProviderMaxMind     = "maxmind"
 )
 
 // Log status constants for observability headers
@@ -64,7 +66,7 @@ type Config struct {
 	AllowPrivate bool // Allow requests from private/internal networks
 	BanIfError   bool // Ban requests if IP lookup fails
 
-	// Database provider. Empty defaults to ip2location. Implemented: ip2location, ipinfo.
+	// Database provider. Empty defaults to ip2location. Implemented: ip2location, ipinfo, maxmind.
 	DatabaseProvider string `json:"databaseProvider,omitempty" mapstructure:"databaseProvider"`
 
 	// IP2Location provider settings. Each vendor keeps its own prefixed keys.
@@ -83,6 +85,13 @@ type Config struct {
 	IpinfoDatabaseAutoUpdateDir   string `json:"ipinfo_databaseAutoUpdateDir,omitempty" mapstructure:"ipinfo_databaseAutoUpdateDir"`
 	IpinfoDatabaseAutoUpdateToken string `json:"ipinfo_databaseAutoUpdateToken,omitempty" mapstructure:"ipinfo_databaseAutoUpdateToken"`
 	IpinfoDatabaseAutoUpdateCode  string `json:"ipinfo_databaseAutoUpdateCode,omitempty" mapstructure:"ipinfo_databaseAutoUpdateCode"`
+
+	// MaxMind / GeoLite2 MMDB. Token is accountId:licenseKey. Default code is GeoLite2-Country.
+	MaxmindDatabaseFilePath        string `json:"maxmind_databaseFilePath,omitempty" mapstructure:"maxmind_databaseFilePath"`
+	MaxmindDatabaseAutoUpdate      bool   `json:"maxmind_databaseAutoUpdate,omitempty" mapstructure:"maxmind_databaseAutoUpdate"`
+	MaxmindDatabaseAutoUpdateDir   string `json:"maxmind_databaseAutoUpdateDir,omitempty" mapstructure:"maxmind_databaseAutoUpdateDir"`
+	MaxmindDatabaseAutoUpdateToken string `json:"maxmind_databaseAutoUpdateToken,omitempty" mapstructure:"maxmind_databaseAutoUpdateToken"`
+	MaxmindDatabaseAutoUpdateCode  string `json:"maxmind_databaseAutoUpdateCode,omitempty" mapstructure:"maxmind_databaseAutoUpdateCode"`
 
 	// Deprecated unprefixed aliases. Copied onto the ip2location_ fields when those are unset.
 	DatabaseFilePath        string `json:"databaseFilePath,omitempty" mapstructure:"databaseFilePath"`
@@ -395,6 +404,14 @@ func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider
 			DatabaseAutoUpdateDir:   cfg.IpinfoDatabaseAutoUpdateDir,
 			DatabaseAutoUpdateToken: cfg.IpinfoDatabaseAutoUpdateToken,
 			DatabaseAutoUpdateCode:  cfg.IpinfoDatabaseAutoUpdateCode,
+		}, logger)
+	case DatabaseProviderMaxMind:
+		return maxmind.New(maxmind.DatabaseConfig{
+			DatabaseFilePath:        cfg.MaxmindDatabaseFilePath,
+			DatabaseAutoUpdate:      cfg.MaxmindDatabaseAutoUpdate,
+			DatabaseAutoUpdateDir:   cfg.MaxmindDatabaseAutoUpdateDir,
+			DatabaseAutoUpdateToken: cfg.MaxmindDatabaseAutoUpdateToken,
+			DatabaseAutoUpdateCode:  cfg.MaxmindDatabaseAutoUpdateCode,
 		}, logger)
 	default:
 		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)

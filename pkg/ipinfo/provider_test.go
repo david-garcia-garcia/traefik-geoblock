@@ -13,6 +13,7 @@ import (
 
 	"github.com/oschwald/maxminddb-golang"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
@@ -249,7 +250,7 @@ func TestDownloadAndUpdateDatabase_HTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bundled MMDB: %v", err)
 	}
-	wantDate, err := mmdbBuildDate(reader)
+	wantDate, err := dbutils.MMDBBuildDate(reader.Metadata.BuildEpoch)
 	_ = reader.Close()
 	if err != nil {
 		t.Fatalf("build_epoch: %v", err)

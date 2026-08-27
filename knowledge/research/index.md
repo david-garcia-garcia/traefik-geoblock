@@ -10,6 +10,11 @@ priority: normal
 local: index_ext_ipinfo.md
 description: Official IPinfo Lite download, license, and how the database is read.
 
+## maxmind
+priority: normal
+local: index_ext_maxmind.md
+description: Official MaxMind GeoLite2 / GeoIP2 database download and schema this product may rely on.
+
 ## traefik
 priority: normal
 local: index_ext_traefik.md

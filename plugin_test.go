@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	pluginName     = "geoblock"
-	dbFilePath     = "./IP2LOCATION-LITE-DB1.IPV6.BIN"
-	db8FilePath    = "./testdata/IP2LOCATION-DB8.BIN"
-	ipinfoFilePath = "./ipinfo_lite.mmdb"
+	pluginName      = "geoblock"
+	dbFilePath      = "./IP2LOCATION-LITE-DB1.IPV6.BIN"
+	db8FilePath     = "./testdata/IP2LOCATION-DB8.BIN"
+	ipinfoFilePath  = "./ipinfo_lite.mmdb"
+	maxmindFilePath = "./GeoIP2-Country-Test.mmdb"
 )
 
 var fullEnrichHeaders = map[string]string{

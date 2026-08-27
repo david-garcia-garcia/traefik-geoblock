@@ -22,7 +22,7 @@ Unit and bench tests live next to the owner package. Traefik behavior is proven 
 
 - Change `plugin.go` policy or config → add or extend a package test in the matching `plugin_*_test.go` (config, policy, ipheaders, filters, observe). Shared fixtures stay in `plugin_test.go`.
 - Change a helper in `pkg/<name>` → add or extend `pkg/<name>/*_test.go`.
-- Change lookup or `ServeHTTP` cost → run `go test -bench=BenchmarkPlugin -benchmem`. Keep `TestThroughput_*` floors conservative; raise them only after CI samples.
+- Change lookup or `ServeHTTP` cost → run `go test -bench=BenchmarkPlugin -benchmem`. MaxMind benches (`BenchmarkPlugin_*MaxMind`) use dummy IP `81.2.69.142`, not 8.8.8.8. Keep `TestThroughput_*` floors conservative; raise them only after CI samples.
 - Change Traefik-visible behavior (headers, labels, blocking) → add a `whoami-*` service in `docker-compose.yml` with a unique `PathPrefix` and matching plugin labels, then a Pester `Context` / `It` in `scripts/integration-tests.Tests.ps1`.
 - HTTP from Pester: `Invoke-TestRequest`. Access-log asserts: keep the header on the Traefik `accesslog.fields.headers.names.*` command, then `Get-TraefikAccessLogEntries`.
 - whoami echoes forwarded request headers in the body (`X-Geo-Country: US`).
@@ -66,6 +66,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 - LITE DB1 has country only. Region/city/ISP/domain/ASN integration asserts must not require values the BIN cannot supply. Paid DB8 lives at `testdata/IP2LOCATION-DB8.BIN` (gitignored); package tests skip if it is absent. ASN needs `IP2LOCATION-LITE-ASN.IPV6.BIN` (or `IP2LOCATION_ASN_BIN`). ASN auto-update does not download without a token.
 - IPinfo Lite snapshot is `ipinfo_lite.mmdb` at the module root. Provider tests and `/ipinfo` compose use it. `/ipinfo` enriches every Lite column (country, country_name, continent, continent_code, isp, domain, asn). ASN strings are `AS…`.
+- MaxMind dummy seed is `GeoIP2-Country-Test.mmdb` at the module root. `/maxmind` compose uses dummy IPs `81.2.69.142` (GB) and `175.16.199.1` (CN), not 8.8.8.8.
 - Compose labels for the BIN are `ip2location_*` (unprefixed names are deprecated aliases).
 - Traefik `forwardedHeaders` must stay on so the plugin sees `X-Real-IP`, not the Docker network address.
 - Throughput floors catch large regressions only. Compare impact with benches on the same machine.

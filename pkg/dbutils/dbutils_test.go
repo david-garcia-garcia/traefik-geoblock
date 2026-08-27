@@ -1,7 +1,9 @@
 package dbutils
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -100,6 +102,35 @@ func TestGetDateFromName(t *testing.T) {
 				t.Errorf("GetDateFromName() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMMDBBuildDate(t *testing.T) {
+	if _, err := MMDBBuildDate(0); err == nil {
+		t.Fatal("expected error for zero epoch")
+	}
+	got, err := MMDBBuildDate(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Equal(time.Unix(1, 0).UTC()) {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestFindLatestDatedFile(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"20230101_ipinfo_lite.mmdb", "20230301_ipinfo_lite.mmdb", "20230401_other.mmdb", "skip.mmdb"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	latest, err := FindLatestDatedFile(dir, "*_ipinfo_lite.mmdb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(latest, "20230301_ipinfo_lite.mmdb") {
+		t.Errorf("latest: %s", latest)
 	}
 }
 

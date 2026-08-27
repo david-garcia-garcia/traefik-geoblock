@@ -32,14 +32,14 @@ A Traefik middleware that looks up the client IP in a **local** GeoIP database (
 
 **Designed for high-performance production environments:**
 
-- **No per-request GeoIP API** — lookups use a local IP2Location BIN or IPinfo MMDB
+- **No per-request GeoIP API** — lookups use a local IP2Location BIN, IPinfo MMDB, or MaxMind GeoIP2 MMDB
 - **Minimal memory footprint** — no application-level cache; the database format is read in place
 - **Offline after load** — no outbound call unless you enable auto-update
 - **Hot-swappable database updates** — new files load without restarting Traefik
 
 This architecture ensures consistent response times and eliminates external service bottlenecks, making it ideal for high-traffic environments and air-gapped deployments.
 
-**Expected throughput** (`go test -bench=BenchmarkPlugin -benchmem` on a local Intel Core Ultra 7 265K). `Lookup` always reads the full geo row (`Get_all`). `ServeHTTP` reuse is the Traefik path (request/recorder reused). Country-only vs full `requestHeaderEnrich` on the same BIN is the same lookup; extra headers are cheap.
+**Expected throughput** (`go test -bench=BenchmarkPlugin -benchmem` on a local Intel Core Ultra 7 265K). `Lookup` always reads the full geo row (`Get_all` on IP2Location). `ServeHTTP` reuse is the Traefik path (request/recorder reused). Country-only vs full `requestHeaderEnrich` on the same BIN is the same lookup; extra headers are cheap. MaxMind benches use the committed dummy `GeoIP2-Country-Test.mmdb` and dummy IP `81.2.69.142` (not 8.8.8.8). A live GeoLite2-Country file is much larger and will be slower.
 
 | Database | `Lookup` | `ServeHTTP` reuse | Typical cost |
 | --- | --- | --- | --- |
@@ -48,6 +48,7 @@ This architecture ensures consistent response times and eliminates external serv
 | Paid DB8 (country only) | ~37k ops/s | ~46k ops/s | ~22–27 µs, 13–14 allocs, ~1840 B |
 | Paid DB8 + full enrich (country/region/city/isp/domain) | ~46k ops/s | ~45k ops/s | ~22 µs, 20 allocs, 1944 B |
 | Paid DB8 + ASN LITE (full enrich) | ~27k ops/s | ~22k ops/s | ~38–45 µs, 18–26 allocs, ~2500 B |
+| MaxMind dummy Country | ~1.7M ops/s | ~1.3M ops/s | ~0.60–0.80 µs, 5–6 allocs, ~140–155 B |
 
 ## Geo enrichment and observability
 
@@ -207,12 +208,15 @@ experimental:
 
 ## GeoIP database configuration and updates
 
-The plugin looks up IPs with one of two providers (`databaseProvider`):
+The plugin looks up IPs with one of three providers (`databaseProvider`):
 
 | Provider | Config value | Bundled seed (when available) |
 | --- | --- | --- |
 | IP2Location (default) | `ip2location` or empty | `IP2LOCATION-LITE-DB1.IPV6.BIN` (country). ASN is a separate BIN and is **not** bundled. |
 | IPinfo | `ipinfo` | `ipinfo_{code}.mmdb` — `lite` (bundled seed, country + ASN), `core`, or `plus` (region/city filled) |
+| MaxMind | `maxmind` | `GeoIP2-Country-Test.mmdb` (official **dummy** Country fixture, not a live GeoLite file). Operator-supplied GeoLite2/GeoIP2 Country or City MMDBs use nested `country.iso_code`. |
+
+This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com
 
 Only the selected provider’s files are opened. Unused vendor paths are ignored.
 
@@ -222,13 +226,13 @@ Only the selected provider’s files are opened. Unused vendor paths are ignored
 
 How auto-update works:
 
-- Turn it on with `ip2location_databaseAutoUpdate` / `ip2location_asnDatabaseAutoUpdate` / `ipinfo_databaseAutoUpdate`, and set the matching `*AutoUpdateDir` (required; must survive container restarts).
+- Turn it on with `ip2location_databaseAutoUpdate` / `ip2location_asnDatabaseAutoUpdate` / `ipinfo_databaseAutoUpdate` / `maxmind_databaseAutoUpdate`, and set the matching `*AutoUpdateDir` (required; must survive container restarts).
 - On startup the plugin uses the newest dated file already in that directory. A 24-hour ticker then checks again.
-- IP2Location LITE DB1 downloads from the public CDN with no token. ASN LITE and paid IP2Location packages need `ip2location_databaseAutoUpdateToken` and the official `file=` package code. IPinfo Lite downloads only when `ipinfo_databaseAutoUpdateToken` is set; without a token an error is logged and the seed stays in use.
+- IP2Location LITE DB1 downloads from the public CDN with no token. ASN LITE and paid IP2Location packages need `ip2location_databaseAutoUpdateToken` and the official `file=` package code. IPinfo Lite downloads only when `ipinfo_databaseAutoUpdateToken` is set; without a token an error is logged and the seed stays in use. MaxMind downloads only when `maxmind_databaseAutoUpdateToken` is `accountId:licenseKey`; without a valid token an error is logged and the seed stays in use. Default MaxMind edition is `GeoLite2-Country`.
 - New files are stored as `YYYYMMDD_…` in the auto-update directory. The prefix is the date inside the file (IP2Location BIN header, IPinfo MMDB `build_epoch`). IP2Location downloads when the open BIN is older than 30 days. IPinfo skips the download when that dated MMDB is less than 24 hours old.
 - Same config shares one factory (one ticker). See [Network Requirements](#network-requirements) for the download hosts.
 
-`ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, and `ipinfo_databaseFilePath` are **seeds / fallbacks**, not the live copy once auto-update has stored a file. Resolution order for each database the provider needs:
+`ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, `ipinfo_databaseFilePath`, and `maxmind_databaseFilePath` are **seeds / fallbacks**, not the live copy once auto-update has stored a file. Resolution order for each database the provider needs:
 
 1. **Auto-update directory** — newest dated file already there (when auto-update is on).
 2. **Configured seed path** — the matching `*_databaseFilePath` (file, or a directory searched for the default filename).
@@ -243,8 +247,9 @@ If none of those exist, plugin creation fails (except an empty IP2Location ASN p
 - `download.ip2location.com` — IP2Location LITE DB1 (no token)
 - `www.ip2location.com` — IP2Location token downloads (paid packages and ASN LITE)
 - `ipinfo.io` — IPinfo Lite MMDB (token required; the response redirects to IPinfo’s download CDN)
+- `download.maxmind.com` — MaxMind GeoLite2/GeoIP2 permalink (`accountId:licenseKey`; the response redirects to MaxMind’s download host)
 
-> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate`, `ip2location_asnDatabaseAutoUpdate`, and `ipinfo_databaseAutoUpdate` all false), no external network access is required and the plugin operates entirely offline. IP2Location LITE DB1 can auto-update without a token. ASN LITE and IPinfo Lite downloads are not attempted unless their download token is set.
+> **Note:** If automatic updates are disabled (`ip2location_databaseAutoUpdate`, `ip2location_asnDatabaseAutoUpdate`, `ipinfo_databaseAutoUpdate`, and `maxmind_databaseAutoUpdate` all false), no external network access is required and the plugin operates entirely offline. IP2Location LITE DB1 can auto-update without a token. ASN LITE, IPinfo Lite, and MaxMind downloads are not attempted unless their download token is set.
 
 ## Testing and development
 
@@ -264,6 +269,9 @@ go test -run TestThroughput -v
 
 # Compare lookup/request cost before and after a change
 go test -bench=BenchmarkPlugin -benchmem
+
+# MaxMind dummy fixture only (uses 81.2.69.142, not 8.8.8.8)
+go test -run '^$' -bench=MaxMind -benchmem
 
 # Run integration tests
 .\Test-Integration.ps1
@@ -294,7 +302,7 @@ docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock traefik:latest
 export TRAEFIK_PLUGIN_GEOBLOCK_PATH=/opt/traefik-plugins/geoblock
 ```
 
-When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN`, `ipinfo_lite.mmdb`, and `geoblockban.html` in the specified directory if they are not found in their configured locations. An ASN BIN is opened when `ip2location_asnDatabaseFilePath` points at one, or after ASN auto-update has downloaded one. ASN auto-update downloads only when `ip2location_databaseAutoUpdateToken` is set. IPinfo auto-update downloads only when `ipinfo_databaseAutoUpdateToken` is set.
+When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN`, `ipinfo_lite.mmdb`, `GeoIP2-Country-Test.mmdb`, and `geoblockban.html` in the specified directory if they are not found in their configured locations. An ASN BIN is opened when `ip2location_asnDatabaseFilePath` points at one, or after ASN auto-update has downloaded one. ASN auto-update downloads only when `ip2location_databaseAutoUpdateToken` is set. IPinfo auto-update downloads only when `ipinfo_databaseAutoUpdateToken` is set. MaxMind auto-update downloads only when `maxmind_databaseAutoUpdateToken` is `accountId:licenseKey`.
 
 ### Example Docker Compose Setup
 
@@ -341,8 +349,8 @@ http:
           #-------------------------------
           # Database Configuration
           #-------------------------------
-          databaseProvider: ip2location   # ip2location (default) or ipinfo. Empty defaults to ip2location.
-          # Vendor keys are prefixed: ip2location_* or ipinfo_*. See those sections below.
+          databaseProvider: ip2location   # ip2location (default), ipinfo, or maxmind. Empty defaults to ip2location.
+          # Vendor keys are prefixed: ip2location_*, ipinfo_*, or maxmind_*. See those sections below.
           
           #-------------------------------
           # Country-based Rules (ISO 3166-1 alpha-2 format)
@@ -549,6 +557,23 @@ http:
           # Account token. Required to download. Lite cap: 10 downloads/day/IP.
           # Without a token an error is logged and the seed file is used.
           ipinfo_databaseAutoUpdateCode: "lite"
+
+          #-------------------------------
+          # MaxMind / GeoLite2 Database
+          #-------------------------------
+          # Official edition IDs: GeoLite2-Country (default), GeoLite2-City,
+          # GeoIP2-Country, GeoIP2-City. ASN-only editions are rejected.
+          # Country allow/block uses nested country.iso_code (not IPinfo country_code).
+          # The repo ships GeoIP2-Country-Test.mmdb (MaxMind official dummy fixture).
+          # Empty path uses that file. It is not a live GeoLite database.
+          # This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com
+          maxmind_databaseFilePath: ""
+          maxmind_databaseAutoUpdate: false
+          maxmind_databaseAutoUpdateDir: "/data/maxmind"
+          maxmind_databaseAutoUpdateToken: ""
+          # accountId:licenseKey (HTTP Basic Auth). Required to download.
+          # Without a valid token an error is logged and the seed file is used.
+          maxmind_databaseAutoUpdateCode: "GeoLite2-Country"
 
           #-------------------------------
           # Request header settings
