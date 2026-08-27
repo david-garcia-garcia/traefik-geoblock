@@ -487,8 +487,10 @@ func generateConfigHash(config *DatabaseConfig) string {
 	return strconv.FormatUint(uint64(hasher.Sum32()), 10)
 }
 
-// GetDatabaseFactory returns a singleton database factory for the given configuration
-func GetDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseFactory, error) {
+// GetDatabaseFactory returns a singleton database factory for the given configuration.
+// middleware is the Traefik plugin instance name that triggered this call; it is
+// logged only and is not part of the factory hash.
+func GetDatabaseFactory(config *DatabaseConfig, logger *slog.Logger, middleware string) (*DatabaseFactory, error) {
 	key := generateConfigHash(config)
 	var out *DatabaseFactory
 	err := factoryLock.LoadOrStore(func() bool {
@@ -504,7 +506,7 @@ func GetDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseF
 		}
 		factories[key] = factory
 		out = factory
-		logger.Debug("created new database factory", "config_hash", key)
+		logger.Info("created new database factory", "config_hash", key, "middleware", middleware)
 		return nil
 	})
 	if err != nil {

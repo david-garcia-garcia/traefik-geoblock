@@ -157,8 +157,10 @@ func downloadAndUpdateDatabase(cfg *DatabaseConfig, logger *slog.Logger) error {
 	}
 	defer resp.Body.Close()
 
+	contentType := resp.Header.Get("Content-Type")
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed with status: %s", resp.Status)
+		return fmt.Errorf("download failed with status: %s (%s)", resp.Status, dbutils.DownloadHint(
+			dbCode, resp.Status, contentType, resp.ContentLength, dbutils.ReadPrefix(resp.Body, dbutils.DownloadHintPrefixBytes)))
 	}
 
 	// Save and process zip file
@@ -177,7 +179,8 @@ func downloadAndUpdateDatabase(cfg *DatabaseConfig, logger *slog.Logger) error {
 	// Extract database file
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return fmt.Errorf("failed to open zip file: %w", err)
+		return fmt.Errorf("failed to open zip file: %w (%s)", err, dbutils.DownloadHintFromFile(
+			dbCode, resp.Status, contentType, zipPath))
 	}
 	defer reader.Close()
 

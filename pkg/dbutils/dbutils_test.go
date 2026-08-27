@@ -1,6 +1,8 @@
 package dbutils
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,5 +153,60 @@ func TestGetDBVersion(t *testing.T) {
 	}
 	if version != nil {
 		t.Error("Expected nil version for invalid database")
+	}
+}
+
+func TestDownloadHint_HTMLErrorPage(t *testing.T) {
+	html := []byte("<html><title>NO PERMISSION</title></html>")
+	got := DownloadHint("DB8BINIPV6", "200 OK", "text/html", int64(len(html)), html)
+	for _, want := range []string{
+		"file=DB8BINIPV6",
+		"status=200 OK",
+		`content_type="text/html"`,
+		"NO PERMISSION",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("hint %q missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "token=") || strings.Contains(got, "http://") || strings.Contains(got, "https://") {
+		t.Errorf("hint must not include URL or token: %s", got)
+	}
+}
+
+func TestDownloadHint_TruncatesPrefix(t *testing.T) {
+	prefix := bytes.Repeat([]byte("A"), DownloadHintPrefixBytes+20)
+	got := DownloadHint("DB1", "200 OK", "application/octet-stream", int64(len(prefix)), prefix)
+	if strings.Count(got, "A") != DownloadHintPrefixBytes {
+		t.Errorf("prefix A count=%d, want %d in %q", strings.Count(got, "A"), DownloadHintPrefixBytes, got)
+	}
+}
+
+func TestDownloadHintFromFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "body")
+	if err := os.WriteFile(path, []byte("<!DOCTYPE html>denied"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := DownloadHintFromFile("GeoLite2-Country", "200 OK", "text/html", path)
+	if !strings.Contains(got, "denied") || !strings.Contains(got, "bytes=21") {
+		t.Errorf("hint=%q", got)
+	}
+	if fileSize(filepath.Join(t.TempDir(), "missing")) != -1 {
+		t.Error("missing file size should be -1")
+	}
+}
+
+func TestTeePrefix(t *testing.T) {
+	body := bytes.NewBufferString("PK\x03\x04rest-of-zip")
+	r, prefix := TeePrefix(body, 4)
+	if string(prefix) != "PK\x03\x04" {
+		t.Fatalf("prefix=%q", prefix)
+	}
+	all, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(all) != "PK\x03\x04rest-of-zip" {
+		t.Errorf("replay=%q", all)
 	}
 }

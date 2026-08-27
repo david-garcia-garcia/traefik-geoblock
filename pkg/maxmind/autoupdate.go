@@ -96,13 +96,17 @@ func downloadAndUpdateDatabase(cfg DatabaseConfig, logger *slog.Logger) (string,
 		return "", fmt.Errorf("MaxMind download failed: %w", err)
 	}
 	defer resp.Body.Close()
+	contentType := resp.Header.Get("Content-Type")
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("MaxMind download failed with status: %s", resp.Status)
+		return "", fmt.Errorf("MaxMind download failed with status: %s (%s)", resp.Status, dbutils.DownloadHint(
+			cfg.DatabaseAutoUpdateCode, resp.Status, contentType, resp.ContentLength, dbutils.ReadPrefix(resp.Body, dbutils.DownloadHintPrefixBytes)))
 	}
 
-	tmpPath, err := extractMMDB(resp.Body, tmpDir)
+	body, prefix := dbutils.TeePrefix(resp.Body, dbutils.DownloadHintPrefixBytes)
+	tmpPath, err := extractMMDB(body, tmpDir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w (%s)", err, dbutils.DownloadHint(
+			cfg.DatabaseAutoUpdateCode, resp.Status, contentType, resp.ContentLength, prefix))
 	}
 
 	buf, err := os.ReadFile(tmpPath)
@@ -111,7 +115,8 @@ func downloadAndUpdateDatabase(cfg DatabaseConfig, logger *slog.Logger) (string,
 	}
 	reader, err := maxminddb.FromBytes(buf)
 	if err != nil {
-		return "", fmt.Errorf("downloaded file is not a valid MMDB: %w", err)
+		return "", fmt.Errorf("downloaded file is not a valid MMDB: %w (%s)", err, dbutils.DownloadHintFromFile(
+			cfg.DatabaseAutoUpdateCode, resp.Status, contentType, tmpPath))
 	}
 	buildDate, err := dbutils.MMDBBuildDate(reader.Metadata.BuildEpoch)
 	_ = reader.Close()

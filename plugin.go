@@ -239,7 +239,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	applyDeprecatedIP2LocationSettings(cfg, bootstrapLogger)
 
 	// Bootstrap logger: the provider/factory is shared between plugin instances.
-	db, err := openDatabaseProvider(cfg, bootstrapLogger)
+	db, err := openDatabaseProvider(cfg, bootstrapLogger, name)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to get database provider: %w", name, err)
 	}
@@ -380,7 +380,7 @@ func applyDeprecatedIP2LocationSettings(cfg *Config, logger *slog.Logger) {
 
 // openDatabaseProvider constructs the geo DatabaseProvider selected by Config.
 // Empty DatabaseProvider defaults to ip2location. Unknown values fail.
-func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
+func openDatabaseProvider(cfg *Config, logger *slog.Logger, middleware string) (dbprovider.Provider, error) {
 	name := strings.TrimSpace(cfg.DatabaseProvider)
 	if name == "" {
 		name = DatabaseProviderIP2Location
@@ -396,7 +396,7 @@ func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider
 			AsnDatabaseFilePath:       cfg.Ip2locationAsnDatabaseFilePath,
 			AsnDatabaseAutoUpdate:     cfg.Ip2locationAsnDatabaseAutoUpdate,
 			AsnDatabaseAutoUpdateCode: cfg.Ip2locationAsnDatabaseAutoUpdateCode,
-		}, logger)
+		}, logger, middleware)
 	case DatabaseProviderIPinfo:
 		return ipinfo.New(ipinfo.DatabaseConfig{
 			DatabaseFilePath:        cfg.IpinfoDatabaseFilePath,
