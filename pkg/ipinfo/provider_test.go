@@ -11,6 +11,8 @@ import (
 
 	"log/slog"
 
+	"github.com/oschwald/maxminddb-golang"
+
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
@@ -161,29 +163,57 @@ func TestNew_Singleton(t *testing.T) {
 	}
 }
 
-func TestLiteDownloadURL(t *testing.T) {
-	if got := liteDownloadURL(""); got != "" {
+func TestPackageCode(t *testing.T) {
+	if fileNameForCode("") != DefaultFileName || fileNameForCode("LITE") != "ipinfo_lite.mmdb" {
+		t.Fatalf("lite filename: %s %s", fileNameForCode(""), fileNameForCode("LITE"))
+	}
+	if fileNameForCode("core") != "ipinfo_core.mmdb" || fileNameForCode("plus") != "ipinfo_plus.mmdb" {
+		t.Fatal("core/plus filenames")
+	}
+	if knownPackageCode("nope") {
+		t.Fatal("unknown code should be rejected")
+	}
+}
+
+func TestNew_UnknownCode(t *testing.T) {
+	resetFactories()
+	t.Cleanup(resetFactories)
+	_, err := New(DatabaseConfig{DatabaseFilePath: testMMDB(t), DatabaseAutoUpdateCode: "free"}, testLogger())
+	if err == nil {
+		t.Fatal("expected error for unknown package code")
+	}
+}
+
+func TestPackageDownloadURL(t *testing.T) {
+	if got := packageDownloadURL("", "lite"); got != "" {
 		t.Errorf("empty token: got %q", got)
 	}
-	got := liteDownloadURL("secret")
-	if !strings.Contains(got, "ipinfo_lite.mmdb") || !strings.Contains(got, "token=secret") {
+	got := packageDownloadURL("secret", "core")
+	if !strings.Contains(got, "ipinfo_core.mmdb") || !strings.Contains(got, "token=secret") {
 		t.Errorf("url: %s", got)
 	}
 }
 
 func TestFindLatestDatabase(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"20230101_ipinfo_lite.mmdb", "20230301_ipinfo_lite.mmdb", "skip.mmdb"} {
+	for _, name := range []string{"20230101_ipinfo_lite.mmdb", "20230301_ipinfo_lite.mmdb", "20230401_ipinfo_core.mmdb", "skip.mmdb"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	latest, err := findLatestDatabase(dir)
+	latest, err := findLatestDatabase(dir, "lite")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasSuffix(latest, "20230301_ipinfo_lite.mmdb") {
-		t.Errorf("latest: %s", latest)
+		t.Errorf("latest lite: %s", latest)
+	}
+	core, err := findLatestDatabase(dir, "core")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(core, "20230401_ipinfo_core.mmdb") {
+		t.Errorf("latest core: %s", core)
 	}
 }
 
@@ -202,7 +232,7 @@ func TestDownloadAndUpdateDatabase_HTTP(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	prev := getDownloadURL
-	getDownloadURL = func(token string) string {
+	getDownloadURL = func(token, code string) string {
 		return srv.URL + "?token=" + token
 	}
 	t.Cleanup(func() { getDownloadURL = prev })
@@ -215,8 +245,18 @@ func TestDownloadAndUpdateDatabase_HTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("download: %v", err)
 	}
-	if !strings.HasSuffix(path, "_"+DefaultFileName) {
-		t.Errorf("dated name: %s", path)
+	reader, err := maxminddb.FromBytes(src)
+	if err != nil {
+		t.Fatalf("bundled MMDB: %v", err)
+	}
+	wantDate, err := mmdbBuildDate(reader)
+	_ = reader.Close()
+	if err != nil {
+		t.Fatalf("build_epoch: %v", err)
+	}
+	wantName := wantDate.Format("20060102") + "_" + fileNameForCode("")
+	if !strings.HasSuffix(path, wantName) {
+		t.Errorf("dated name: got %s, want suffix %s", path, wantName)
 	}
 
 	resetFactories()

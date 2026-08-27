@@ -26,7 +26,7 @@ Traefik Config key that names the implementation. Empty defaults to `ip2location
 - Map headers with `requestHeaderEnrich`. Unknown keys fail `New`. Write `null` when the Record field is empty.
 - ASN auto-update is opt-in (`ip2location_asnDatabaseAutoUpdate`) and only downloads when `ip2location_databaseAutoUpdateToken` is set. The public lite CDN does not host the ASN BIN. Default package code is `DBASNLITEBINIPV6`.
 - At init the auto-update dir is preferred. `ip2location_databaseFilePath` / `ip2location_asnDatabaseFilePath` are the seed when that dir has no BIN.
-- IPinfo: `ipinfo_databaseFilePath` empty uses the bundled `ipinfo_lite.mmdb`. Auto-update downloads `ipinfo_lite.mmdb?token=` only when `ipinfo_databaseAutoUpdateToken` is set. Country is `country_code`. Also fills `country_name`, `continent`, `continent_code`, `isp` (`as_name`), `domain` (`as_domain`), `asn` (`AS` prefix).
+- IPinfo: `ipinfo_databaseAutoUpdateCode` is `lite` (default), `core`, or `plus`. Seed and download file are `ipinfo_{code}.mmdb`. Empty `ipinfo_databaseFilePath` uses bundled `ipinfo_lite.mmdb` when code is lite. Auto-update downloads `https://ipinfo.io/data/ipinfo_{code}.mmdb?token=` only when `ipinfo_databaseAutoUpdateToken` is set. Country is `country_code`. Also fills `country_name`, `continent`, `continent_code`, `region`, `city` (empty on Lite), `isp` (`as_name`), `domain` (`as_domain`), `asn`.
 - `countryHeader` is deprecated. `New` copies it onto `requestHeaderEnrich` as key `country` when that header name is unset. Prefer `requestHeaderEnrich` only.
 
 ## Gotchas

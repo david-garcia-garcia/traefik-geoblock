@@ -2,48 +2,38 @@ package dbprovider
 
 import "sync"
 
-// Registry stores one value per config hash. Traefik calls New on every reload;
-// the same config must reuse the instance so a second 24h ticker is not started.
-type Registry struct {
+// InstanceLock serializes create-once for a caller-owned map.
+// The map must stay in the caller's package: Yaegi panics on a type-assert
+// of a value stored as any in this package (Traefik plugin load).
+type InstanceLock struct {
 	mu sync.RWMutex
-	m  map[string]any
 }
 
-// NewRegistry returns an empty Registry.
-func NewRegistry() *Registry {
-	return &Registry{m: make(map[string]any)}
+// NewInstanceLock returns an unlocked InstanceLock.
+func NewInstanceLock() *InstanceLock {
+	return &InstanceLock{}
 }
 
-// GetOrCreate returns the existing value for key, or stores the result of create.
-func (r *Registry) GetOrCreate(key string, create func() (any, error)) (any, error) {
-	r.mu.RLock()
-	if v, ok := r.m[key]; ok {
-		r.mu.RUnlock()
-		return v, nil
+// LoadOrStore runs store unless has is already true. has is checked again under the write lock.
+func (l *InstanceLock) LoadOrStore(has func() bool, store func() error) error {
+	l.mu.RLock()
+	if has() {
+		l.mu.RUnlock()
+		return nil
 	}
-	r.mu.RUnlock()
+	l.mu.RUnlock()
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if v, ok := r.m[key]; ok {
-		return v, nil
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if has() {
+		return nil
 	}
-	v, err := create()
-	if err != nil {
-		return nil, err
-	}
-	r.m[key] = v
-	return v, nil
+	return store()
 }
 
-// Clear calls each on every stored value, then empties the map.
-func (r *Registry) Clear(each func(any)) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for k, v := range r.m {
-		if each != nil {
-			each(v)
-		}
-		delete(r.m, k)
-	}
+// Reset runs clear under the write lock (tests / shutdown).
+func (l *InstanceLock) Reset(clear func()) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	clear()
 }

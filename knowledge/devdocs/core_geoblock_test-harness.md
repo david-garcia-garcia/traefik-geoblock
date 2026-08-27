@@ -27,6 +27,7 @@ Unit and bench tests live next to the owner package. Traefik behavior is proven 
 - HTTP from Pester: `Invoke-TestRequest`. Access-log asserts: keep the header on the Traefik `accesslog.fields.headers.names.*` command, then `Get-TraefikAccessLogEntries`.
 - whoami echoes forwarded request headers in the body (`X-Geo-Country: US`).
 - Local: `go test ./...` and `./Test-Integration.ps1`. CI runs `go test -v ./...` (gates included) and the Pester job.
+- Token-protected auto-update (paid IP2Location, ASN LITE, IPinfo Lite): copy `.env.example` to `.env` (gitignored). `Test-Integration.ps1` enables compose profile `local-tokens` when `IP2LOCATION_DOWNLOAD_TOKEN` is set. Pester Context `Token-protected database download` skips unless the matching token is set; it asserts Traefik log lines and must not print log bodies (URLs can carry a token).
 
 ## Pattern snippet
 
@@ -57,6 +58,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 - `docker-compose.yml` — Traefik + whoami routes
 - `scripts/integration-tests.Tests.ps1` — Pester cases
 - `Test-Integration.ps1` — compose up, wait, Pester, teardown
+- `.env.example` — local download tokens; copy to `.env` (not committed)
 - `.github/workflows/ci.yml` — `go test` and integration jobs
 
 ## Gotchas

@@ -1,4 +1,45 @@
+# Pester evaluates It -Skip at discovery, before BeforeAll.
+BeforeDiscovery {
+    $dotEnv = Join-Path (Split-Path $PSScriptRoot -Parent) ".env"
+    if (Test-Path $dotEnv) {
+        Get-Content $dotEnv | ForEach-Object {
+            $line = $_.Trim()
+            if ($line -eq "" -or $line.StartsWith("#")) { return }
+            if ($line.StartsWith("export ")) { $line = $line.Substring(7).Trim() }
+            $eq = $line.IndexOf("=")
+            if ($eq -lt 1) { return }
+            $name = $line.Substring(0, $eq).Trim()
+            $value = $line.Substring($eq + 1).Trim().Trim('"').Trim("'")
+            $existing = [Environment]::GetEnvironmentVariable($name, "Process")
+            if ([string]::IsNullOrWhiteSpace($existing)) {
+                [Environment]::SetEnvironmentVariable($name, $value, "Process")
+                Set-Item -Path "env:$name" -Value $value
+            }
+        }
+    }
+    $script:HasIP2LocationToken = -not [string]::IsNullOrWhiteSpace($env:IP2LOCATION_DOWNLOAD_TOKEN)
+    $script:HasIPinfoToken = -not [string]::IsNullOrWhiteSpace($env:IPINFO_DOWNLOAD_TOKEN)
+}
+
 BeforeAll {
+    function Wait-TraefikPluginLog {
+        param(
+            [string]$Pattern,
+            [int]$TimeoutSeconds = 180,
+            [int]$RetrySeconds = 3
+        )
+        $elapsed = 0
+        do {
+            $logs = docker logs traefik 2>&1 | Out-String
+            if ($logs -match $Pattern) {
+                return $true
+            }
+            Start-Sleep $RetrySeconds
+            $elapsed += $RetrySeconds
+        } while ($elapsed -lt $TimeoutSeconds)
+        return $false
+    }
+
     # Test configuration
     $script:BaseUrl = "http://localhost:8000"
     $script:TraefikApiUrl = "http://localhost:8080"
@@ -505,6 +546,42 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $response | Should -Match "X-Geo-Asn:\s*AS6724"
             $response | Should -Match "X-Geo-Region:\s*null"
             $response | Should -Match "X-Geo-City:\s*null"
+        }
+    }
+
+    Context "Token-protected database download (local .env)" {
+        # Skipped in CI unless the matching token is set. Asserts Traefik plugin logs
+        # only (never dumps logs — download URLs must not appear in test output).
+
+        It "Should download and hot-swap the IP2Location token package" -Skip:(-not $script:HasIP2LocationToken) {
+            $code = $env:IP2LOCATION_DATABASE_CODE
+            if ([string]::IsNullOrWhiteSpace($code)) { $code = "DB8BINIPV6" }
+            $downloaded = Wait-TraefikPluginLog -Pattern "database updated successfully.*$code" -TimeoutSeconds 180
+            if (-not $downloaded) {
+                $downloaded = Wait-TraefikPluginLog -Pattern "the available IP2Location database is not newer" -TimeoutSeconds 15
+            }
+            $downloaded | Should -BeTrue -Because "Traefik logs should show a token download or an already-current dated file (token value is not logged)"
+            $swapped = Wait-TraefikPluginLog -Pattern "performHotSwap: database hot-swapped successfully" -TimeoutSeconds 60
+            $swapped | Should -BeTrue -Because "Traefik logs should show a hot-swap after the token download"
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/tokendb" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+
+        It "Should download ASN LITE" -Skip:(-not $script:HasIP2LocationToken) {
+            $asn = Wait-TraefikPluginLog -Pattern "database updated successfully.*DBASNLITEBINIPV6" -TimeoutSeconds 600
+            $asn | Should -BeTrue -Because "Traefik logs should show the ASN LITE token download"
+        }
+
+        It "Should download and open a current IPinfo Lite MMDB" -Skip:(-not $script:HasIPinfoToken) {
+            $updated = Wait-TraefikPluginLog -Pattern "IPinfo database updated" -TimeoutSeconds 180
+            if (-not $updated) {
+                $updated = Wait-TraefikPluginLog -Pattern "the available IPinfo database is not newer" -TimeoutSeconds 15
+            }
+            $updated | Should -BeTrue -Because "Traefik logs should show an IPinfo token download or an already-current dated MMDB"
+            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/ipinfo" -Headers $headers
+            $result.StatusCode | Should -Be 200
         }
     }
 

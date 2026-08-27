@@ -209,7 +209,7 @@ The plugin looks up IPs with one of two providers (`databaseProvider`):
 | Provider | Config value | Bundled seed (when available) |
 | --- | --- | --- |
 | IP2Location (default) | `ip2location` or empty | `IP2LOCATION-LITE-DB1.IPV6.BIN` (country). ASN is a separate BIN and is **not** bundled. |
-| IPinfo Lite | `ipinfo` | `ipinfo_lite.mmdb` (country + ASN in one file) |
+| IPinfo | `ipinfo` | `ipinfo_{code}.mmdb` — `lite` (bundled seed, country + ASN), `core`, or `plus` (region/city filled) |
 
 Only the selected provider’s files are opened. Unused vendor paths are ignored.
 
@@ -222,7 +222,7 @@ How auto-update works:
 - Turn it on with `ip2location_databaseAutoUpdate` / `ip2location_asnDatabaseAutoUpdate` / `ipinfo_databaseAutoUpdate`, and set the matching `*AutoUpdateDir` (required; must survive container restarts).
 - On startup the plugin uses the newest dated file already in that directory. A 24-hour ticker then checks again.
 - IP2Location LITE DB1 downloads from the public CDN with no token. ASN LITE and paid IP2Location packages need `ip2location_databaseAutoUpdateToken` and the official `file=` package code. IPinfo Lite downloads only when `ipinfo_databaseAutoUpdateToken` is set; without a token an error is logged and the seed stays in use.
-- New files are stored as `YYYYMMDD_…` in the auto-update directory. IP2Location downloads when the open BIN is older than 30 days. IPinfo skips the download when the dated MMDB is less than 24 hours old.
+- New files are stored as `YYYYMMDD_…` in the auto-update directory. The prefix is the date inside the file (IP2Location BIN header, IPinfo MMDB `build_epoch`). IP2Location downloads when the open BIN is older than 30 days. IPinfo skips the download when that dated MMDB is less than 24 hours old.
 - Same config shares one factory (one ticker). See [Network Requirements](#network-requirements) for the download hosts.
 
 `ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, and `ipinfo_databaseFilePath` are **seeds / fallbacks**, not the live copy once auto-update has stored a file. Resolution order for each database the provider needs:
@@ -263,7 +263,11 @@ go test -run TestThroughput -v
 go test -bench=BenchmarkPlugin -benchmem
 
 # Run integration tests
-.\Test-Integration.ps
+.\Test-Integration.ps1
+```
+
+Token-protected downloads (IP2Location paid/LITE-with-token, ASN LITE, IPinfo Lite) are optional and local-only. Copy `.env.example` to `.env`, set the tokens, then run `.\Test-Integration.ps1`. Compose starts profile `local-tokens` (`/tokendb`) when `IP2LOCATION_DOWNLOAD_TOKEN` is set. Pester waits for Traefik log lines (`database updated successfully`, `hot-swapped`, `IPinfo database updated`). Cases skip when the matching token is empty. CI does not load `.env`.
+
 ```
 
 ## Configuration
@@ -527,20 +531,21 @@ http:
           # Official file= package code. Use DBASNLITEBIN for the IPv4-only ASN BIN.
 
           #-------------------------------
-          # IPinfo Lite Database
+          # IPinfo Database
           #-------------------------------
-          # MMDB with country_code + ASN in one file (CC-BY-SA 4.0).
-          # The repo ships a snapshot ipinfo_lite.mmdb (may be stale).
-          # Empty ipinfo_databaseFilePath uses that bundled file when it is
-          # on the plugin tree or found via TRAEFIK_PLUGIN_GEOBLOCK_PATH.
+          # Official package code (same idea as ip2location_databaseAutoUpdateCode):
+          # lite (default, free, CC-BY-SA 4.0), core, plus.
+          # Seed and dated files are ipinfo_{code}.mmdb
+          # (https://ipinfo.io/data/ipinfo_{code}.mmdb?token=$TOKEN).
+          # The repo ships ipinfo_lite.mmdb. Empty path uses that file when code is lite.
+          # Core/Plus fill region and city; Lite leaves those empty.
           ipinfo_databaseFilePath: ""
           ipinfo_databaseAutoUpdate: false
-          # Daily check. Download is token-only:
-          # https://ipinfo.io/data/ipinfo_lite.mmdb?token=$TOKEN
-          # Without a token an error is logged and the bundled/seed file is used.
           ipinfo_databaseAutoUpdateDir: "/data/ipinfo"
           ipinfo_databaseAutoUpdateToken: ""
-          # Free IPinfo account token. Required to download. Cap: 10 downloads/day/IP.
+          # Account token. Required to download. Lite cap: 10 downloads/day/IP.
+          # Without a token an error is logged and the seed file is used.
+          ipinfo_databaseAutoUpdateCode: "lite"
 
           #-------------------------------
           # Request header settings

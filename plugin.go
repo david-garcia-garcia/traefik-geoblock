@@ -77,11 +77,12 @@ type Config struct {
 	Ip2locationAsnDatabaseAutoUpdate     bool   `json:"ip2location_asnDatabaseAutoUpdate,omitempty" mapstructure:"ip2location_asnDatabaseAutoUpdate"`
 	Ip2locationAsnDatabaseAutoUpdateCode string `json:"ip2location_asnDatabaseAutoUpdateCode,omitempty" mapstructure:"ip2location_asnDatabaseAutoUpdateCode"`
 
-	// IPinfo Lite (MMDB). Auto-update requires a free-account token.
+	// IPinfo MMDB. Auto-update requires a token. Code is lite (default), core, or plus.
 	IpinfoDatabaseFilePath        string `json:"ipinfo_databaseFilePath,omitempty" mapstructure:"ipinfo_databaseFilePath"`
 	IpinfoDatabaseAutoUpdate      bool   `json:"ipinfo_databaseAutoUpdate,omitempty" mapstructure:"ipinfo_databaseAutoUpdate"`
 	IpinfoDatabaseAutoUpdateDir   string `json:"ipinfo_databaseAutoUpdateDir,omitempty" mapstructure:"ipinfo_databaseAutoUpdateDir"`
 	IpinfoDatabaseAutoUpdateToken string `json:"ipinfo_databaseAutoUpdateToken,omitempty" mapstructure:"ipinfo_databaseAutoUpdateToken"`
+	IpinfoDatabaseAutoUpdateCode  string `json:"ipinfo_databaseAutoUpdateCode,omitempty" mapstructure:"ipinfo_databaseAutoUpdateCode"`
 
 	// Deprecated unprefixed aliases. Copied onto the ip2location_ fields when those are unset.
 	DatabaseFilePath        string `json:"databaseFilePath,omitempty" mapstructure:"databaseFilePath"`
@@ -393,6 +394,7 @@ func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider
 			DatabaseAutoUpdate:      cfg.IpinfoDatabaseAutoUpdate,
 			DatabaseAutoUpdateDir:   cfg.IpinfoDatabaseAutoUpdateDir,
 			DatabaseAutoUpdateToken: cfg.IpinfoDatabaseAutoUpdateToken,
+			DatabaseAutoUpdateCode:  cfg.IpinfoDatabaseAutoUpdateCode,
 		}, logger)
 	default:
 		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)

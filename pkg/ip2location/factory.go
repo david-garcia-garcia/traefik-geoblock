@@ -296,7 +296,7 @@ func (df *DatabaseFactory) handleAutoUpdateInit(fallbackPath string) (string, er
 	// Try to find the latest database in the auto-update directory
 	latest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
 	if err != nil {
-		df.logger.Debug("no existing database found in auto-update directory", "error", err)
+		df.logger.Debug("failed to list auto-update dir", "error", err)
 		// Use fallback database directly for initialization
 		return fallbackPath, nil
 	}
@@ -355,22 +355,25 @@ func (df *DatabaseFactory) startAutoUpdate() {
 
 // checkAndUpdate checks if an update is needed and performs actual downloads/updates
 func (df *DatabaseFactory) checkAndUpdate() {
+	latest, latestErr := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
+	if latestErr != nil {
+		df.logger.Debug("checkAndUpdate: failed to list auto-update dir", "error", latestErr)
+		latest = ""
+	}
+
 	currentVersion := df.wrapper.GetVersion()
-	if currentVersion != nil && time.Since(currentVersion.Date()) < 30*24*time.Hour {
+	// Age skip only when this package code is already in the auto-update dir.
+	// An empty dir still downloads (token/paid code must not be skipped because the seed BIN is fresh).
+	if latest != "" && currentVersion != nil && time.Since(currentVersion.Date()) < 30*24*time.Hour {
 		df.logger.Debug("checkAndUpdate: database is recent, skipping update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
 		return
 	}
 	if currentVersion == nil {
 		df.logger.Info("checkAndUpdate: no database open yet, attempting download")
+	} else if latest == "" {
+		df.logger.Info("checkAndUpdate: no dated file for this package code, attempting download")
 	} else {
 		df.logger.Info("checkAndUpdate: database is old, attempting download update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
-	}
-
-	// Find current latest database
-	latest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
-	if err != nil {
-		df.logger.Debug("checkAndUpdate: no existing database found during update check", "error", err)
-		latest = ""
 	}
 
 	// Attempt to download a newer version (actual download happens here)
@@ -453,7 +456,11 @@ func (df *DatabaseFactory) performHotSwap(newDatabasePath string) error {
 }
 
 // factories is one DatabaseFactory per config hash (Traefik reloads call New again).
-var factories = dbprovider.NewRegistry()
+// The map stays in this package; Yaegi cannot type-assert values boxed as any elsewhere.
+var (
+	factoryLock = dbprovider.NewInstanceLock()
+	factories   = map[string]*DatabaseFactory{}
+)
 
 // generateConfigHash creates a unique hash key from DatabaseConfig for singleton pattern
 func generateConfigHash(config *DatabaseConfig) string {
@@ -478,23 +485,35 @@ func generateConfigHash(config *DatabaseConfig) string {
 // GetDatabaseFactory returns a singleton database factory for the given configuration
 func GetDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseFactory, error) {
 	key := generateConfigHash(config)
-	v, err := factories.GetOrCreate(key, func() (any, error) {
+	var out *DatabaseFactory
+	err := factoryLock.LoadOrStore(func() bool {
+		f, ok := factories[key]
+		if ok {
+			out = f
+		}
+		return ok
+	}, func() error {
 		factory, err := NewDatabaseFactory(config, logger)
 		if err != nil {
-			return nil, err
+			return err
 		}
+		factories[key] = factory
+		out = factory
 		logger.Debug("created new database factory", "config_hash", key)
-		return factory, nil
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return v.(*DatabaseFactory), nil
+	return out, nil
 }
 
 // CleanupFactories closes all database factories (for testing/shutdown)
 func CleanupFactories() {
-	factories.Clear(func(v any) {
-		v.(*DatabaseFactory).Close()
+	factoryLock.Reset(func() {
+		for key, factory := range factories {
+			factory.Close()
+			delete(factories, key)
+		}
 	})
 }

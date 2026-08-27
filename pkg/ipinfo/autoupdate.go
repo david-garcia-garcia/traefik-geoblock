@@ -17,31 +17,36 @@ import (
 )
 
 const (
-	liteDownloadBase = "https://ipinfo.io/data/ipinfo_lite.mmdb"
-	maxDownloadBytes = 64 * 1024 * 1024
-	downloadTimeout  = 2 * time.Minute
+	dataDownloadBase = "https://ipinfo.io/data/"
 	updateLockMaxAge = time.Hour
-	datedMMDBPattern = "*_" + DefaultFileName
 )
 
 var getDownloadURL = defaultDownloadURL
 
-func defaultDownloadURL(token string) string {
+func defaultDownloadURL(token, code string) string {
 	if token == "" {
 		return ""
 	}
-	return liteDownloadBase + "?token=" + url.QueryEscape(token)
+	return dataDownloadBase + fileNameForCode(code) + "?token=" + url.QueryEscape(token)
 }
 
-func liteDownloadURL(token string) string {
-	return getDownloadURL(token)
+func packageDownloadURL(token, code string) string {
+	return getDownloadURL(token, code)
 }
 
-func findLatestDatabase(dir string) (string, error) {
+// mmdbBuildDate is the MMDB metadata build_epoch as UTC (same role as the IP2Location BIN header date).
+func mmdbBuildDate(reader *maxminddb.Reader) (time.Time, error) {
+	if reader == nil || reader.Metadata.BuildEpoch == 0 {
+		return time.Time{}, fmt.Errorf("IPinfo MMDB has no build_epoch")
+	}
+	return time.Unix(int64(reader.Metadata.BuildEpoch), 0).UTC(), nil
+}
+
+func findLatestDatabase(dir, code string) (string, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create IPinfo auto-update dir: %w", err)
 	}
-	files, err := filepath.Glob(filepath.Join(dir, datedMMDBPattern))
+	files, err := filepath.Glob(filepath.Join(dir, "*_"+fileNameForCode(code)))
 	if err != nil {
 		return "", err
 	}
@@ -62,7 +67,7 @@ func findLatestDatabase(dir string) (string, error) {
 
 func downloadAndUpdateDatabase(cfg DatabaseConfig, logger *slog.Logger) (string, error) {
 	if cfg.DatabaseAutoUpdateToken == "" {
-		return "", fmt.Errorf("IPinfo Lite download requires ipinfo_databaseAutoUpdateToken")
+		return "", fmt.Errorf("IPinfo download requires ipinfo_databaseAutoUpdateToken")
 	}
 	if cfg.DatabaseAutoUpdateDir == "" {
 		return "", fmt.Errorf("ipinfo_databaseAutoUpdateDir is required for download")
@@ -77,7 +82,7 @@ func downloadAndUpdateDatabase(cfg DatabaseConfig, logger *slog.Logger) (string,
 		age := time.Since(fi.ModTime())
 		if age < updateLockMaxAge {
 			logger.Debug("IPinfo update already in progress", "lock", lockFile, "age", age)
-			return findLatestDatabase(cfg.DatabaseAutoUpdateDir)
+			return findLatestDatabase(cfg.DatabaseAutoUpdateDir, cfg.DatabaseAutoUpdateCode)
 		}
 		logger.Warn("removing stale IPinfo update lock", "lock", lockFile, "age", age)
 		if err := os.Remove(lockFile); err != nil {
@@ -99,8 +104,8 @@ func downloadAndUpdateDatabase(cfg DatabaseConfig, logger *slog.Logger) (string,
 	}
 	defer os.RemoveAll(tmpDir)
 
-	downloadURL := liteDownloadURL(cfg.DatabaseAutoUpdateToken)
-	client := &http.Client{Timeout: downloadTimeout}
+	downloadURL := packageDownloadURL(cfg.DatabaseAutoUpdateToken, cfg.DatabaseAutoUpdateCode)
+	client := &http.Client{Timeout: downloadTimeoutFor(cfg.DatabaseAutoUpdateCode)}
 	resp, err := client.Get(downloadURL) // #nosec G107
 	if err != nil {
 		return "", fmt.Errorf("IPinfo download failed: %w", err)
@@ -110,12 +115,12 @@ func downloadAndUpdateDatabase(cfg DatabaseConfig, logger *slog.Logger) (string,
 		return "", fmt.Errorf("IPinfo download failed with status: %s", resp.Status)
 	}
 
-	tmpPath := filepath.Join(tmpDir, DefaultFileName)
+	tmpPath := filepath.Join(tmpDir, fileNameForCode(cfg.DatabaseAutoUpdateCode))
 	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp MMDB: %w", err)
 	}
-	if _, err := io.Copy(tmpFile, io.LimitReader(resp.Body, maxDownloadBytes)); err != nil {
+	if _, err := io.Copy(tmpFile, io.LimitReader(resp.Body, maxDownloadBytesFor(cfg.DatabaseAutoUpdateCode))); err != nil {
 		tmpFile.Close()
 		return "", fmt.Errorf("failed to save IPinfo MMDB: %w", err)
 	}
@@ -131,12 +136,16 @@ func downloadAndUpdateDatabase(cfg DatabaseConfig, logger *slog.Logger) (string,
 	if err != nil {
 		return "", fmt.Errorf("downloaded file is not a valid MMDB: %w", err)
 	}
+	buildDate, err := mmdbBuildDate(reader)
 	_ = reader.Close()
+	if err != nil {
+		return "", err
+	}
 
-	finalName := time.Now().UTC().Format("20060102") + "_" + DefaultFileName
+	finalName := buildDate.Format("20060102") + "_" + fileNameForCode(cfg.DatabaseAutoUpdateCode)
 	finalPath := filepath.Join(cfg.DatabaseAutoUpdateDir, finalName)
 	if fileutils.Exists(finalPath) {
-		logger.Info("IPinfo MMDB for today already exists", "path", finalPath)
+		logger.Warn("the available IPinfo database is not newer than the one already available, database did not update", "path", finalPath)
 		return finalPath, nil
 	}
 	if err := fileutils.Copy(tmpPath, finalPath, false); err != nil {

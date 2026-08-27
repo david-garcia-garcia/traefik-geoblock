@@ -35,6 +35,8 @@ services:
       - logs-local:/var/log/traefik
       - './geoblockban.html:/geoblockban.html:ro'
       - ./:/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock
+      - ip2-token:/data/ip2database-token
+      - ipinfo-update:/data/ipinfo
     ports:
       - 8000:80
       - 8080:8080
@@ -224,6 +226,10 @@ services:
       - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.enabled=true"
       - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.databaseProvider=ipinfo"
       - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/ipinfo_lite.mmdb"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseAutoUpdate=true"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseAutoUpdateDir=/data/ipinfo"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseAutoUpdateToken=${IPINFO_DOWNLOAD_TOKEN:-}"
+      - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.ipinfo_databaseAutoUpdateCode=${IPINFO_DATABASE_CODE:-lite}"
       - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.allowPrivate=true"
       - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.blockedCountries=US"
       - "traefik.http.middlewares.geoblock-ipinfo.plugin.geoblock.allowedCountries=DE"
@@ -321,5 +327,37 @@ services:
       - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Isp=isp"
       - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Domain=domain"
 
+  # Local-only: started with `docker compose --profile local-tokens up`
+  # when .env has IP2LOCATION_DOWNLOAD_TOKEN. CI does not enable this profile.
+  whoami-tokendb:
+    image: traefik/whoami
+    container_name: "simple-service-tokendb"
+    restart: unless-stopped
+    profiles:
+      - local-tokens
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-tokendb.rule=PathPrefix(`/tokendb`)"
+      - "traefik.http.routers.router-tokendb.entrypoints=web"
+      - "traefik.http.routers.router-tokendb.middlewares=geoblock-tokendb@docker"
+      - "traefik.http.services.service-tokendb.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.logLevel=DEBUG"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.logFormat=JSON"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.blockedCountries=US,CN,RU"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.allowedCountries=DE,FR,GB"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.defaultAllow=false"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseAutoUpdate=true"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseAutoUpdateDir=/data/ip2database-token"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseAutoUpdateToken=${IP2LOCATION_DOWNLOAD_TOKEN:-}"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_databaseAutoUpdateCode=${IP2LOCATION_DATABASE_CODE:-DB8BINIPV6}"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_asnDatabaseAutoUpdate=true"
+      - "traefik.http.middlewares.geoblock-tokendb.plugin.geoblock.ip2location_asnDatabaseAutoUpdateCode=DBASNLITEBINIPV6"
+
 volumes:
   logs-local:
+  ip2-token:
+  ipinfo-update:
