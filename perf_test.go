@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// CI floors. Set from local/CI measurements with headroom for shared runners.
-// Raise them after you have a few CI runs; keep them well below observed ops/s.
+// CI floors. golang:1.21 docker measured ~2.1k LITE Lookup/ServeHTTP and ~0.7k DB8.
+// 20k was a desktop-class floor and flakes on shared GitHub runners. Catch collapses, not noise.
 const (
-	minThroughputOpsPerSec = 20000
+	minThroughputOpsPerSec = 300
 	throughputWindow       = 400 * time.Millisecond
 	throughputWarmup       = 2000
 )

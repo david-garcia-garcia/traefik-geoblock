@@ -26,7 +26,7 @@ Unit and bench tests live next to the owner package. Traefik behavior is proven 
 - Change Traefik-visible behavior (headers, labels, blocking) → add a `whoami-*` service in `docker-compose.yml` with a unique `PathPrefix` and matching plugin labels, then a Pester `Context` / `It` in `scripts/integration-tests.Tests.ps1`.
 - HTTP from Pester: `Invoke-TestRequest`. Access-log asserts: keep the header on the Traefik `accesslog.fields.headers.names.*` command, then `Get-TraefikAccessLogEntries`.
 - whoami echoes forwarded request headers in the body (`X-Geo-Country: US`).
-- Local: `go test ./...` and `./Test-Integration.ps1`. CI runs `go test -v ./...` (gates included) and the Pester job.
+- Local: `go test ./...`, `golangci-lint run` (CI is action v6 / golangci-lint v1 — `docker run --rm -v "${PWD}:/app" -w /app golangci/golangci-lint:v1.64.8 golangci-lint run --timeout 5m`), and `./Test-Integration.ps1`. Do not treat a fast desktop `go test` as CI: `TestThroughput_*` floors must also pass on linux/Go 1.21 (CI image). CI runs Lint, `go test -v ./...` (gates included), and the Pester job.
 - Token-protected auto-update (paid IP2Location, ASN LITE, IPinfo Lite): copy `.env.example` to `.env` (gitignored). `Test-Integration.ps1` enables compose profile `local-tokens` when `IP2LOCATION_DOWNLOAD_TOKEN` is set. Pester Context `Token-protected database download` skips unless the matching token is set; it asserts Traefik log lines and must not print log bodies (URLs can carry a token).
 
 ## Pattern snippet
@@ -59,7 +59,8 @@ func TestRequestHeaderEnrich(t *testing.T) {
 - `scripts/integration-tests.Tests.ps1` — Pester cases
 - `Test-Integration.ps1` — compose up, wait, Pester, teardown
 - `.env.example` — local download tokens; copy to `.env` (not committed)
-- `.github/workflows/ci.yml` — `go test` and integration jobs
+- `.golangci.yml` — enabled linters (gofmt, gosec, goconst, unparam, predeclared, …)
+- `.github/workflows/ci.yml` — Lint, `go test`, and integration jobs
 
 ## Gotchas
 
