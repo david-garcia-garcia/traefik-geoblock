@@ -24,6 +24,9 @@ func ReadPrefix(r io.Reader, n int) string {
 
 // DownloadHint describes a failed GET without the URL (tokens may be in the query).
 func DownloadHint(key, status, contentType string, contentLength int64, prefix string) string {
+	if len(prefix) > DownloadHintPrefixBytes {
+		prefix = prefix[:DownloadHintPrefixBytes]
+	}
 	return fmt.Sprintf("key=%s status=%s content_type=%s content_length=%d prefix=%q",
 		key, status, contentType, contentLength, prefix)
 }
