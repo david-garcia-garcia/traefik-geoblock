@@ -17,7 +17,7 @@ _Avoid_: treating vendor as the share axis
 ## How to use
 
 - Open through `OpenBIN` or `OpenMMDB` with the plugin `New` context. Same config hash shares one file and one Updater.
-- Those opens go through `Table[*BIN]` / `Table[*MMDB]` in this package (`std_go_reclaim.md`). Unreclaimed hash disposes after grace.
+- Those opens go through `reclaim.Open` (`std_go_reclaim.md`) with `bin:` / `mmdb:` keys. Unreclaimed hash disposes after grace. The caller asserts `*BIN` / `*MMDB`.
 - IP2Location holds two BIN wrappers (geo + ASN). IPinfo and MaxMind each hold one MMDB wrapper.
 - `provider.Close` must not close the shared wrapper.
 - Tests call `dbwrappers.Reset`. Short-grace plugin tests call `ResetWith`.
@@ -35,5 +35,6 @@ err = w.Lookup(ip, &rec)
 
 ## Key files
 
-- `pkg/dbwrappers` — BIN, MMDB, `Table[T]`, `Reset`
+- `pkg/dbwrappers` — BIN, MMDB, `Reset`
+- `pkg/reclaim` — process table (`any`)
 - `pkg/dbsource` — Resolve and Updater used by both wrappers

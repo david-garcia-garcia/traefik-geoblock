@@ -16,6 +16,7 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
 // MMDBConfig is one MMDB file to resolve, open, and keep current.
@@ -36,22 +37,30 @@ type MMDB struct {
 	updater *dbsource.Updater
 }
 
-var mmdbs *Table[*MMDB]
+const keyPrefixMMDB = "mmdb:"
 
-func mmdbTable() *Table[*MMDB] {
-	tablesMu.Lock()
-	defer tablesMu.Unlock()
-	if mmdbs == nil {
-		mmdbs = NewTable[*MMDB](DefaultGrace, slog.Default())
-	}
-	return mmdbs
+func mmdbKey(cfg MMDBConfig) string {
+	return keyPrefixMMDB + configHash(cfg)
 }
 
-// OpenMMDB returns the singleton MMDB for cfg and binds ctx on the table.
+// OpenMMDB returns the singleton MMDB for cfg and binds ctx on the process table.
 func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
-	return mmdbTable().Open(ctx, configHash(cfg), func() (*MMDB, error) {
+	key := mmdbKey(cfg)
+	v, err := reclaim.Open(ctx, key, func() (any, error) {
 		return newMMDB(cfg, logger)
-	}, func(w *MMDB) { w.close() })
+	}, func(v any) {
+		if w, ok := v.(*MMDB); ok {
+			w.close()
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	w, ok := v.(*MMDB)
+	if !ok {
+		return nil, fmt.Errorf("reclaim: %s: want *MMDB, got %T", key, v)
+	}
+	return w, nil
 }
 
 func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {

@@ -1,15 +1,23 @@
 ## Purpose
 
-Defines a keyed reclaim table that stores one typed value per key, survives context cancel when the same key is opened again within grace, and disposes the value when it is not. `Table[T]` MUST be defined in the same package as `T` (Yaegi). Other projects copy `table.go` into the package that owns `T`.
+Defines a keyed reclaim table that stores one value per key as `any`, survives context cancel when the same key is opened again within grace, and disposes the value when it is not. The table lives in `pkg/reclaim` and is reusable across packages. Callers type-assert. Yaegi cannot instantiate `Table[T]` from another package; this table is not generic.
 
 ## ADDED Requirements
 
 ### Requirement: Table file depends only on the Go standard library
-The `Table[T]` source file SHALL import only Go standard-library packages. It MUST NOT import this module’s plugin, wrapper, source, or vendor packages. It MUST store `T`, not `any`. It MUST NOT be instantiated as `otherpkg.Table[*T]` from a different package (Yaegi panics or fails import).
+The `Table` source file SHALL import only Go standard-library packages. It MUST NOT import this module’s plugin, wrapper, source, or vendor packages. It MUST store `any`. It MUST NOT be a generic `Table[T]` instantiated as `otherpkg.Table[*T]` (Yaegi panics or fails import).
 
 #### Scenario: Stdlib-only imports
 - **WHEN** `table.go` is listed for imports
 - **THEN** every import path is a Go standard-library package
+
+### Requirement: Process table is a singleton
+`pkg/reclaim` SHALL expose one process-wide table (`Default` / package `Open`). Independent keys on that table MUST NOT share an incarnation. Callers in other packages SHALL type-assert the value `Open` returns.
+
+#### Scenario: Default Open shares one incarnation
+- **WHEN** `Open` and `Default().Open` are called for the same key
+- **THEN** both return the same stored value
+- **AND** `create` runs once
 
 ### Requirement: Open creates once and binds a context
 `Open(ctx, key, create, dispose)` SHALL create the value on the first call for a key, store it, and bind `ctx` as a holder. A later `Open` for the same key (live or in grace) SHALL return the stored value, bind the new context, and MUST NOT run `create` or replace `dispose`. Dispose SHALL run at most once per incarnation. Two live contexts on one key SHALL keep the value until both are Done.

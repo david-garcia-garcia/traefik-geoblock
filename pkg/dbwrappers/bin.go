@@ -16,6 +16,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
 // DefaultBINMinAge is how long a dated BIN stays current before GET.
@@ -42,22 +43,30 @@ type BIN struct {
 	updater            *dbsource.Updater
 }
 
-var bins *Table[*BIN]
+const keyPrefixBIN = "bin:"
 
-func binTable() *Table[*BIN] {
-	tablesMu.Lock()
-	defer tablesMu.Unlock()
-	if bins == nil {
-		bins = NewTable[*BIN](DefaultGrace, slog.Default())
-	}
-	return bins
+func binKey(cfg BINConfig) string {
+	return keyPrefixBIN + configHash(cfg)
 }
 
-// OpenBIN returns the singleton BIN for cfg and binds ctx on the table.
+// OpenBIN returns the singleton BIN for cfg and binds ctx on the process table.
 func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, error) {
-	return binTable().Open(ctx, configHash(cfg), func() (*BIN, error) {
+	key := binKey(cfg)
+	v, err := reclaim.Open(ctx, key, func() (any, error) {
 		return newBIN(cfg, logger)
-	}, func(w *BIN) { w.close() })
+	}, func(v any) {
+		if w, ok := v.(*BIN); ok {
+			w.close()
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	w, ok := v.(*BIN)
+	if !ok {
+		return nil, fmt.Errorf("reclaim: %s: want *BIN, got %T", key, v)
+	}
+	return w, nil
 }
 
 func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {

@@ -3,8 +3,12 @@
 ## Language
 
 **Table**:
-A keyed store of typed values plus holder contexts. The value stays if a new context opens the same key before grace ends; otherwise dispose runs.
-_Avoid_: `otherpkg.Table[*T]`, type alias/embed of that, `any` box, Traefik `Close`
+A keyed store of `any` values plus holder contexts. The value stays if a new context opens the same key before grace ends; otherwise dispose runs. The caller type-asserts.
+_Avoid_: `otherpkg.Table[*T]`, type alias/embed of that, Traefik `Close`
+
+**Default**:
+The process-wide table (`reclaim.Default`, `reclaim.Open`). One incarnation per key for the whole process.
+_Avoid_: one `NewTable` per caller when they should share; unprefixed keys that can collide
 
 **Open**:
 Create-once for a key, then bind a holder context. Later `Open` does not run create.
@@ -16,37 +20,34 @@ _Avoid_: dispose on `ctx.Done` with no wait
 
 ## Overview
 
-`Table[T]` must be defined in the same package as `T`. Yaegi panics if you instantiate `reclaim.Table[*BIN]` from another package. Copy `pkg/dbwrappers/table.go` into the package that owns the value.
+`pkg/reclaim` is reusable across packages. Yaegi panics on `reclaim.Table[*BIN]`; it loads a non-generic table of `any` and a type-assert in the caller.
 
 ## How to use
 
-- `tab := NewTable[*Thing](10 * time.Second, logger)` (short grace in tests).
+- Production: `reclaim.Open(ctx, key, create, dispose)` (process table). Tests: `NewTable` with a short grace, or `ResetWith`.
 - Watch stable `msg` + `key`. Info: `reclaim_put`, `reclaim_dispose`. Debug: `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`.
-- `tab.Open(ctx, key, create, dispose)` on every holder, including reclaim.
 - `ctx` is the host teardown context (Traefik `New` ctx), not `req.Context()`.
 - `dispose` stops background work and closes the value. The table runs it once per incarnation.
+- Prefix keys when more than one type shares Default (`bin:` / `mmdb:`).
 
 ## Pattern snippet
 
 ```go
-var things *Table[*Thing]
-
-func OpenThing(ctx context.Context, key string) (*Thing, error) {
-	if things == nil {
-		things = NewTable[*Thing](10*time.Second, slog.Default())
-	}
-	return things.Open(ctx, key, newThing, func(v *Thing) { v.close() })
-}
+v, err := reclaim.Open(ctx, "bin:"+hash, func() (any, error) {
+	return newBIN(cfg)
+}, func(v any) { v.(*BIN).close() })
+w := v.(*BIN)
 ```
 
 ## Key files
 
-- `pkg/dbwrappers/table.go` — `Table[T]`, `Open`, logs
+- `pkg/reclaim/table.go` — `Table`, `Open`, logs
+- `pkg/reclaim/default.go` — `Default`, package `Open`, `Reset`
 - `openspec/specs` leaf `std_go_reclaim_context-lease` (after archive)
 
 ## Gotchas
 
 - Hosts that cancel before they call the constructor again need grace (Traefik: ~1 ms, then `New`).
-- Yaegi: do not import `Table` from another package and write `Table[*T]`.
+- Yaegi: do not write `Table[*T]` on a type from another package.
 - A second `Open` while the incarnation is live or in grace does not replace dispose.
 - Tests assert the `msg` constants. A config change is two keys: cancel A, Open B, wait grace, expect `reclaim_dispose` A.

@@ -1,4 +1,4 @@
-package dbwrappers
+package reclaim
 
 import (
 	"context"
@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 )
-
-var tablesMu sync.Mutex
 
 const (
 	DefaultGrace = 10 * time.Second
@@ -20,16 +18,16 @@ const (
 	MsgDispose = "reclaim_dispose"
 )
 
-// Table is keyed lease+storage. Define it in the same package as T (Yaegi).
-type Table[T any] struct {
+// Table is keyed lease+storage. Values are any; the caller type-asserts.
+type Table struct {
 	mu     sync.Mutex
 	grace  time.Duration
 	logger *slog.Logger
-	items  map[string]*slot[T]
+	items  map[string]*slot
 }
 
-type slot[T any] struct {
-	value      T
+type slot struct {
+	value      any
 	dispose    func()
 	holders    map[uint64]struct{}
 	nextID     uint64
@@ -37,25 +35,24 @@ type slot[T any] struct {
 }
 
 // NewTable returns a table. grace <= 0 uses DefaultGrace. A nil logger uses slog.Default.
-func NewTable[T any](grace time.Duration, logger *slog.Logger) *Table[T] {
+func NewTable(grace time.Duration, logger *slog.Logger) *Table {
 	if grace <= 0 {
 		grace = DefaultGrace
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Table[T]{
+	return &Table{
 		grace:  grace,
 		logger: logger,
-		items:  map[string]*slot[T]{},
+		items:  map[string]*slot{},
 	}
 }
 
 // Open returns the value for key, creating it once, and binds ctx as a holder.
-func (t *Table[T]) Open(ctx context.Context, key string, create func() (T, error), dispose func(T)) (T, error) {
-	var zero T
+func (t *Table) Open(ctx context.Context, key string, create func() (any, error), dispose func(any)) (any, error) {
 	if t == nil {
-		return zero, fmt.Errorf("reclaim: open %q: nil table", key)
+		return nil, fmt.Errorf("reclaim: open %q: nil table", key)
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -72,7 +69,7 @@ func (t *Table[T]) Open(ctx context.Context, key string, create func() (T, error
 
 	v, err := create()
 	if err != nil {
-		return zero, err
+		return nil, err
 	}
 
 	t.mu.Lock()
@@ -86,7 +83,7 @@ func (t *Table[T]) Open(ctx context.Context, key string, create func() (T, error
 		go t.watch(key, id, ctx)
 		return exist, nil
 	}
-	e := &slot[T]{
+	e := &slot{
 		value:   v,
 		holders: map[uint64]struct{}{},
 	}
@@ -103,7 +100,7 @@ func (t *Table[T]) Open(ctx context.Context, key string, create func() (T, error
 	return v, nil
 }
 
-func (t *Table[T]) bindLocked(key string, e *slot[T]) uint64 {
+func (t *Table) bindLocked(key string, e *slot) uint64 {
 	reclaimed := false
 	if e.graceTimer != nil {
 		e.graceTimer.Stop()
@@ -119,12 +116,12 @@ func (t *Table[T]) bindLocked(key string, e *slot[T]) uint64 {
 	return e.nextID
 }
 
-func (t *Table[T]) watch(key string, id uint64, ctx context.Context) {
+func (t *Table) watch(key string, id uint64, ctx context.Context) {
 	<-ctx.Done()
 	t.drop(key, id)
 }
 
-func (t *Table[T]) drop(key string, id uint64) {
+func (t *Table) drop(key string, id uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	e, ok := t.items[key]
@@ -139,7 +136,7 @@ func (t *Table[T]) drop(key string, id uint64) {
 	e.graceTimer = time.AfterFunc(t.grace, func() { t.fire(key) })
 }
 
-func (t *Table[T]) fire(key string) {
+func (t *Table) fire(key string) {
 	t.mu.Lock()
 	e, ok := t.items[key]
 	if !ok || len(e.holders) > 0 {
@@ -156,13 +153,13 @@ func (t *Table[T]) fire(key string) {
 }
 
 // Reset disposes every incarnation. Tests only.
-func (t *Table[T]) Reset() {
+func (t *Table) Reset() {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	items := t.items
-	t.items = map[string]*slot[T]{}
+	t.items = map[string]*slot{}
 	t.mu.Unlock()
 	for _, e := range items {
 		if e.graceTimer != nil {

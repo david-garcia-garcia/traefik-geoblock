@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
 type recHandler struct {
@@ -70,11 +71,7 @@ func hasSubseq(got [][2]string, want [][2]string) bool {
 func useShortLeases(t *testing.T) *recHandler {
 	t.Helper()
 	h := &recHandler{}
-	lg := slog.New(h)
-	tablesMu.Lock()
-	bins = NewTable[*BIN](25*time.Millisecond, lg)
-	mmdbs = NewTable[*MMDB](25*time.Millisecond, lg)
-	tablesMu.Unlock()
+	ResetWith(25*time.Millisecond, slog.New(h))
 	return h
 }
 
@@ -165,8 +162,8 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 		},
 		MinAge: 365 * 24 * time.Hour,
 	}
-	key1 := configHash(cfg1)
-	key2 := configHash(cfg2)
+	key1 := binKey(cfg1)
+	key2 := binKey(cfg2)
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	h1, err := OpenBIN(ctx1, cfg1, testLogger())
 	if err != nil {
@@ -191,11 +188,11 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 		t.Fatalf("H2 lookup: %+v %v", rec, err)
 	}
 	ev := h.events()
-	if !hasSubseq(ev, [][2]string{{MsgPut, key1}, {MsgOrphan, key1}, {MsgDispose, key1}}) ||
-		!hasEvent(ev, MsgPut, key2) {
+	if !hasSubseq(ev, [][2]string{{reclaim.MsgPut, key1}, {reclaim.MsgOrphan, key1}, {reclaim.MsgDispose, key1}}) ||
+		!hasEvent(ev, reclaim.MsgPut, key2) {
 		t.Fatalf("events: %+v keys %s %s", ev, key1, key2)
 	}
-	if hasEvent(ev, MsgDispose, key2) {
+	if hasEvent(ev, reclaim.MsgDispose, key2) {
 		t.Fatal("H2 must not dispose")
 	}
 }
@@ -277,8 +274,8 @@ func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 		},
 		MinAge: 365 * 24 * time.Hour,
 	}
-	key1 := configHash(cfg1)
-	key2 := configHash(cfg2)
+	key1 := mmdbKey(cfg1)
+	key2 := mmdbKey(cfg2)
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	h1, err := OpenMMDB(ctx1, cfg1, testLogger())
 	if err != nil {
@@ -305,11 +302,11 @@ func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 		t.Fatalf("H2 lookup: %+v %v", rec, err)
 	}
 	ev := h.events()
-	if !hasSubseq(ev, [][2]string{{MsgPut, key1}, {MsgOrphan, key1}, {MsgDispose, key1}}) ||
-		!hasEvent(ev, MsgPut, key2) {
+	if !hasSubseq(ev, [][2]string{{reclaim.MsgPut, key1}, {reclaim.MsgOrphan, key1}, {reclaim.MsgDispose, key1}}) ||
+		!hasEvent(ev, reclaim.MsgPut, key2) {
 		t.Fatalf("events: %+v", ev)
 	}
-	if hasEvent(ev, MsgDispose, key2) {
+	if hasEvent(ev, reclaim.MsgDispose, key2) {
 		t.Fatal("H2 must not dispose")
 	}
 }

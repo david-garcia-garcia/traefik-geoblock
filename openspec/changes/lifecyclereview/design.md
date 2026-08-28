@@ -2,32 +2,30 @@
 
 See proposal.md Why. Measured on `traefik:v3.7.11`: `CreateRouters` cancels one factory context, then `New` again (~1 ms). Vendor `Close` returns nil. BIN hot-swap 10s delay is a different race (unsynchronized `Lookup`); leave it.
 
-Yaegi v0.16.1: `*reclaim.Table[*BIN]` named in another package panics (`nodeType2`). Alias and embed of that type panic too. Same-package `Table[T]` + `var bins *Table[*BIN]` loads. `map[string]any` across packages also loads; we still store `T`.
+Yaegi v0.16.1: `*reclaim.Table[*BIN]` named in another package panics (`nodeType2`). Alias and embed of that type panic too. A non-generic table of `any` in another package plus a type-assert in the caller loads and runs.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Generic lease+storage `Table[T]` defined in the package that owns `T`.
+- Reusable lease+storage `Table` in `pkg/reclaim` (stdlib, stores `any`). Process singleton (`Default` / `Open`).
 - Wrappers bind `New` ctx; unreclaimed hash disposed after 10s grace.
-- Copy `table.go` into another package to reuse.
+- Callers type-assert. Keys for BIN and MMDB are prefixed on the one table.
 
 **Non-Goals:**
 
 - Drop BIN hot-swap delayed close.
 - OOTB LITE defaults or README.
-- A separate Go module. Cross-package `Table[*T]` (Yaegi).
+- Cross-package generic `Table[*T]` (Yaegi).
 
 ## Decisions
 
-1. **`Table[T]` in `pkg/dbwrappers`.**
-   `NewTable[T](grace, logger)`, `Open(ctx, key, create, dispose)`. First `Open` creates and stores `T`. Later `Open` (live or grace) returns the stored value and binds ctx. Last ctx Done starts grace; fire runs dispose once.
-   Alternative: `pkg/reclaim.Set` + caller maps — rejected; two owners.
-   Alternative: `pkg/reclaim.Table[T]` imported by dbwrappers — rejected; Yaegi panic.
-   Alternative: alias/embed of `reclaim.Table[*BIN]` — rejected; same panic.
+1. **`pkg/reclaim.Table` stores `any`.**
+   `NewTable(grace, logger)`, `Open(ctx, key, create, dispose)`. First `Open` creates and stores the value. Later `Open` (live or grace) returns the stored value and binds ctx. Last ctx Done starts grace; fire runs dispose once.
+   Alternative: `Table[T]` in `pkg/dbwrappers` — rejected; not reusable across packages.
+   Alternative: `pkg/reclaim.Table[T]` imported as `Table[*BIN]` — rejected; Yaegi panic.
 
-2. **`var bins *Table[*BIN]` and `var mmdbs *Table[*MMDB]`.** Same package as the type arguments. `InstanceLock` + `binByKey` go away.
-   Alternative: `any` map in another package — works on this host; rejected so the table stays typed.
+2. **One process table.** `reclaim.Default()` / `reclaim.Open`. `OpenBIN` / `OpenMMDB` prefix keys (`bin:`, `mmdb:`) and assert. `InstanceLock` + `binByKey` stay gone.
 
 3. **Set of contexts, not a refcount integer alone.**
    Each `Open` watches that `ctx.Done()`. Two routers, same hash, same generation: two binds, one cancel parent, grace starts once.
@@ -36,14 +34,14 @@ Yaegi v0.16.1: `*reclaim.Table[*BIN]` named in another package panics (`nodeType
 
 5. **Default grace 10s.** Tests use a short grace.
 
-6. **Usage packet `std_go_reclaim.md`:** copy `table.go` into the package that owns `T`.
+6. **Usage packet `std_go_reclaim.md`:** import `pkg/reclaim`; assert in the owner package.
 
 7. **Lifecycle logs.** Same `reclaim_*` msg constants + `key`. Info: put, dispose. Debug: bind, orphan, reclaim.
 
 ## Risks / Trade-offs
 
 - [Slow Traefik apply > grace] → dispose then recreate. Mitigation: 10s vs ~1 ms measured.
-- [Copy drift] → accepted. The file must live next to `T`.
+- [Wrong assert] → `Open*` fails closed if the stored value is not `*BIN` / `*MMDB`.
 - [Yaegi + extra goroutine per Open] → one watch per `New`. Acceptable.
 
 ## Migration Plan
@@ -54,4 +52,4 @@ Yaegi v0.16.1: `*reclaim.Table[*BIN]` named in another package panics (`nodeType
 
 ## Open Questions
 
-None. `Table[T]` in the owner package. Grace 10s stays.
+None. `any` table in `pkg/reclaim`. Grace 10s stays.

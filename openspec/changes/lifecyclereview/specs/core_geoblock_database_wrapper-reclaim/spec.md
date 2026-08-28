@@ -5,7 +5,7 @@ Binds each format-wrapper singleton (one open BIN or MMDB file and its keep-curr
 ## ADDED Requirements
 
 ### Requirement: Wrapper open receives the New context
-Opening a BIN or MMDB wrapper SHALL take the context passed to plugin `New`. The plugin MUST pass that context through the provider constructor into the wrapper open. The wrapper MUST open that hash on `Table[*BIN]` / `Table[*MMDB]` (same package) with a dispose that stops the keep-current loop and closes the open file.
+Opening a BIN or MMDB wrapper SHALL take the context passed to plugin `New`. The plugin MUST pass that context through the provider constructor into the wrapper open. The wrapper MUST open that hash on the process `reclaim` table (`any`, caller asserts `*BIN` / `*MMDB`) with a dispose that stops the keep-current loop and closes the open file. BIN and MMDB keys SHALL be prefixed so they do not collide.
 
 #### Scenario: New context reaches the wrapper
 - **WHEN** plugin `New` is invoked with a context

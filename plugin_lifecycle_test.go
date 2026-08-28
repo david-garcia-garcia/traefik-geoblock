@@ -13,6 +13,7 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
 type lifecycleLog struct {
@@ -63,7 +64,7 @@ func putKeys(ev [][2]string) []string {
 	var keys []string
 	seen := map[string]bool{}
 	for _, e := range ev {
-		if e[0] == dbwrappers.MsgPut && !seen[e[1]] {
+		if e[0] == reclaim.MsgPut && !seen[e[1]] {
 			seen[e[1]] = true
 			keys = append(keys, e[1])
 		}
@@ -175,13 +176,13 @@ func TestNew_ContextBindsWrapper(t *testing.T) {
 	if len(keys) == 0 {
 		t.Fatalf("expected wrapper stored, got %+v", ev)
 	}
-	if !hasSubseq(ev, [][2]string{{dbwrappers.MsgPut, keys[0]}, {dbwrappers.MsgBind, keys[0]}}) {
+	if !hasSubseq(ev, [][2]string{{reclaim.MsgPut, keys[0]}, {reclaim.MsgBind, keys[0]}}) {
 		t.Fatalf("expected put+bind, got %+v", ev)
 	}
 	cancel()
 	time.Sleep(80 * time.Millisecond)
 	requireLookupClosed(t, p)
-	if countMsg(h.events(), dbwrappers.MsgDispose) == 0 {
+	if countMsg(h.events(), reclaim.MsgDispose) == 0 {
 		t.Fatalf("expected dispose after grace, got %+v", h.events())
 	}
 }
@@ -196,7 +197,7 @@ func TestNew_SameHashReclaimAfterGenerationCancel(t *testing.T) {
 	b := mustPlugin(t, gen, cfg)
 	requireLookupUS(t, a)
 	requireLookupUS(t, b)
-	puts := countMsg(h.events(), dbwrappers.MsgPut)
+	puts := countMsg(h.events(), reclaim.MsgPut)
 	cancel()
 	time.Sleep(15 * time.Millisecond)
 	next, cancelNext := context.WithCancel(context.Background())
@@ -206,13 +207,13 @@ func TestNew_SameHashReclaimAfterGenerationCancel(t *testing.T) {
 	time.Sleep(80 * time.Millisecond)
 	requireLookupUS(t, c)
 	ev := h.events()
-	if countMsg(ev, dbwrappers.MsgPut) != puts {
-		t.Fatalf("second keep-current must not create, puts before=%d after=%d ev=%+v", puts, countMsg(ev, dbwrappers.MsgPut), ev)
+	if countMsg(ev, reclaim.MsgPut) != puts {
+		t.Fatalf("second keep-current must not create, puts before=%d after=%d ev=%+v", puts, countMsg(ev, reclaim.MsgPut), ev)
 	}
-	if countMsg(ev, dbwrappers.MsgReclaim) == 0 {
+	if countMsg(ev, reclaim.MsgReclaim) == 0 {
 		t.Fatalf("expected reclaim, got %+v", ev)
 	}
-	if countMsg(ev, dbwrappers.MsgDispose) != 0 {
+	if countMsg(ev, reclaim.MsgDispose) != 0 {
 		t.Fatalf("reclaim must not dispose, got %+v", ev)
 	}
 }
@@ -228,15 +229,15 @@ func TestNew_UnreclaimedHashDisposesAfterGrace(t *testing.T) {
 	cancel()
 	time.Sleep(80 * time.Millisecond)
 	requireLookupClosed(t, p)
-	if countMsg(h.events(), dbwrappers.MsgDispose) == 0 {
+	if countMsg(h.events(), reclaim.MsgDispose) == 0 {
 		t.Fatalf("expected dispose, got %+v", h.events())
 	}
-	puts := countMsg(h.events(), dbwrappers.MsgPut)
+	puts := countMsg(h.events(), reclaim.MsgPut)
 	next, cancelNext := context.WithCancel(context.Background())
 	defer cancelNext()
 	again := mustPlugin(t, next, cfg)
 	requireLookupUS(t, again)
-	if countMsg(h.events(), dbwrappers.MsgPut) <= puts {
+	if countMsg(h.events(), reclaim.MsgPut) <= puts {
 		t.Fatalf("later open must create a new wrapper, ev=%+v", h.events())
 	}
 }
@@ -282,12 +283,12 @@ func TestNew_HashChangeDisposesOld(t *testing.T) {
 	ev := h.events()
 	var disposedOld bool
 	for _, key := range first {
-		if hasEvent(ev, dbwrappers.MsgDispose, key) {
+		if hasEvent(ev, reclaim.MsgDispose, key) {
 			disposedOld = true
 			if !hasSubseq(ev, [][2]string{
-				{dbwrappers.MsgPut, key},
-				{dbwrappers.MsgOrphan, key},
-				{dbwrappers.MsgDispose, key},
+				{reclaim.MsgPut, key},
+				{reclaim.MsgOrphan, key},
+				{reclaim.MsgDispose, key},
 			}) {
 				t.Fatalf("H1 sequence: %+v key %s", ev, key)
 			}
@@ -308,7 +309,7 @@ func TestNew_HashChangeDisposesOld(t *testing.T) {
 				break
 			}
 		}
-		if !seen && hasEvent(ev, dbwrappers.MsgDispose, key) {
+		if !seen && hasEvent(ev, reclaim.MsgDispose, key) {
 			t.Fatalf("H2 must not dispose, key %s ev=%+v", key, ev)
 		}
 	}
@@ -319,7 +320,7 @@ func TestNew_IPinfoSameHashReclaimAfterGenerationCancel(t *testing.T) {
 	cfg := lifecycleIPinfo(ipinfoFilePath, tickerURL(t), t.TempDir())
 	gen, cancel := context.WithCancel(context.Background())
 	_ = mustPlugin(t, gen, cfg)
-	puts := countMsg(h.events(), dbwrappers.MsgPut)
+	puts := countMsg(h.events(), reclaim.MsgPut)
 	if puts != 1 {
 		t.Fatalf("expected one MMDB put, got %d ev=%+v", puts, h.events())
 	}
@@ -332,10 +333,10 @@ func TestNew_IPinfoSameHashReclaimAfterGenerationCancel(t *testing.T) {
 	time.Sleep(80 * time.Millisecond)
 	requireLookupUS(t, p)
 	ev := h.events()
-	if countMsg(ev, dbwrappers.MsgPut) != 1 {
+	if countMsg(ev, reclaim.MsgPut) != 1 {
 		t.Fatalf("second keep-current must not create, ev=%+v", ev)
 	}
-	if countMsg(ev, dbwrappers.MsgReclaim) == 0 || countMsg(ev, dbwrappers.MsgDispose) != 0 {
+	if countMsg(ev, reclaim.MsgReclaim) == 0 || countMsg(ev, reclaim.MsgDispose) != 0 {
 		t.Fatalf("expected reclaim and no dispose, ev=%+v", ev)
 	}
 }
