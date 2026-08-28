@@ -11,9 +11,7 @@ import (
 
 	"log/slog"
 
-	"github.com/oschwald/maxminddb-golang"
-
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbdownload"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
@@ -115,13 +113,12 @@ func TestNew_EmptyPathFindsBundled(t *testing.T) {
 	}
 }
 
-func TestNew_AutoUpdateWithoutTokenUsesSeed(t *testing.T) {
+func TestNew_EmptyMapUsesSeed(t *testing.T) {
 	resetFactories()
 	t.Cleanup(resetFactories)
 
 	p, err := New(DatabaseConfig{
 		DatabaseFilePath:      testMMDB(t),
-		DatabaseAutoUpdate:    true,
 		DatabaseAutoUpdateDir: t.TempDir(),
 	}, testLogger())
 	if err != nil {
@@ -129,20 +126,7 @@ func TestNew_AutoUpdateWithoutTokenUsesSeed(t *testing.T) {
 	}
 	rec, err := p.Lookup("8.8.8.8")
 	if err != nil || rec.Country != "US" {
-		t.Fatalf("seed lookup after auto-update-without-token: rec=%+v err=%v", rec, err)
-	}
-}
-
-func TestNew_AutoUpdateRequiresDir(t *testing.T) {
-	resetFactories()
-	t.Cleanup(resetFactories)
-
-	_, err := New(DatabaseConfig{
-		DatabaseFilePath:   testMMDB(t),
-		DatabaseAutoUpdate: true,
-	}, testLogger())
-	if err == nil {
-		t.Fatal("expected error when auto-update is on without dir")
+		t.Fatalf("seed lookup without download URL: rec=%+v err=%v", rec, err)
 	}
 }
 
@@ -164,118 +148,52 @@ func TestNew_Singleton(t *testing.T) {
 	}
 }
 
-func TestPackageCode(t *testing.T) {
-	if fileNameForCode("") != DefaultFileName || fileNameForCode("LITE") != "ipinfo_lite.mmdb" {
-		t.Fatalf("lite filename: %s %s", fileNameForCode(""), fileNameForCode("LITE"))
-	}
-	if fileNameForCode("core") != "ipinfo_core.mmdb" || fileNameForCode("plus") != "ipinfo_plus.mmdb" {
-		t.Fatal("core/plus filenames")
-	}
-	if knownPackageCode("nope") {
-		t.Fatal("unknown code should be rejected")
-	}
-}
-
-func TestNew_UnknownCode(t *testing.T) {
-	resetFactories()
-	t.Cleanup(resetFactories)
-	_, err := New(DatabaseConfig{DatabaseFilePath: testMMDB(t), DatabaseAutoUpdateCode: "free"}, testLogger())
-	if err == nil {
-		t.Fatal("expected error for unknown package code")
-	}
-}
-
-func TestPackageDownloadURL(t *testing.T) {
-	if got := packageDownloadURL("", "lite"); got != "" {
-		t.Errorf("empty token: got %q", got)
-	}
-	got := packageDownloadURL("secret", "core")
-	if !strings.Contains(got, "ipinfo_core.mmdb") || !strings.Contains(got, "token=secret") {
-		t.Errorf("url: %s", got)
-	}
-}
-
-func TestFindLatestDatabase(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"20230101_ipinfo_lite.mmdb", "20230301_ipinfo_lite.mmdb", "20230401_ipinfo_core.mmdb", "skip.mmdb"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	latest, err := findLatestDatabase(dir, "lite")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasSuffix(latest, "20230301_ipinfo_lite.mmdb") {
-		t.Errorf("latest lite: %s", latest)
-	}
-	core, err := findLatestDatabase(dir, "core")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasSuffix(core, "20230401_ipinfo_core.mmdb") {
-		t.Errorf("latest core: %s", core)
-	}
-}
-
-func TestDownloadAndUpdateDatabase_HTTP(t *testing.T) {
+func TestDownloadThroughComponent_HTTP(t *testing.T) {
 	src, err := os.ReadFile(testMMDB(t))
 	if err != nil {
 		t.Fatal(err)
 	}
+	var gotToken string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("token") != "t" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
+		gotToken = r.URL.Query().Get("token")
 		_, _ = w.Write(src)
 	}))
 	t.Cleanup(srv.Close)
 
-	prev := getDownloadURL
-	getDownloadURL = func(token, code string) string {
-		return srv.URL + "?token=" + token
-	}
-	t.Cleanup(func() { getDownloadURL = prev })
-
 	dir := t.TempDir()
-	path, err := downloadAndUpdateDatabase(DatabaseConfig{
-		DatabaseAutoUpdateDir:   dir,
-		DatabaseAutoUpdateToken: "t",
-	}, testLogger())
+	dl := dbdownload.Config{
+		Key:          "lite",
+		URL:          srv.URL + "/ipinfo_lite.mmdb?token=t",
+		DatabaseType: dbdownload.TypeMMDB,
+		Archive:      dbdownload.ArchiveNone,
+		Dir:          dir,
+	}
+	path, err := dbdownload.Update(dl, testLogger())
 	if err != nil {
 		t.Fatalf("download: %v", err)
 	}
-	reader, err := maxminddb.FromBytes(src)
-	if err != nil {
-		t.Fatalf("bundled MMDB: %v", err)
+	if gotToken != "t" {
+		t.Errorf("token query: %q", gotToken)
 	}
-	wantDate, err := dbutils.MMDBBuildDate(reader.Metadata.BuildEpoch)
-	_ = reader.Close()
-	if err != nil {
-		t.Fatalf("build_epoch: %v", err)
-	}
-	wantName := wantDate.Format("20060102") + "_" + fileNameForCode("")
-	if !strings.HasSuffix(path, wantName) {
-		t.Errorf("dated name: got %s, want suffix %s", path, wantName)
+	if !strings.HasSuffix(path, "_lite.mmdb") {
+		t.Errorf("dated name: %s", path)
 	}
 
 	resetFactories()
 	t.Cleanup(resetFactories)
-	p, err := New(DatabaseConfig{DatabaseFilePath: path}, testLogger())
+	p, err := New(DatabaseConfig{
+		DatabaseFilePath:      testMMDB(t),
+		DatabaseAutoUpdateDir: dir,
+		Download: dbdownload.Config{
+			Key:          "lite",
+			DatabaseType: dbdownload.TypeMMDB,
+		},
+	}, testLogger())
 	if err != nil {
 		t.Fatalf("open downloaded: %v", err)
 	}
 	rec, err := p.Lookup("8.8.8.8")
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
-	}
-
-	_, err = downloadAndUpdateDatabase(DatabaseConfig{
-		DatabaseAutoUpdateDir:   dir,
-		DatabaseAutoUpdateToken: "",
-	}, testLogger())
-	if err == nil {
-		t.Fatal("expected error without token")
 	}
 }

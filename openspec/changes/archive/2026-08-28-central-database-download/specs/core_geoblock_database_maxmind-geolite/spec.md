@@ -1,8 +1,4 @@
-## Purpose
-
-Defines MaxMind GeoLite2 / GeoIP2 as a selectable geo database: GeoIP2 nested country lookup, a committed official dummy Country MMDB so plugin creation works without a download, and catalog-pointer auto-update as specified in `core_geoblock_database_url-download`.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: MaxMind settings are vendor-prefixed
 MaxMind-only settings SHALL live on Traefik Config as `maxmind_databaseFilePath` and `maxmind_download`. The plugin MUST pass those fields to the MaxMind provider only. HTTP download SHALL use the catalog entry named by `maxmind_download` and `databaseAutoUpdateDir` as specified in `core_geoblock_database_url-download`. MaxMind MUST NOT use IP2Location `file=` query codes or a vendor-built permalink from `accountId:licenseKey`.
@@ -23,13 +19,8 @@ When `maxmind_databaseFilePath` is empty, the MaxMind provider SHALL open the co
 - **WHEN** `maxmind_download` is `geolite` and `databaseAutoUpdateDir` contains a dated `YYYYMMDD_geolite` MMDB
 - **THEN** plugin creation opens that dated file instead of the bundled dummy
 
-### Requirement: GeoIP2 lookup maps nested country.iso_code
-For a public IP found in a GeoIP2 / GeoLite2 Country or City MMDB, the provider SHALL set country used for allow/block to nested `country.iso_code`. It SHALL NOT use IPinfo `country_code` tags. It SHALL use located `country`, not `registered_country`. Country name SHALL come from `country.names` English when present. Continent and city/region SHALL be filled when the file has those maps. ASN and ISP SHALL stay empty on a Country or City file. `requestHeaderEnrich` SHALL write every mapped header; an empty field SHALL be the string `null`.
+## REMOVED Requirements
 
-#### Scenario: Dummy Country test IP
-- **WHEN** the MaxMind provider looks up a documented dummy-fixture IP in `GeoIP2-Country-Test.mmdb`
-- **THEN** country used for allow/block is the ISO code stored under `country.iso_code`
-
-#### Scenario: Empty enrich fields are written as null
-- **WHEN** `requestHeaderEnrich` maps a header to `asn` and the open file is GeoLite2-Country or the dummy Country fixture
-- **THEN** that header is set to `null`
+### Requirement: MaxMind auto-update is official permalink + token
+**Reason**: Vendor permalink + `accountId:licenseKey` builders are replaced by `databaseDownloads` plus `maxmind_download`.
+**Migration**: Add a catalog entry (`url` = `https://download.maxmind.com/geoip/databases/{EDITION}/download?suffix=tar.gz`, `databaseType` = `mmdb`, `archive` = `tar.gz`, `headers.Authorization` = HTTP Basic), set `maxmind_download` to that key, and set `databaseAutoUpdateDir`.

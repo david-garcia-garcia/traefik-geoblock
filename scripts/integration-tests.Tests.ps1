@@ -580,23 +580,32 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         # only (never dumps logs — download URLs must not appear in test output).
 
         It "Should download and hot-swap the IP2Location token package" -Skip:(-not $script:HasIP2LocationToken) {
-            $code = $env:IP2LOCATION_DATABASE_CODE
-            if ([string]::IsNullOrWhiteSpace($code)) { $code = "DB8BINIPV6" }
-            $downloaded = Wait-TraefikPluginLog -Pattern "database updated successfully.*$code" -TimeoutSeconds 180
+            $created = Wait-TraefikPluginLog -Pattern "created new database factory" -TimeoutSeconds 60
+            $created | Should -BeTrue -Because "a new geo factory should be created for the token middleware"
+            $downloaded = Wait-TraefikPluginLog -Pattern "database updated successfully.*_geo.BIN" -TimeoutSeconds 180
             if (-not $downloaded) {
+                $zipFail = Wait-TraefikPluginLog -Pattern "failed to open zip file" -TimeoutSeconds 5
+                $zipFail | Should -BeFalse -Because "a 200 HTML/error body is not a zip (log has file=/content_type/prefix; token is not logged)"
                 $downloaded = Wait-TraefikPluginLog -Pattern "the available IP2Location database is not newer" -TimeoutSeconds 15
             }
             $downloaded | Should -BeTrue -Because "Traefik logs should show a token download or an already-current dated file (token value is not logged)"
             $swapped = Wait-TraefikPluginLog -Pattern "performHotSwap: database hot-swapped successfully" -TimeoutSeconds 60
             $swapped | Should -BeTrue -Because "Traefik logs should show a hot-swap after the token download"
-            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
-            $result = Invoke-TestRequest -Uri "$script:BaseUrl/tokendb" -Headers $headers
-            $result.StatusCode | Should -Be 403
         }
 
         It "Should download ASN LITE" -Skip:(-not $script:HasIP2LocationToken) {
-            $asn = Wait-TraefikPluginLog -Pattern "database updated successfully.*DBASNLITEBINIPV6" -TimeoutSeconds 600
+            $asn = Wait-TraefikPluginLog -Pattern "database updated successfully.*_asn.BIN" -TimeoutSeconds 600
             $asn | Should -BeTrue -Because "Traefik logs should show the ASN LITE token download"
+        }
+
+        It "Should enrich DB8 region/city/isp and ASN on /tokendb" -Skip:(-not $script:HasIP2LocationToken) {
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" "$script:BaseUrl/tokendb") -join "`n"
+            $response | Should -Match "X-IP-Country:\s*US"
+            $response | Should -Match "X-Geo-Country:\s*US"
+            $response | Should -Not -Match "X-Geo-Region:\s*null"
+            $response | Should -Not -Match "X-Geo-City:\s*null"
+            $response | Should -Not -Match "X-Geo-Isp:\s*null"
+            $response | Should -Not -Match "X-Geo-Asn:\s*null"
         }
 
         It "Should download and open a current IPinfo Lite MMDB" -Skip:(-not $script:HasIPinfoToken) {

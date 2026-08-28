@@ -8,32 +8,32 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"log/slog"
 
 	ip2loc "github.com/ip2location/ip2location-go/v9"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbdownload"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
-// DatabaseConfig is IP2Location-only settings (BIN path and auto-update).
-type DatabaseConfig struct {
-	DatabaseFilePath        string
-	DatabaseAutoUpdate      bool
-	DatabaseAutoUpdateDir   string
-	DatabaseAutoUpdateToken string
-	DatabaseAutoUpdateCode  string
+// DownloadMinAge is how long a dated BIN stays current before GET.
+const DownloadMinAge = 30 * 24 * time.Hour
 
-	// ASN LITE is a second BIN. Path is optional; code defaults to DefaultASNDatabaseCode.
-	// AsnDatabaseAutoUpdate is opt-in and only downloads when a token is set
-	// (ASN LITE is not on the public lite CDN).
-	AsnDatabaseFilePath       string
-	AsnDatabaseAutoUpdate     bool
-	AsnDatabaseAutoUpdateCode string
+// DatabaseConfig is IP2Location seed path plus one download component config.
+type DatabaseConfig struct {
+	DatabaseFilePath      string
+	DatabaseAutoUpdateDir string
+	Download              dbdownload.Config
+	// BinRole is geo vs asn for the seed filename and temp copy. Not a catalog key.
+	BinRole string
+
+	// ASN fields are used only on the parent config passed to New.
+	AsnDatabaseFilePath string
+	AsnDownload         dbdownload.Config
 
 	// AllowMissing lets initialize succeed when the BIN is not on disk yet
 	// (ASN first start: download lands later, then hot-swap).
@@ -132,9 +132,7 @@ type DatabaseFactory struct {
 	wrapper            *DatabaseWrapper
 	currentLocalDbCopy string
 	sourceDbPath       string // Track the original database that was used for the current local copy
-	updateTicker       *time.Ticker
-	stopChan           chan struct{}
-	updateDone         sync.WaitGroup
+	download           *dbdownload.Slot
 	factoryID          string // Unique identifier for this factory instance
 }
 
@@ -148,7 +146,6 @@ func NewDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseF
 		config:    config,
 		logger:    wrappedLogger,
 		wrapper:   &DatabaseWrapper{},
-		stopChan:  make(chan struct{}),
 		factoryID: factoryID,
 	}
 
@@ -157,8 +154,7 @@ func NewDatabaseFactory(config *DatabaseConfig, logger *slog.Logger) (*DatabaseF
 		return nil, fmt.Errorf("NewDatabaseFactory: failed to initialize database factory: %w", err)
 	}
 
-	// Start auto-update ticker if enabled
-	if config.DatabaseAutoUpdate {
+	if strings.TrimSpace(config.Download.URL) != "" {
 		factory.startAutoUpdate()
 	}
 
@@ -180,21 +176,28 @@ func (df *DatabaseFactory) GetFactoryID() string {
 	return df.factoryID
 }
 
+func (df *DatabaseFactory) binRole() string {
+	if df.config.BinRole != "" {
+		return df.config.BinRole
+	}
+	return dbutils.SlotGeo
+}
+
 // Close shuts down the factory and cleans up resources
 func (df *DatabaseFactory) Close() error {
-	// Stop auto-update ticker
-	if df.updateTicker != nil {
-		df.updateTicker.Stop()
-		close(df.stopChan)
-		df.updateDone.Wait()
+	if df.download != nil {
+		df.download.Stop()
 	}
 
-	// Close current database
 	if df.wrapper != nil {
 		df.wrapper.Close()
 	}
 
 	return nil
+}
+
+func (df *DatabaseFactory) downloadCfg() dbdownload.Config {
+	return dbdownload.WithDefaults(df.config.Download, df.config.DatabaseAutoUpdateDir, dbdownload.TypeBIN, DownloadMinAge)
 }
 
 // initialize sets up the initial database using the best available version.
@@ -204,7 +207,7 @@ func (df *DatabaseFactory) Close() error {
 func (df *DatabaseFactory) initialize() error {
 	var targetPath string
 
-	if df.config.DatabaseAutoUpdate {
+	if df.config.DatabaseAutoUpdateDir != "" {
 		updatedPath, err := df.handleAutoUpdateInit("")
 		if err != nil {
 			df.logger.Warn("auto-update initialization failed, using configured database path", "error", err)
@@ -273,7 +276,7 @@ func (df *DatabaseFactory) initialize() error {
 // resolveDatabasePath determines the best database path based on configuration
 func (df *DatabaseFactory) resolveDatabasePath() (string, error) {
 	databasePath := df.config.DatabaseFilePath
-	defaultName := defaultFileNameForCode(df.config.DatabaseAutoUpdateCode)
+	defaultName := defaultFileNameForSlot(df.binRole())
 
 	if df.config.AllowMissing {
 		if databasePath != "" && fileutils.Exists(databasePath) {
@@ -293,14 +296,16 @@ func (df *DatabaseFactory) resolveDatabasePath() (string, error) {
 // handleAutoUpdateInit finds the newest available database for initialization (no downloads)
 func (df *DatabaseFactory) handleAutoUpdateInit(fallbackPath string) (string, error) {
 	if df.config.DatabaseAutoUpdateDir == "" {
-		return "", fmt.Errorf("DatabaseAutoUpdateDir must be specified when auto-update is enabled")
+		return fallbackPath, nil
 	}
 
-	// Try to find the latest database in the auto-update directory
-	latest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
+	key := df.config.Download.Key
+	if key == "" {
+		return fallbackPath, nil
+	}
+	latest, err := dbdownload.Latest(df.config.DatabaseAutoUpdateDir, key, dbdownload.TypeBIN)
 	if err != nil {
 		df.logger.Debug("failed to list auto-update dir", "error", err)
-		// Use fallback database directly for initialization
 		return fallbackPath, nil
 	}
 
@@ -321,8 +326,7 @@ func (df *DatabaseFactory) createLocalDatabaseCopy(sourcePath string) (string, e
 	// Always create unique timestamped copy with nanoseconds to guarantee uniqueness
 	now := time.Now()
 	timestamp := fmt.Sprintf("%s_%d", now.Format("20060102_150405"), now.Nanosecond())
-	code := defaultDatabaseCode(df.config.DatabaseAutoUpdateCode)
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("IP2LOCATION-LITE-%s.IPV6_%s.BIN", code, timestamp))
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("IP2LOCATION-%s_%s.BIN", df.binRole(), timestamp))
 
 	// Copy to temp location
 	if err := fileutils.Copy(sourcePath, tmpFile, false); err != nil {
@@ -334,85 +338,21 @@ func (df *DatabaseFactory) createLocalDatabaseCopy(sourcePath string) (string, e
 	return tmpFile, nil
 }
 
-// startAutoUpdate starts the auto-update ticker
+// startAutoUpdate starts the shared download component.
 func (df *DatabaseFactory) startAutoUpdate() {
-	df.updateTicker = time.NewTicker(24 * time.Hour)
-	df.updateDone.Add(1)
-
-	go func() {
-		defer df.updateDone.Done()
-		df.logger.Debug("startAutoUpdate: starting auto-update ticker")
-
-		// Run first check immediately
-		df.checkAndUpdate()
-
-		for {
-			select {
-			case <-df.updateTicker.C:
-				df.checkAndUpdate()
-			case <-df.stopChan:
-				df.logger.Debug("startAutoUpdate: stopping auto-update ticker")
-				return
-			}
+	slot, err := dbdownload.Start(df.downloadCfg(), df.logger, func(path string) {
+		if path == "" || path == df.sourceDbPath {
+			return
 		}
-	}()
-}
-
-// checkAndUpdate checks if an update is needed and performs actual downloads/updates
-func (df *DatabaseFactory) checkAndUpdate() {
-	latest, latestErr := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
-	if latestErr != nil {
-		df.logger.Debug("checkAndUpdate: failed to list auto-update dir", "error", latestErr)
-		latest = ""
-	}
-
-	currentVersion := df.wrapper.GetVersion()
-	// Age skip only when this package code is already in the auto-update dir.
-	// An empty dir still downloads (token/paid code must not be skipped because the seed BIN is fresh).
-	if latest != "" && currentVersion != nil && time.Since(currentVersion.Date()) < 30*24*time.Hour {
-		df.logger.Debug("checkAndUpdate: database is recent, skipping update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
-		return
-	}
-	if currentVersion == nil {
-		df.logger.Info("checkAndUpdate: no database open yet, attempting download")
-	} else if latest == "" {
-		df.logger.Info("checkAndUpdate: no dated file for this package code, attempting download")
-	} else {
-		df.logger.Info("checkAndUpdate: database is old, attempting download update", "age", time.Since(currentVersion.Date()).Round(24*time.Hour))
-	}
-
-	// Attempt to download a newer version (actual download happens here)
-	updateCfg := &DatabaseConfig{
-		DatabaseAutoUpdateDir:   df.config.DatabaseAutoUpdateDir,
-		DatabaseAutoUpdateToken: df.config.DatabaseAutoUpdateToken,
-		DatabaseAutoUpdateCode:  df.config.DatabaseAutoUpdateCode,
-	}
-
-	if err := UpdateIfNeeded(latest, true, df.logger, updateCfg); err != nil {
-		df.logger.Error("checkAndUpdate: background database update failed", "error", err)
-		return
-	}
-
-	// Check if we got a new database
-	newLatest, err := findLatestDatabase(df.config.DatabaseAutoUpdateDir, df.config.DatabaseAutoUpdateCode)
+		if err := df.performHotSwap(path); err != nil {
+			df.logger.Error("failed to perform hot swap", "error", err)
+		}
+	})
 	if err != nil {
-		df.logger.Error("checkAndUpdate: failed to find latest database after update attempt", "error", err)
+		df.logger.Error("download slot", "error", err)
 		return
 	}
-
-	if newLatest == "" {
-		df.logger.Debug("checkAndUpdate: no new database found after update attempt")
-		return
-	}
-	if newLatest == latest && currentVersion != nil {
-		df.logger.Debug("checkAndUpdate: no new database found after update attempt")
-		return
-	}
-
-	// Perform hot swap
-	if err := df.performHotSwap(newLatest); err != nil {
-		df.logger.Error("checkAndUpdate: failed to perform hot swap", "error", err)
-	}
+	df.download = slot
 }
 
 // performHotSwap replaces the current database with a new one
@@ -473,12 +413,11 @@ func generateConfigHash(config *DatabaseConfig) string {
 	configBytes, err := json.Marshal(config)
 	if err != nil {
 		// Fallback to a simple key if marshaling fails
-		return fmt.Sprintf("%s_%v_%s_%s_%s",
+		return fmt.Sprintf("%s_%s_%s_%s",
 			config.DatabaseFilePath,
-			config.DatabaseAutoUpdate,
 			config.DatabaseAutoUpdateDir,
-			config.DatabaseAutoUpdateToken,
-			config.DatabaseAutoUpdateCode)
+			config.Download.URL,
+			config.Download.Key)
 	}
 
 	// Generate FNV hash

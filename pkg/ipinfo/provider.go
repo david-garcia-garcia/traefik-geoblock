@@ -9,24 +9,21 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
-	"time"
 
 	"log/slog"
 
 	"github.com/oschwald/maxminddb-golang"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbdownload"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
-// DatabaseConfig is IPinfo MMDB path, package code, and auto-update.
+// DatabaseConfig is IPinfo MMDB seed path plus one download component config.
 type DatabaseConfig struct {
-	DatabaseFilePath        string
-	DatabaseAutoUpdate      bool
-	DatabaseAutoUpdateDir   string
-	DatabaseAutoUpdateToken string
-	DatabaseAutoUpdateCode  string
+	DatabaseFilePath      string
+	DatabaseAutoUpdateDir string
+	Download              dbdownload.Config
 }
 
 // mmdbRecord is the union of Lite/Core/Plus fields we map onto Record.
@@ -50,8 +47,7 @@ type provider struct {
 	logger *slog.Logger
 	config DatabaseConfig
 
-	updateTicker *time.Ticker
-	stopChan     chan struct{}
+	download *dbdownload.Slot
 }
 
 var (
@@ -86,21 +82,8 @@ func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error
 
 func newProvider(config DatabaseConfig, logger *slog.Logger) (*provider, error) {
 	p := &provider{
-		logger:   logger,
-		config:   config,
-		stopChan: make(chan struct{}),
-	}
-
-	if !knownPackageCode(config.DatabaseAutoUpdateCode) {
-		return nil, fmt.Errorf("unsupported ipinfo_databaseAutoUpdateCode %q (lite, core, plus)", config.DatabaseAutoUpdateCode)
-	}
-
-	if config.DatabaseAutoUpdate && config.DatabaseAutoUpdateToken == "" {
-		logger.Error("ipinfo_databaseAutoUpdate is true but ipinfo_databaseAutoUpdateToken is empty; IPinfo download skipped (not anonymous)")
-	}
-
-	if config.DatabaseAutoUpdate && config.DatabaseAutoUpdateDir == "" {
-		return nil, fmt.Errorf("ipinfo_databaseAutoUpdateDir must be set when ipinfo_databaseAutoUpdate is true")
+		logger: logger,
+		config: config,
 	}
 
 	path, err := p.resolveInitPath()
@@ -111,19 +94,35 @@ func newProvider(config DatabaseConfig, logger *slog.Logger) (*provider, error) 
 		return nil, err
 	}
 
-	if p.canDownload() {
-		p.startAutoUpdate()
+	if err := p.startDownload(); err != nil {
+		return nil, err
 	}
 	return p, nil
 }
 
-func (p *provider) canDownload() bool {
-	return p.config.DatabaseAutoUpdate && p.config.DatabaseAutoUpdateToken != "" && p.config.DatabaseAutoUpdateDir != ""
+func (p *provider) downloadCfg() dbdownload.Config {
+	return dbdownload.WithDefaults(p.config.Download, p.config.DatabaseAutoUpdateDir, dbdownload.TypeMMDB, dbdownload.DefaultMinAge)
+}
+
+func (p *provider) startDownload() error {
+	slot, err := dbdownload.Start(p.downloadCfg(), p.logger, func(path string) {
+		if path == "" || path == p.path {
+			return
+		}
+		if err := p.open(path); err != nil {
+			p.logger.Error("failed to open updated IPinfo MMDB", "error", err)
+		}
+	})
+	if err != nil {
+		return err
+	}
+	p.download = slot
+	return nil
 }
 
 func (p *provider) resolveInitPath() (string, error) {
-	if p.config.DatabaseAutoUpdate {
-		latest, err := findLatestDatabase(p.config.DatabaseAutoUpdateDir, p.config.DatabaseAutoUpdateCode)
+	if p.config.DatabaseAutoUpdateDir != "" && p.config.Download.Key != "" {
+		latest, err := dbdownload.Latest(p.config.DatabaseAutoUpdateDir, p.config.Download.Key, dbdownload.TypeMMDB)
 		if err != nil {
 			p.logger.Debug("no IPinfo MMDB in auto-update dir", "error", err)
 		} else if latest != "" {
@@ -132,15 +131,15 @@ func (p *provider) resolveInitPath() (string, error) {
 		}
 	}
 
-	seed, err := resolveSeedPath(p.config.DatabaseFilePath, p.config.DatabaseAutoUpdateCode, p.logger)
+	seed, err := resolveSeedPath(p.config.DatabaseFilePath, p.logger)
 	if err != nil {
 		return "", err
 	}
 	return seed, nil
 }
 
-func resolveSeedPath(configured, code string, logger *slog.Logger) (string, error) {
-	name := fileNameForCode(code)
+func resolveSeedPath(configured string, logger *slog.Logger) (string, error) {
+	name := DefaultFileName
 	if configured != "" && fileutils.Exists(configured) {
 		return configured, nil
 	}
@@ -207,13 +206,8 @@ func (p *provider) Lookup(ip string) (dbprovider.Record, error) {
 }
 
 func (p *provider) Close() error {
-	if p.updateTicker != nil {
-		p.updateTicker.Stop()
-		select {
-		case <-p.stopChan:
-		default:
-			close(p.stopChan)
-		}
+	if p.download != nil {
+		p.download.Stop()
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -225,56 +219,13 @@ func (p *provider) Close() error {
 	return nil
 }
 
-func (p *provider) startAutoUpdate() {
-	p.updateTicker = time.NewTicker(24 * time.Hour)
-	go func() {
-		p.checkAndUpdate()
-		for {
-			select {
-			case <-p.updateTicker.C:
-				p.checkAndUpdate()
-			case <-p.stopChan:
-				return
-			}
-		}
-	}()
-}
-
-func (p *provider) checkAndUpdate() {
-	if !p.canDownload() {
-		return
-	}
-	latest, _ := findLatestDatabase(p.config.DatabaseAutoUpdateDir, p.config.DatabaseAutoUpdateCode)
-	if latest != "" {
-		if date, err := dbutils.GetDateFromName(latest); err == nil {
-			if time.Since(date) < 24*time.Hour {
-				p.logger.Debug("IPinfo MMDB is current", "path", latest)
-				return
-			}
-		}
-	}
-	path, err := downloadAndUpdateDatabase(p.config, p.logger)
-	if err != nil {
-		p.logger.Error("IPinfo database update failed", "error", err)
-		return
-	}
-	if path == "" || path == p.path {
-		return
-	}
-	if err := p.open(path); err != nil {
-		p.logger.Error("failed to open updated IPinfo MMDB", "error", err)
-	}
-}
-
 func configHash(cfg DatabaseConfig) string {
 	b, err := json.Marshal(cfg)
 	if err != nil {
-		return fmt.Sprintf("%s_%v_%s_%s_%s",
+		return fmt.Sprintf("%s_%s_%s",
 			cfg.DatabaseFilePath,
-			cfg.DatabaseAutoUpdate,
 			cfg.DatabaseAutoUpdateDir,
-			cfg.DatabaseAutoUpdateToken,
-			normalizeCode(cfg.DatabaseAutoUpdateCode))
+			cfg.Download.URL)
 	}
 	h := fnv.New64a()
 	_, _ = h.Write(b)

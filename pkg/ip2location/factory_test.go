@@ -8,11 +8,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbdownload"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
+func geoDownload(url string) dbdownload.Config {
+	return dbdownload.Config{
+		Key:          "geo",
+		URL:          url,
+		DatabaseType: dbdownload.TypeBIN,
+		Archive:      dbdownload.ArchiveZIP,
+	}
+}
+
+func geoKey() dbdownload.Config {
+	return dbdownload.Config{Key: "geo", DatabaseType: dbdownload.TypeBIN}
+}
+
 var testDBFile = filepath.Join("..", "..", "IP2LOCATION-LITE-DB1.IPV6.BIN")
+
+const liteDownloadURL = "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
 
 func TestDatabaseWrapper_BasicFunctionality(t *testing.T) {
 	// Cleanup factories before test
@@ -25,7 +41,6 @@ func TestDatabaseWrapper_BasicFunctionality(t *testing.T) {
 
 	config := &DatabaseConfig{
 		DatabaseFilePath:   testDBFile,
-		DatabaseAutoUpdate: false,
 	}
 
 	factory, err := NewDatabaseFactory(config, logger)
@@ -73,7 +88,6 @@ func TestDatabaseWrapper_Close(t *testing.T) {
 
 	config := &DatabaseConfig{
 		DatabaseFilePath:   testDBFile,
-		DatabaseAutoUpdate: false,
 	}
 
 	factory, err := NewDatabaseFactory(config, logger)
@@ -109,7 +123,6 @@ func TestGetDatabaseFactory_Singleton(t *testing.T) {
 
 	config := &DatabaseConfig{
 		DatabaseFilePath:   testDBFile,
-		DatabaseAutoUpdate: false,
 	}
 
 	// Get factory first time
@@ -132,7 +145,6 @@ func TestGetDatabaseFactory_Singleton(t *testing.T) {
 	// Test with different config
 	config2 := &DatabaseConfig{
 		DatabaseFilePath:   "./different-path.bin",
-		DatabaseAutoUpdate: false,
 	}
 
 	factory3, err := GetDatabaseFactory(config2, logger)
@@ -190,7 +202,7 @@ func TestDatabaseFactory_AutoUpdate(t *testing.T) {
 
 	// Copy the test database to the temp directory with a versioned name
 	oldDate := time.Now().AddDate(0, -2, 0).Format("20060102") // 2 months ago
-	versionedDbPath := filepath.Join(tmpDir, oldDate+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	versionedDbPath := filepath.Join(tmpDir, oldDate+"_geo.BIN")
 	if err := fileutils.Copy(testDBFile, versionedDbPath, true); err != nil {
 		t.Fatalf("Failed to copy test database: %v", err)
 	}
@@ -201,9 +213,9 @@ func TestDatabaseFactory_AutoUpdate(t *testing.T) {
 
 	config := &DatabaseConfig{
 		DatabaseFilePath:       testDBFile, // Add fallback database path
-		DatabaseAutoUpdate:     true,
-		DatabaseAutoUpdateDir:  tmpDir,
-		DatabaseAutoUpdateCode: "DB1",
+		DatabaseAutoUpdateDir: tmpDir,
+		Download:              geoKey(),
+		BinRole:               dbutils.SlotGeo,
 	}
 
 	factory, err := NewDatabaseFactory(config, logger)
@@ -229,7 +241,7 @@ func TestDatabaseFactory_AutoUpdate(t *testing.T) {
 
 	// Verify that the wrapper is using a local copy (path should contain timestamp)
 	dbPath := wrapper.GetPath()
-	if !strings.Contains(dbPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+	if !strings.Contains(dbPath, "IP2LOCATION-geo_") {
 		t.Errorf("Expected database path to be a timestamped local copy, got: %s", dbPath)
 	}
 }
@@ -253,8 +265,7 @@ func TestDatabaseFactory_Initialize_Errors(t *testing.T) {
 			name: "missing database file",
 			config: &DatabaseConfig{
 				DatabaseFilePath:   "./nonexistent.bin",
-				DatabaseAutoUpdate: false,
-			},
+					},
 			expectError: true,
 			errorText:   "database file not found",
 		},
@@ -262,7 +273,7 @@ func TestDatabaseFactory_Initialize_Errors(t *testing.T) {
 			name: "auto-update enabled but no directory",
 			config: &DatabaseConfig{
 				DatabaseFilePath:   testDBFile,
-				DatabaseAutoUpdate: true,
+				Download: geoDownload(liteDownloadURL),
 				// DatabaseAutoUpdateDir is missing
 			},
 			expectError: false, // Should succeed with fallback database
@@ -271,8 +282,7 @@ func TestDatabaseFactory_Initialize_Errors(t *testing.T) {
 			name: "invalid database file",
 			config: &DatabaseConfig{
 				DatabaseFilePath:   "./testdata/invalid.bin",
-				DatabaseAutoUpdate: false,
-			},
+					},
 			expectError: true,
 			errorText:   "database file not found",
 		},
@@ -310,17 +320,17 @@ func TestDatabaseFactory_AutoUpdateDirPreferredOverFilePath(t *testing.T) {
 	defer CleanupFactories()
 
 	tmpDir := t.TempDir()
-	versioned := filepath.Join(tmpDir, time.Now().Format("20060102")+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	versioned := filepath.Join(tmpDir, time.Now().Format("20060102")+"_geo.BIN")
 	if err := fileutils.Copy(testDBFile, versioned, true); err != nil {
 		t.Fatalf("copy: %v", err)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	factory, err := NewDatabaseFactory(&DatabaseConfig{
-		DatabaseFilePath:       "./nonexistent.bin",
-		DatabaseAutoUpdate:     true,
-		DatabaseAutoUpdateDir:  tmpDir,
-		DatabaseAutoUpdateCode: "DB1",
+		DatabaseFilePath:      "./nonexistent.bin",
+		DatabaseAutoUpdateDir: tmpDir,
+		Download:              geoKey(),
+		BinRole:               dbutils.SlotGeo,
 	}, logger)
 	if err != nil {
 		t.Fatalf("auto-update dir should be enough without a valid file path: %v", err)
@@ -348,7 +358,7 @@ func TestDatabaseFactory_AllowMissingNoFile(t *testing.T) {
 	}))
 
 	factory, err := NewDatabaseFactory(&DatabaseConfig{
-		DatabaseAutoUpdateCode: DefaultASNDatabaseCode,
+		BinRole: dbutils.SlotASN,
 		AllowMissing:           true,
 	}, logger)
 	if err != nil {
@@ -399,8 +409,8 @@ func TestDatabaseFactory_HotSwap(t *testing.T) {
 	oldDate := time.Now().AddDate(0, -2, 0).Format("20060102")
 	newDate := time.Now().Format("20060102")
 
-	oldDbPath := filepath.Join(tmpDir, oldDate+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
-	newDbPath := filepath.Join(tmpDir, newDate+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	oldDbPath := filepath.Join(tmpDir, oldDate+"_geo.BIN")
+	newDbPath := filepath.Join(tmpDir, newDate+"_geo.BIN")
 
 	if err := fileutils.Copy(testDBFile, oldDbPath, true); err != nil {
 		t.Fatalf("Failed to copy old database: %v", err)
@@ -415,9 +425,9 @@ func TestDatabaseFactory_HotSwap(t *testing.T) {
 
 	config := &DatabaseConfig{
 		DatabaseFilePath:       testDBFile, // Add fallback database path
-		DatabaseAutoUpdate:     true,
-		DatabaseAutoUpdateDir:  tmpDir,
-		DatabaseAutoUpdateCode: "DB1",
+		DatabaseAutoUpdateDir: tmpDir,
+		Download:              geoKey(),
+		BinRole:               dbutils.SlotGeo,
 	}
 
 	factory, err := NewDatabaseFactory(config, logger)
@@ -466,7 +476,6 @@ func TestCleanupFactories(t *testing.T) {
 
 	config1 := &DatabaseConfig{
 		DatabaseFilePath:   testDBFile,
-		DatabaseAutoUpdate: false,
 	}
 
 	factory1, err := GetDatabaseFactory(config1, logger)
@@ -482,16 +491,16 @@ func TestCleanupFactories(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Copy database to temp dir
-	versionedDbPath := filepath.Join(tmpDir, "20240301_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	versionedDbPath := filepath.Join(tmpDir, "20240301_geo.BIN")
 	if err := fileutils.Copy(testDBFile, versionedDbPath, true); err != nil {
 		t.Fatalf("Failed to copy test database: %v", err)
 	}
 
 	config2 := &DatabaseConfig{
 		DatabaseFilePath:       testDBFile, // Add fallback database path
-		DatabaseAutoUpdate:     true,
-		DatabaseAutoUpdateDir:  tmpDir,
-		DatabaseAutoUpdateCode: "DB1",
+		DatabaseAutoUpdateDir: tmpDir,
+		Download:              geoKey(),
+		BinRole:               dbutils.SlotGeo,
 	}
 
 	factory2, err := GetDatabaseFactory(config2, logger)
@@ -538,7 +547,7 @@ func TestDatabaseFactory_Integration(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Copy database to temp dir
-	versionedDbPath := filepath.Join(tmpDir, "20240301_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	versionedDbPath := filepath.Join(tmpDir, "20240301_geo.BIN")
 	if err := fileutils.Copy(testDBFile, versionedDbPath, true); err != nil {
 		t.Fatalf("Failed to copy test database: %v", err)
 	}
@@ -547,9 +556,9 @@ func TestDatabaseFactory_Integration(t *testing.T) {
 
 	cfg := DatabaseConfig{
 		DatabaseFilePath:       testDBFile,
-		DatabaseAutoUpdate:     true,
-		DatabaseAutoUpdateDir:  tmpDir,
-		DatabaseAutoUpdateCode: "DB1",
+		DatabaseAutoUpdateDir: tmpDir,
+		Download:              geoKey(),
+		BinRole:               dbutils.SlotGeo,
 	}
 
 	got, err := New(cfg, logger)
@@ -573,7 +582,7 @@ func TestDatabaseFactory_Integration(t *testing.T) {
 		t.Fatal("expected composed ip2location provider")
 	}
 	dbPath := p.geo.GetPath()
-	if !strings.Contains(dbPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+	if !strings.Contains(dbPath, "IP2LOCATION-geo_") {
 		t.Errorf("Expected database path to be a timestamped local copy, got: %s", dbPath)
 	}
 }
@@ -596,17 +605,16 @@ func TestDatabaseFactory_StartupUpdateAndVersionChange(t *testing.T) {
 
 	// Step 1: Create an old database (2 months ago) to trigger immediate update
 	oldDate := time.Now().AddDate(0, -2, 0).Format("20060102") // 2 months ago
-	oldDbPath := filepath.Join(tmpDir, oldDate+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	oldDbPath := filepath.Join(tmpDir, oldDate+"_geo.BIN")
 	if err := fileutils.Copy(testDBFile, oldDbPath, true); err != nil {
 		t.Fatalf("Failed to copy old test database: %v", err)
 	}
 
 	config := &DatabaseConfig{
 		DatabaseFilePath:        testDBFile, // Fallback database
-		DatabaseAutoUpdate:      true,
-		DatabaseAutoUpdateDir:   tmpDir,
-		DatabaseAutoUpdateCode:  "DB1",
-		DatabaseAutoUpdateToken: "", // Use free version for test
+		DatabaseAutoUpdateDir: tmpDir,
+		Download:              geoDownload(liteDownloadURL),
+		BinRole:               dbutils.SlotGeo,
 	}
 
 	// Step 2: Create factory - this should trigger immediate update check due to old database
@@ -653,7 +661,7 @@ func TestDatabaseFactory_StartupUpdateAndVersionChange(t *testing.T) {
 			// Check if an update process has been triggered by checking if any newer database exists
 			// or if the current path indicates a local copy was created (which happens during auto-update init)
 			currentPath := wrapper.GetPath()
-			if strings.Contains(currentPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+			if strings.Contains(currentPath, "IP2LOCATION-geo_") {
 				updateDetected = true
 				t.Logf("Startup update initialization detected - using local copy: %s", currentPath)
 			}
@@ -663,15 +671,17 @@ func TestDatabaseFactory_StartupUpdateAndVersionChange(t *testing.T) {
 	// Step 5: Simulate a successful update by creating a newer database in the auto-update directory
 	// This simulates what would happen after a successful download
 	newDate := time.Now().Format("20060102")
-	newDbPath := filepath.Join(tmpDir, newDate+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	newDbPath := filepath.Join(tmpDir, newDate+"_geo.BIN")
 	if err := fileutils.Copy(testDBFile, newDbPath, true); err != nil {
 		t.Fatalf("Failed to copy new test database: %v", err)
 	}
 
 	t.Logf("Created simulated updated database: %s", newDbPath)
 
-	// Step 6: Manually trigger another check and update cycle to pick up the new database
-	factory.checkAndUpdate()
+	// Step 6: Hot-swap the simulated newer database
+	if err := factory.performHotSwap(newDbPath); err != nil {
+		t.Fatalf("performHotSwap: %v", err)
+	}
 
 	// Step 7: Wait for the hot-swap process to complete with timeout
 	hotSwapCompleted := false
@@ -711,7 +721,7 @@ func TestDatabaseFactory_StartupUpdateAndVersionChange(t *testing.T) {
 		t.Logf("Database path after update: %s", currentPath)
 
 		// The path should contain a newer timestamp indicating a hot-swap occurred
-		if !strings.Contains(currentPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+		if !strings.Contains(currentPath, "IP2LOCATION-geo_") {
 			t.Error("Expected database path to be a timestamped local copy indicating hot-swap occurred")
 		}
 	}
@@ -758,7 +768,7 @@ func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
 	// Step 1: Create an updated database in the auto-update directory
 	// Use today's date to ensure it's considered "new"
 	todayDate := time.Now().Format("20060102")
-	updatedDbPath := filepath.Join(tmpDir, todayDate+"_IP2LOCATION-LITE-DB1.IPV6.BIN")
+	updatedDbPath := filepath.Join(tmpDir, todayDate+"_geo.BIN")
 	if err := fileutils.Copy(testDBFile, updatedDbPath, true); err != nil {
 		t.Fatalf("Failed to copy updated test database: %v", err)
 	}
@@ -767,11 +777,10 @@ func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
 
 	// Step 2: Configure factory to use auto-update with the directory containing the updated database
 	config := &DatabaseConfig{
-		DatabaseFilePath:        testDBFile, // Default fallback database
-		DatabaseAutoUpdate:      true,
-		DatabaseAutoUpdateDir:   tmpDir,
-		DatabaseAutoUpdateCode:  "DB1",
-		DatabaseAutoUpdateToken: "", // Use free version for test
+		DatabaseFilePath:      testDBFile, // Default fallback database
+		DatabaseAutoUpdateDir: tmpDir,
+		Download:              geoKey(),
+		BinRole:               dbutils.SlotGeo,
 	}
 
 	// Step 3: Create factory - initialization should find and use the updated database
@@ -793,7 +802,7 @@ func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
 	t.Logf("Source database path: %s", sourceDbPath)
 
 	// The path should be a local copy of the updated database, not the default fallback
-	if !strings.Contains(currentPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+	if !strings.Contains(currentPath, "IP2LOCATION-geo_") {
 		t.Error("Expected database path to be a timestamped local copy, indicating auto-update initialization occurred")
 	}
 
@@ -832,7 +841,6 @@ func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
 	// Step 8: Verify that without auto-update directory, fallback database would be used
 	configWithoutAutoUpdate := &DatabaseConfig{
 		DatabaseFilePath:   testDBFile,
-		DatabaseAutoUpdate: false, // Disabled
 	}
 
 	fallbackFactory, err := NewDatabaseFactory(configWithoutAutoUpdate, logger)
@@ -848,7 +856,7 @@ func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
 	t.Logf("Fallback source database path: %s", fallbackSourcePath)
 
 	// Fallback path should be the direct file path, not a timestamped copy
-	if strings.Contains(fallbackPath, "IP2LOCATION-LITE-DB1.IPV6_") {
+	if strings.Contains(fallbackPath, "IP2LOCATION-geo_") {
 		t.Error("Expected fallback database to use direct file path, not timestamped copy")
 	}
 
@@ -888,10 +896,9 @@ func TestDatabaseFactory_CheckAndUpdate_SynchronousDownloadAndHotSwap(t *testing
 
 	config := &DatabaseConfig{
 		DatabaseFilePath:        testDBFile, // Fallback database
-		DatabaseAutoUpdate:      true,       // Enable auto-update ticker for full workflow
-		DatabaseAutoUpdateDir:   tmpDir,
-		DatabaseAutoUpdateCode:  "DB1",
-		DatabaseAutoUpdateToken: "", // Use free version for test
+		DatabaseAutoUpdateDir: tmpDir,
+		Download:              geoDownload(liteDownloadURL),
+		BinRole:               dbutils.SlotGeo,
 	}
 
 	// Step 1: Create factory with auto-update enabled

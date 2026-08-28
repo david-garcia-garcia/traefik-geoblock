@@ -1,13 +1,20 @@
 package maxmind
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"log/slog"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbdownload"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
@@ -97,13 +104,12 @@ func TestNew_EmptyPathFindsBundled(t *testing.T) {
 	}
 }
 
-func TestNew_AutoUpdateWithoutTokenUsesSeed(t *testing.T) {
+func TestNew_EmptyMapUsesSeed(t *testing.T) {
 	resetFactories()
 	t.Cleanup(resetFactories)
 
 	p, err := New(DatabaseConfig{
 		DatabaseFilePath:      testMMDB(t),
-		DatabaseAutoUpdate:    true,
 		DatabaseAutoUpdateDir: t.TempDir(),
 	}, testLogger())
 	if err != nil {
@@ -111,75 +117,75 @@ func TestNew_AutoUpdateWithoutTokenUsesSeed(t *testing.T) {
 	}
 	rec, err := p.Lookup(dummyGB)
 	if err != nil || rec.Country != "GB" {
-		t.Fatalf("seed lookup after auto-update-without-token: rec=%+v err=%v", rec, err)
+		t.Fatalf("seed lookup without download URL: rec=%+v err=%v", rec, err)
 	}
 }
 
-func TestNew_AutoUpdateInvalidTokenUsesSeed(t *testing.T) {
+func TestDownloadThroughComponent_HTTP(t *testing.T) {
+	src, err := os.ReadFile(testMMDB(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	hdr := &tar.Header{Name: "GeoLite2-Country_20260101/GeoLite2-Country.mmdb", Mode: 0644, Size: int64(len(src))}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/gzip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	dl := dbdownload.Config{
+		Key:          "geolite",
+		URL:          srv.URL,
+		Headers:      map[string]string{"Authorization": "Basic dGVzdA=="},
+		DatabaseType: dbdownload.TypeMMDB,
+		Archive:      dbdownload.ArchiveTarGz,
+		Dir:          dir,
+	}
+	path, err := dbdownload.Update(dl, testLogger())
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if gotAuth != "Basic dGVzdA==" {
+		t.Errorf("Authorization: %q", gotAuth)
+	}
+	if !strings.HasSuffix(path, "_geolite.mmdb") {
+		t.Errorf("dated name: %s", path)
+	}
+
 	resetFactories()
 	t.Cleanup(resetFactories)
-
 	p, err := New(DatabaseConfig{
-		DatabaseFilePath:        testMMDB(t),
-		DatabaseAutoUpdate:      true,
-		DatabaseAutoUpdateDir:   t.TempDir(),
-		DatabaseAutoUpdateToken: "not-a-pair",
+		DatabaseFilePath:      testMMDB(t),
+		DatabaseAutoUpdateDir: dir,
+		Download: dbdownload.Config{
+			Key:          "geolite",
+			DatabaseType: dbdownload.TypeMMDB,
+		},
 	}, testLogger())
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("open downloaded: %v", err)
 	}
 	rec, err := p.Lookup(dummyGB)
 	if err != nil || rec.Country != "GB" {
-		t.Fatalf("seed lookup after invalid token: rec=%+v err=%v", rec, err)
-	}
-}
-
-func TestNew_AutoUpdateRequiresDir(t *testing.T) {
-	resetFactories()
-	t.Cleanup(resetFactories)
-
-	_, err := New(DatabaseConfig{
-		DatabaseFilePath:   testMMDB(t),
-		DatabaseAutoUpdate: true,
-	}, testLogger())
-	if err == nil {
-		t.Fatal("expected error when auto-update is on without dir")
-	}
-}
-
-func TestNew_ASNCodeRejected(t *testing.T) {
-	resetFactories()
-	t.Cleanup(resetFactories)
-
-	_, err := New(DatabaseConfig{
-		DatabaseFilePath:       testMMDB(t),
-		DatabaseAutoUpdateCode: "GeoLite2-ASN",
-	}, testLogger())
-	if err == nil {
-		t.Fatal("expected error for GeoLite2-ASN")
-	}
-}
-
-func TestParseAccountToken(t *testing.T) {
-	id, key, ok := parseAccountToken("123456:secret")
-	if !ok || id != "123456" || key != "secret" {
-		t.Errorf("got id=%q key=%q ok=%v", id, key, ok)
-	}
-	if _, _, ok := parseAccountToken(""); ok {
-		t.Error("empty token should fail")
-	}
-	if _, _, ok := parseAccountToken("nocolon"); ok {
-		t.Error("token without colon should fail")
-	}
-	if _, _, ok := parseAccountToken(":onlykey"); ok {
-		t.Error("empty account id should fail")
-	}
-}
-
-func TestDefaultDownloadURL(t *testing.T) {
-	got := defaultDownloadURL(CodeGeoLite2Country)
-	want := "https://download.maxmind.com/geoip/databases/GeoLite2-Country/download?suffix=tar.gz"
-	if got != want {
-		t.Errorf("url: got %q want %q", got, want)
+		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
 	}
 }

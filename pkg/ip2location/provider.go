@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 )
 
 // provider looks up country/region/city on the geo BIN and ASN on the ASN LITE BIN.
@@ -14,17 +15,12 @@ type provider struct {
 
 // New constructs the IP2Location DatabaseProvider (geo factory plus optional ASN).
 func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
-	geoCfg := geoFactoryConfig(config)
-	geoFactory, err := GetDatabaseFactory(geoCfg, logger)
+	geoFactory, err := GetDatabaseFactory(geoFactoryConfig(config), logger)
 	if err != nil {
 		return nil, err
 	}
 
 	p := &provider{geo: geoFactory.GetWrapper()}
-
-	if config.AsnDatabaseAutoUpdate && config.DatabaseAutoUpdateToken == "" {
-		logger.Error("ip2location_asnDatabaseAutoUpdate is true but ip2location_databaseAutoUpdateToken is empty; ASN download skipped (LITE ASN is not on the public CDN)")
-	}
 
 	asnFactory, err := GetDatabaseFactory(asnFactoryConfig(config), logger)
 	if err != nil {
@@ -36,28 +32,20 @@ func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error
 
 func geoFactoryConfig(cfg DatabaseConfig) *DatabaseConfig {
 	return &DatabaseConfig{
-		DatabaseFilePath:        cfg.DatabaseFilePath,
-		DatabaseAutoUpdate:      cfg.DatabaseAutoUpdate,
-		DatabaseAutoUpdateDir:   cfg.DatabaseAutoUpdateDir,
-		DatabaseAutoUpdateToken: cfg.DatabaseAutoUpdateToken,
-		DatabaseAutoUpdateCode:  cfg.DatabaseAutoUpdateCode,
+		DatabaseFilePath:      cfg.DatabaseFilePath,
+		DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
+		Download:              cfg.Download,
+		BinRole:               dbutils.SlotGeo,
 	}
 }
 
 func asnFactoryConfig(geo DatabaseConfig) *DatabaseConfig {
-	code := geo.AsnDatabaseAutoUpdateCode
-	if code == "" {
-		code = DefaultASNDatabaseCode
-	}
-	// ASN LITE is not on download.ip2location.com/lite/. Only download with a token.
-	auto := geo.AsnDatabaseAutoUpdate && geo.DatabaseAutoUpdateToken != ""
 	return &DatabaseConfig{
-		DatabaseFilePath:        geo.AsnDatabaseFilePath,
-		DatabaseAutoUpdate:      auto,
-		DatabaseAutoUpdateDir:   geo.DatabaseAutoUpdateDir,
-		DatabaseAutoUpdateToken: geo.DatabaseAutoUpdateToken,
-		DatabaseAutoUpdateCode:  code,
-		AllowMissing:            geo.AsnDatabaseFilePath == "",
+		DatabaseFilePath:      geo.AsnDatabaseFilePath,
+		DatabaseAutoUpdateDir: geo.DatabaseAutoUpdateDir,
+		Download:              geo.AsnDownload,
+		BinRole:               dbutils.SlotASN,
+		AllowMissing:          geo.AsnDatabaseFilePath == "",
 	}
 }
 

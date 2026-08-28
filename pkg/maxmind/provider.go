@@ -9,24 +9,21 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
-	"time"
 
 	"log/slog"
 
 	"github.com/oschwald/maxminddb-golang"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbdownload"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
-// DatabaseConfig is MaxMind MMDB path, edition, and auto-update.
+// DatabaseConfig is MaxMind MMDB seed path plus one download component config.
 type DatabaseConfig struct {
-	DatabaseFilePath        string
-	DatabaseAutoUpdate      bool
-	DatabaseAutoUpdateDir   string
-	DatabaseAutoUpdateToken string
-	DatabaseAutoUpdateCode  string
+	DatabaseFilePath      string
+	DatabaseAutoUpdateDir string
+	Download              dbdownload.Config
 }
 
 type geoNames struct {
@@ -65,8 +62,7 @@ type provider struct {
 	logger *slog.Logger
 	config DatabaseConfig
 
-	updateTicker *time.Ticker
-	stopChan     chan struct{}
+	download *dbdownload.Slot
 }
 
 var (
@@ -76,7 +72,6 @@ var (
 
 // New opens the MaxMind DatabaseProvider (singleton per config).
 func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
-	config.DatabaseAutoUpdateCode = normalizeCode(config.DatabaseAutoUpdateCode)
 	key := configHash(config)
 	var out *provider
 	err := factoryLock.LoadOrStore(func() bool {
@@ -102,21 +97,8 @@ func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error
 
 func newProvider(config DatabaseConfig, logger *slog.Logger) (*provider, error) {
 	p := &provider{
-		logger:   logger,
-		config:   config,
-		stopChan: make(chan struct{}),
-	}
-
-	if !knownEdition(config.DatabaseAutoUpdateCode) {
-		return nil, fmt.Errorf("unsupported maxmind_databaseAutoUpdateCode %q (GeoLite2-Country, GeoLite2-City, GeoIP2-Country, GeoIP2-City)", config.DatabaseAutoUpdateCode)
-	}
-
-	if config.DatabaseAutoUpdate && !canParseToken(config.DatabaseAutoUpdateToken) {
-		logger.Error("maxmind_databaseAutoUpdate is true but maxmind_databaseAutoUpdateToken is empty or not accountId:licenseKey; MaxMind download skipped")
-	}
-
-	if config.DatabaseAutoUpdate && config.DatabaseAutoUpdateDir == "" {
-		return nil, fmt.Errorf("maxmind_databaseAutoUpdateDir must be set when maxmind_databaseAutoUpdate is true")
+		logger: logger,
+		config: config,
 	}
 
 	path, err := p.resolveInitPath()
@@ -127,24 +109,35 @@ func newProvider(config DatabaseConfig, logger *slog.Logger) (*provider, error) 
 		return nil, err
 	}
 
-	if p.canDownload() {
-		p.startAutoUpdate()
+	if err := p.startDownload(); err != nil {
+		return nil, err
 	}
 	return p, nil
 }
 
-func canParseToken(token string) bool {
-	_, _, ok := parseAccountToken(token)
-	return ok
+func (p *provider) downloadCfg() dbdownload.Config {
+	return dbdownload.WithDefaults(p.config.Download, p.config.DatabaseAutoUpdateDir, dbdownload.TypeMMDB, dbdownload.DefaultMinAge)
 }
 
-func (p *provider) canDownload() bool {
-	return p.config.DatabaseAutoUpdate && canParseToken(p.config.DatabaseAutoUpdateToken) && p.config.DatabaseAutoUpdateDir != ""
+func (p *provider) startDownload() error {
+	slot, err := dbdownload.Start(p.downloadCfg(), p.logger, func(path string) {
+		if path == "" || path == p.path {
+			return
+		}
+		if err := p.open(path); err != nil {
+			p.logger.Error("failed to open updated MaxMind MMDB", "error", err)
+		}
+	})
+	if err != nil {
+		return err
+	}
+	p.download = slot
+	return nil
 }
 
 func (p *provider) resolveInitPath() (string, error) {
-	if p.config.DatabaseAutoUpdate {
-		latest, err := findLatestDatabase(p.config.DatabaseAutoUpdateDir, p.config.DatabaseAutoUpdateCode)
+	if p.config.DatabaseAutoUpdateDir != "" && p.config.Download.Key != "" {
+		latest, err := dbdownload.Latest(p.config.DatabaseAutoUpdateDir, p.config.Download.Key, dbdownload.TypeMMDB)
 		if err != nil {
 			p.logger.Debug("no MaxMind MMDB in auto-update dir", "error", err)
 		} else if latest != "" {
@@ -224,13 +217,8 @@ func (p *provider) Lookup(ip string) (dbprovider.Record, error) {
 }
 
 func (p *provider) Close() error {
-	if p.updateTicker != nil {
-		p.updateTicker.Stop()
-		select {
-		case <-p.stopChan:
-		default:
-			close(p.stopChan)
-		}
+	if p.download != nil {
+		p.download.Stop()
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -242,56 +230,13 @@ func (p *provider) Close() error {
 	return nil
 }
 
-func (p *provider) startAutoUpdate() {
-	p.updateTicker = time.NewTicker(24 * time.Hour)
-	go func() {
-		p.checkAndUpdate()
-		for {
-			select {
-			case <-p.updateTicker.C:
-				p.checkAndUpdate()
-			case <-p.stopChan:
-				return
-			}
-		}
-	}()
-}
-
-func (p *provider) checkAndUpdate() {
-	if !p.canDownload() {
-		return
-	}
-	latest, _ := findLatestDatabase(p.config.DatabaseAutoUpdateDir, p.config.DatabaseAutoUpdateCode)
-	if latest != "" {
-		if date, err := dbutils.GetDateFromName(latest); err == nil {
-			if time.Since(date) < 24*time.Hour {
-				p.logger.Debug("MaxMind MMDB is current", "path", latest)
-				return
-			}
-		}
-	}
-	path, err := downloadAndUpdateDatabase(p.config, p.logger)
-	if err != nil {
-		p.logger.Error("MaxMind database update failed", "error", err)
-		return
-	}
-	if path == "" || path == p.path {
-		return
-	}
-	if err := p.open(path); err != nil {
-		p.logger.Error("failed to open updated MaxMind MMDB", "error", err)
-	}
-}
-
 func configHash(cfg DatabaseConfig) string {
 	b, err := json.Marshal(cfg)
 	if err != nil {
-		return fmt.Sprintf("%s_%v_%s_%s_%s",
+		return fmt.Sprintf("%s_%s_%s",
 			cfg.DatabaseFilePath,
-			cfg.DatabaseAutoUpdate,
 			cfg.DatabaseAutoUpdateDir,
-			cfg.DatabaseAutoUpdateToken,
-			normalizeCode(cfg.DatabaseAutoUpdateCode))
+			cfg.Download.URL)
 	}
 	h := fnv.New64a()
 	_, _ = h.Write(b)
