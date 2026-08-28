@@ -22,7 +22,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
-//go:generate go run ./tools/dbdownload/main.go -o ./IP2LOCATION-LITE-DB1.IPV6.BIN
+//go:generate go run ./tools/dbdownload/main.go -o ./seeds/IP2LOCATION-LITE-DB1.IPV6.BIN
 
 const (
 	PrivateIpCountryAlias       = "PRIVATE"
@@ -82,19 +82,6 @@ type Config struct {
 	IpinfoDownload         string `json:"ipinfo_download,omitempty" mapstructure:"ipinfo_download"`
 	MaxmindDownload        string `json:"maxmind_download,omitempty" mapstructure:"maxmind_download"`
 
-	// IP2Location seed paths.
-	Ip2locationDatabaseFilePath    string `json:"ip2location_databaseFilePath,omitempty" mapstructure:"ip2location_databaseFilePath"`
-	Ip2locationAsnDatabaseFilePath string `json:"ip2location_asnDatabaseFilePath,omitempty" mapstructure:"ip2location_asnDatabaseFilePath"`
-
-	// IPinfo seed path.
-	IpinfoDatabaseFilePath string `json:"ipinfo_databaseFilePath,omitempty" mapstructure:"ipinfo_databaseFilePath"`
-
-	// MaxMind seed path.
-	MaxmindDatabaseFilePath string `json:"maxmind_databaseFilePath,omitempty" mapstructure:"maxmind_databaseFilePath"`
-
-	// Deprecated unprefixed alias. Copied onto ip2location_databaseFilePath when that is unset.
-	DatabaseFilePath string `json:"databaseFilePath,omitempty" mapstructure:"databaseFilePath"`
-
 	// Country-based rules (ISO 3166-1 alpha-2 format)
 	AllowedCountries []string // Whitelist of countries to allow
 	BlockedCountries []string // Blocklist of countries to block
@@ -144,6 +131,7 @@ type DatabaseDownload struct {
 	Headers      map[string]string `json:"headers,omitempty" mapstructure:"headers"`
 	DatabaseType string            `json:"databaseType,omitempty" mapstructure:"databaseType"`
 	Archive      string            `json:"archive,omitempty" mapstructure:"archive"`
+	Path         string            `json:"path,omitempty" mapstructure:"path"`
 }
 
 // CreateConfig creates the default plugin configuration.
@@ -240,7 +228,6 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 	requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich, logger)
 
-	applyDeprecatedIP2LocationSettings(cfg, bootstrapLogger)
 	if err := validateDatabaseDownloads(cfg); err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
@@ -337,19 +324,6 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	return plugin, nil
 }
 
-// applyDeprecatedIP2LocationSettings copies unprefixed databaseFilePath onto
-// ip2location_databaseFilePath when that is unset. Prefixed values win.
-func applyDeprecatedIP2LocationSettings(cfg *Config, logger *slog.Logger) {
-	if cfg.DatabaseFilePath == "" {
-		return
-	}
-	if cfg.Ip2locationDatabaseFilePath == "" {
-		cfg.Ip2locationDatabaseFilePath = cfg.DatabaseFilePath
-	}
-	logger.Warn("deprecated IP2Location settings are set; use the ip2location_ prefixed keys",
-		"deprecated", []string{"databaseFilePath"})
-}
-
 const mmdbDownloadMinAge = dbdownload.DefaultMinAge
 
 func providerName(cfg *Config) string {
@@ -385,6 +359,7 @@ func catalogDownload(cfg *Config, key, databaseType string, minAge time.Duration
 	return dbdownload.Config{
 		Key:          key,
 		URL:          strings.TrimSpace(entry.URL),
+		Path:         strings.TrimSpace(entry.Path),
 		Headers:      entry.Headers,
 		DatabaseType: firstNonEmpty(entry.DatabaseType, databaseType),
 		Archive:      entry.Archive,
@@ -441,21 +416,17 @@ func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider
 	switch name {
 	case DatabaseProviderIP2Location:
 		return ip2location.New(ip2location.DatabaseConfig{
-			DatabaseFilePath:      cfg.Ip2locationDatabaseFilePath,
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
 			Download:              catalogDownload(cfg, cfg.Ip2locationDownloadGeo, dbdownload.TypeBIN, ip2location.DownloadMinAge),
-			AsnDatabaseFilePath:   cfg.Ip2locationAsnDatabaseFilePath,
 			AsnDownload:           catalogDownload(cfg, cfg.Ip2locationDownloadAsn, dbdownload.TypeBIN, ip2location.DownloadMinAge),
 		}, logger)
 	case DatabaseProviderIPinfo:
 		return ipinfo.New(ipinfo.DatabaseConfig{
-			DatabaseFilePath:      cfg.IpinfoDatabaseFilePath,
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
 			Download:              catalogDownload(cfg, cfg.IpinfoDownload, dbdownload.TypeMMDB, mmdbDownloadMinAge),
 		}, logger)
 	case DatabaseProviderMaxMind:
 		return maxmind.New(maxmind.DatabaseConfig{
-			DatabaseFilePath:      cfg.MaxmindDatabaseFilePath,
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
 			Download:              catalogDownload(cfg, cfg.MaxmindDownload, dbdownload.TypeMMDB, mmdbDownloadMinAge),
 		}, logger)

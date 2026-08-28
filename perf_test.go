@@ -20,7 +20,7 @@ func newThroughputPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowedCountries:            []string{"US", "AU"},
 		DefaultAllow:                false,
 		AllowPrivate:                false,
@@ -118,7 +118,7 @@ func BenchmarkPlugin_ServeHTTP(b *testing.B) {
 func BenchmarkPlugin_ServeHTTP_Enrich(b *testing.B) {
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowedCountries:            []string{"US", "AU"},
 		DefaultAllow:                false,
 		AllowPrivate:                false,
@@ -154,8 +154,9 @@ func newLITEASNPlugin(tb testing.TB) *Plugin {
 	asn := requireASN(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
 		Enabled:                        true,
-		Ip2locationDatabaseFilePath:    dbFilePath,
-		Ip2locationAsnDatabaseFilePath: asn,
+		DatabaseDownloads:              seedCatalogPair(dbFilePath, asn),
+		Ip2locationDownloadGeo:         "geo",
+		Ip2locationDownloadAsn:         "asn",
 		AllowedCountries:               []string{"US", "AU"},
 		DefaultAllow:                   false,
 		AllowPrivate:                   false,
@@ -178,8 +179,9 @@ func newDB8ASNPlugin(tb testing.TB) *Plugin {
 	asn := requireASN(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
 		Enabled:                        true,
-		Ip2locationDatabaseFilePath:    path,
-		Ip2locationAsnDatabaseFilePath: asn,
+		DatabaseDownloads:              seedCatalogPair(path, asn),
+		Ip2locationDownloadGeo:         "geo",
+		Ip2locationDownloadAsn:         "asn",
 		AllowedCountries:               []string{"US", "AU"},
 		DefaultAllow:                   false,
 		AllowPrivate:                   false,
@@ -202,7 +204,7 @@ func newDB8CountryPlugin(tb testing.TB) *Plugin {
 	path := requireDB8(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: path,
+		DatabaseDownloads: seedCatalog(path), Ip2locationDownloadGeo: "seed",
 		AllowedCountries:            []string{"US", "AU"},
 		DefaultAllow:                false,
 		AllowPrivate:                false,
@@ -228,7 +230,7 @@ func newDB8FullEnrichPlugin(tb testing.TB) *Plugin {
 	path := requireDB8(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: path,
+		DatabaseDownloads: seedCatalog(path), Ip2locationDownloadGeo: "seed",
 		AllowedCountries:            []string{"US", "AU"},
 		DefaultAllow:                false,
 		AllowPrivate:                false,
@@ -414,7 +416,7 @@ func newMaxMindPlugin(tb testing.TB) *Plugin {
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
 		Enabled:                 true,
 		DatabaseProvider:        DatabaseProviderMaxMind,
-		MaxmindDatabaseFilePath: maxmindFilePath,
+		DatabaseDownloads: seedCatalog(maxmindFilePath), MaxmindDownload: "seed",
 		AllowedCountries:        []string{"GB"},
 		DefaultAllow:            false,
 		AllowPrivate:            false,
@@ -487,7 +489,7 @@ func BenchmarkPlugin_ServeHTTP_MaxMindEnrich(b *testing.B) {
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
 		Enabled:                 true,
 		DatabaseProvider:        DatabaseProviderMaxMind,
-		MaxmindDatabaseFilePath: maxmindFilePath,
+		DatabaseDownloads: seedCatalog(maxmindFilePath), MaxmindDownload: "seed",
 		AllowedCountries:        []string{"GB"},
 		DefaultAllow:            false,
 		AllowPrivate:            false,

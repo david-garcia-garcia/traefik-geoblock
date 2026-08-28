@@ -17,16 +17,17 @@ func geoDownload(url string) dbdownload.Config {
 	return dbdownload.Config{
 		Key:          "geo",
 		URL:          url,
+		Path:         testDBFile,
 		DatabaseType: dbdownload.TypeBIN,
 		Archive:      dbdownload.ArchiveZIP,
 	}
 }
 
 func geoKey() dbdownload.Config {
-	return dbdownload.Config{Key: "geo", DatabaseType: dbdownload.TypeBIN}
+	return dbdownload.Config{Key: "geo", DatabaseType: dbdownload.TypeBIN, Path: testDBFile}
 }
 
-var testDBFile = filepath.Join("..", "..", "IP2LOCATION-LITE-DB1.IPV6.BIN")
+var testDBFile = filepath.Join("..", "..", "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
 
 const liteDownloadURL = "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
 
@@ -40,7 +41,7 @@ func TestDatabaseWrapper_BasicFunctionality(t *testing.T) {
 	}))
 
 	config := &DatabaseConfig{
-		DatabaseFilePath:   testDBFile,
+		Download: dbdownload.Config{Path: testDBFile},
 	}
 
 	factory, err := NewDatabaseFactory(config, logger)
@@ -87,7 +88,7 @@ func TestDatabaseWrapper_Close(t *testing.T) {
 	}))
 
 	config := &DatabaseConfig{
-		DatabaseFilePath:   testDBFile,
+		Download: dbdownload.Config{Path: testDBFile},
 	}
 
 	factory, err := NewDatabaseFactory(config, logger)
@@ -122,7 +123,7 @@ func TestGetDatabaseFactory_Singleton(t *testing.T) {
 	}))
 
 	config := &DatabaseConfig{
-		DatabaseFilePath:   testDBFile,
+		Download: dbdownload.Config{Path: testDBFile},
 	}
 
 	// Get factory first time
@@ -144,7 +145,7 @@ func TestGetDatabaseFactory_Singleton(t *testing.T) {
 
 	// Test with different config
 	config2 := &DatabaseConfig{
-		DatabaseFilePath:   "./different-path.bin",
+		Download: dbdownload.Config{Path: "./different-path.bin"},
 	}
 
 	factory3, err := GetDatabaseFactory(config2, logger)
@@ -177,7 +178,7 @@ func TestGetDatabaseFactory_BadPathFallsBackToEnv(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 	factory, err := GetDatabaseFactory(&DatabaseConfig{
-		DatabaseFilePath: "/nonexistent/path/bad-database.bin",
+		Download: dbdownload.Config{Path: "/nonexistent/path/bad-database.bin"},
 	}, logger)
 	if err != nil {
 		t.Fatalf("expected factory from env dir: %v", err)
@@ -212,7 +213,6 @@ func TestDatabaseFactory_AutoUpdate(t *testing.T) {
 	}))
 
 	config := &DatabaseConfig{
-		DatabaseFilePath:       testDBFile, // Add fallback database path
 		DatabaseAutoUpdateDir: tmpDir,
 		Download:              geoKey(),
 		BinRole:               dbutils.SlotGeo,
@@ -264,15 +264,14 @@ func TestDatabaseFactory_Initialize_Errors(t *testing.T) {
 		{
 			name: "missing database file",
 			config: &DatabaseConfig{
-				DatabaseFilePath:   "./nonexistent.bin",
-					},
+				Download: dbdownload.Config{Path: "./nonexistent.bin"},
+			},
 			expectError: true,
 			errorText:   "database file not found",
 		},
 		{
 			name: "auto-update enabled but no directory",
 			config: &DatabaseConfig{
-				DatabaseFilePath:   testDBFile,
 				Download: geoDownload(liteDownloadURL),
 				// DatabaseAutoUpdateDir is missing
 			},
@@ -281,8 +280,8 @@ func TestDatabaseFactory_Initialize_Errors(t *testing.T) {
 		{
 			name: "invalid database file",
 			config: &DatabaseConfig{
-				DatabaseFilePath:   "./testdata/invalid.bin",
-					},
+				Download: dbdownload.Config{Path: filepath.Join("..", "..", "testdata", "invalid.bin")},
+			},
 			expectError: true,
 			errorText:   "database file not found",
 		},
@@ -327,7 +326,6 @@ func TestDatabaseFactory_AutoUpdateDirPreferredOverFilePath(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	factory, err := NewDatabaseFactory(&DatabaseConfig{
-		DatabaseFilePath:      "./nonexistent.bin",
 		DatabaseAutoUpdateDir: tmpDir,
 		Download:              geoKey(),
 		BinRole:               dbutils.SlotGeo,
@@ -424,7 +422,6 @@ func TestDatabaseFactory_HotSwap(t *testing.T) {
 	}))
 
 	config := &DatabaseConfig{
-		DatabaseFilePath:       testDBFile, // Add fallback database path
 		DatabaseAutoUpdateDir: tmpDir,
 		Download:              geoKey(),
 		BinRole:               dbutils.SlotGeo,
@@ -475,7 +472,7 @@ func TestCleanupFactories(t *testing.T) {
 	}))
 
 	config1 := &DatabaseConfig{
-		DatabaseFilePath:   testDBFile,
+		Download: dbdownload.Config{Path: testDBFile},
 	}
 
 	factory1, err := GetDatabaseFactory(config1, logger)
@@ -497,7 +494,6 @@ func TestCleanupFactories(t *testing.T) {
 	}
 
 	config2 := &DatabaseConfig{
-		DatabaseFilePath:       testDBFile, // Add fallback database path
 		DatabaseAutoUpdateDir: tmpDir,
 		Download:              geoKey(),
 		BinRole:               dbutils.SlotGeo,
@@ -555,7 +551,6 @@ func TestDatabaseFactory_Integration(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	cfg := DatabaseConfig{
-		DatabaseFilePath:       testDBFile,
 		DatabaseAutoUpdateDir: tmpDir,
 		Download:              geoKey(),
 		BinRole:               dbutils.SlotGeo,
@@ -611,7 +606,6 @@ func TestDatabaseFactory_StartupUpdateAndVersionChange(t *testing.T) {
 	}
 
 	config := &DatabaseConfig{
-		DatabaseFilePath:        testDBFile, // Fallback database
 		DatabaseAutoUpdateDir: tmpDir,
 		Download:              geoDownload(liteDownloadURL),
 		BinRole:               dbutils.SlotGeo,
@@ -777,7 +771,6 @@ func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
 
 	// Step 2: Configure factory to use auto-update with the directory containing the updated database
 	config := &DatabaseConfig{
-		DatabaseFilePath:      testDBFile, // Default fallback database
 		DatabaseAutoUpdateDir: tmpDir,
 		Download:              geoKey(),
 		BinRole:               dbutils.SlotGeo,
@@ -807,7 +800,7 @@ func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
 	}
 
 	// Verify this is a temporary file (local copy), not the original fallback
-	if strings.Contains(currentPath, "./IP2LOCATION-LITE-DB1.IPV6.BIN") {
+	if strings.Contains(currentPath, "IP2LOCATION-LITE-DB1.IPV6.BIN") && !strings.Contains(currentPath, "IP2LOCATION-geo_") {
 		t.Error("Expected to use local copy, not the direct fallback database file")
 	}
 
@@ -840,7 +833,7 @@ func TestDatabaseFactory_InitializationUsesUpdatedDatabase(t *testing.T) {
 
 	// Step 8: Verify that without auto-update directory, fallback database would be used
 	configWithoutAutoUpdate := &DatabaseConfig{
-		DatabaseFilePath:   testDBFile,
+		Download: dbdownload.Config{Path: testDBFile},
 	}
 
 	fallbackFactory, err := NewDatabaseFactory(configWithoutAutoUpdate, logger)
@@ -895,7 +888,6 @@ func TestDatabaseFactory_CheckAndUpdate_SynchronousDownloadAndHotSwap(t *testing
 	}))
 
 	config := &DatabaseConfig{
-		DatabaseFilePath:        testDBFile, // Fallback database
 		DatabaseAutoUpdateDir: tmpDir,
 		Download:              geoDownload(liteDownloadURL),
 		BinRole:               dbutils.SlotGeo,
@@ -950,7 +942,7 @@ func requireDB8Wrapper(tb testing.TB) *DatabaseWrapper {
 	}
 	CleanupFactories()
 	tb.Cleanup(CleanupFactories)
-	factory, err := NewDatabaseFactory(&DatabaseConfig{DatabaseFilePath: db8}, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})))
+	factory, err := NewDatabaseFactory(&DatabaseConfig{Download: dbdownload.Config{Path: db8}}, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})))
 	if err != nil {
 		tb.Fatalf("DB8 factory: %v", err)
 	}

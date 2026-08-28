@@ -13,7 +13,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 	t.Run("Allowed", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{"AU"},
 			DisallowedStatusCode:        http.StatusOK,
 			IPHeaders:                   []string{"x-forwarded-for", "x-real-ip"},
@@ -39,7 +39,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 	t.Run("AllowedPrivate", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{},
 			AllowPrivate:                true,
 			DisallowedStatusCode:        http.StatusOK,
@@ -66,7 +66,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 	t.Run("AllowedPrivate172Range", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{},
 			AllowPrivate:                true,
 			DisallowedStatusCode:        http.StatusOK,
@@ -93,7 +93,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 	t.Run("Disallowed", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{"DE"},
 			DisallowedStatusCode:        http.StatusForbidden,
 			BanHtmlFilePath:             "geoblockban.html",
@@ -126,7 +126,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 	t.Run("DisallowedPrivate", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{},
 			AllowPrivate:                false,
 			DisallowedStatusCode:        http.StatusForbidden,
@@ -160,7 +160,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 	t.Run("Blocklist", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			BlockedCountries:            []string{"US"},
 			AllowPrivate:                false,
 			DefaultAllow:                true,
@@ -191,7 +191,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 	t.Run("IPWhitelist", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedIPBlocks:             []string{"203.0.113.0/24", "198.51.100.1/32"}, // Using TEST-NET-3 and TEST-NET-2 ranges
 			DefaultAllow:                false,
 			DisallowedStatusCode:        http.StatusForbidden,
@@ -213,7 +213,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 	t.Run("BypassHeaders", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			BlockedCountries:            []string{"US"},
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-forwarded-for", "x-real-ip"},
@@ -294,7 +294,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		countryHeader := "X-Country"
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{"AU"},
 			DisallowedStatusCode:        http.StatusForbidden,
 			CountryHeader:               countryHeader,
@@ -381,7 +381,7 @@ func TestPlugin_Lookup(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{},
 			AllowPrivate:                false,
 			DisallowedStatusCode:        http.StatusForbidden,
@@ -409,7 +409,7 @@ func TestPlugin_Lookup(t *testing.T) {
 	t.Run("Invalid", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{},
 			AllowPrivate:                false,
 			DisallowedStatusCode:        http.StatusForbidden,
@@ -475,7 +475,7 @@ func TestPlugin_ServeHTTP_MalformedIP(t *testing.T) {
 				Enabled:                     true,
 				DisallowedStatusCode:        http.StatusForbidden,
 				BanIfError:                  tt.banIfError,
-				Ip2locationDatabaseFilePath: dbFilePath,
+				DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 				IPHeaders:                   []string{"x-forwarded-for", "x-real-ip"},
 				IPHeaderStrategy:            IPHeaderStrategyCheckAll,
 			}
@@ -537,7 +537,7 @@ func TestCheckAllowed_Localhost(t *testing.T) {
 	// Test the actual CheckAllowed method with 127.0.0.1
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowPrivate:                true,
 		DefaultAllow:                false,
 		DisallowedStatusCode:        http.StatusForbidden,
@@ -588,7 +588,7 @@ func TestServeHTTP_LocalhostWithAllowPrivate(t *testing.T) {
 	// Test complete HTTP request flow with localhost
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowPrivate:                true,
 		DefaultAllow:                false,
 		DisallowedStatusCode:        http.StatusForbidden,

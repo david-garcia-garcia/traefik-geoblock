@@ -17,17 +17,22 @@ const (
 	ArchiveTarGz = "tar.gz"
 
 	lockMaxAge = time.Hour
+
+	// SeedDir is the committed bundled-database folder. Default filenames stay basenames.
+	SeedDir = "seeds"
 )
 
 // Config is one catalog download the shared component can run.
 type Config struct {
-	Key          string
-	URL          string
-	Headers      map[string]string
-	DatabaseType string
-	Archive      string
-	Dir          string
-	MinAge       time.Duration
+	Key             string
+	URL             string
+	Headers         map[string]string
+	DatabaseType    string
+	Archive         string
+	Dir             string
+	MinAge          time.Duration
+	Path            string
+	DefaultFileName string
 }
 
 // Ext is the on-disk suffix after unpack.
@@ -46,6 +51,8 @@ func Normalize(cfg *Config) error {
 	cfg.Key = strings.TrimSpace(cfg.Key)
 	cfg.URL = strings.TrimSpace(cfg.URL)
 	cfg.Dir = strings.TrimSpace(cfg.Dir)
+	cfg.Path = strings.TrimSpace(cfg.Path)
+	cfg.DefaultFileName = strings.TrimSpace(cfg.DefaultFileName)
 	cfg.DatabaseType = strings.ToLower(strings.TrimSpace(cfg.DatabaseType))
 	cfg.Archive = strings.ToLower(strings.TrimSpace(cfg.Archive))
 	if cfg.Archive == "tgz" {

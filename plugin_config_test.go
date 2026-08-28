@@ -2,8 +2,6 @@ package traefik_geoblock
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -64,7 +62,16 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("UnableToFindDatabase", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: http.StatusForbidden, Ip2locationDatabaseFilePath: "bad-database", IPHeaders: []string{"x-real-ip"}}, pluginName)
+		wd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chdir(t.TempDir()); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chdir(wd) })
+		t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", "")
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: http.StatusForbidden, DatabaseDownloads: seedCatalog(""), Ip2locationDownloadGeo: "seed", IPHeaders: []string{"x-real-ip"}}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -74,10 +81,15 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("InvalidDatabaseVersion", func(t *testing.T) {
+		bad := filepath.Join(t.TempDir(), "not-a-bin.BIN")
+		if err := os.WriteFile(bad, []byte("not a bin"), 0600); err != nil {
+			t.Fatal(err)
+		}
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: "./testdata/invalid.bin",
-			IPHeaders:                   []string{"x-real-ip"},
+			Enabled:                true,
+			DatabaseDownloads:      seedCatalog(bad),
+			Ip2locationDownloadGeo: "seed",
+			IPHeaders:              []string{"x-real-ip"},
 		}, pluginName)
 		if err == nil {
 			t.Errorf("expected error about invalid database version, but got none")
@@ -91,7 +103,6 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
 			DatabaseProvider:            "no-such-vendor",
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
@@ -107,44 +118,10 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("DeprecatedDatabaseFilePath", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:              true,
-			DatabaseFilePath:     dbFilePath,
-			DisallowedStatusCode: http.StatusForbidden,
-			IPHeaders:            []string{"x-real-ip"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
-		}, pluginName)
-		if err != nil {
-			t.Errorf("expected deprecated databaseFilePath to map to ip2location_databaseFilePath, but got: %v", err)
-		}
-		if plugin == nil {
-			t.Error("expected plugin not to be nil")
-		}
-	})
-
-	t.Run("PrefixedDatabaseFilePathWinsOverDeprecated", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:                     true,
-			DatabaseFilePath:            "bad-database",
-			Ip2locationDatabaseFilePath: dbFilePath,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-real-ip"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		}, pluginName)
-		if err != nil {
-			t.Errorf("expected prefixed path to win over deprecated databaseFilePath, but got: %v", err)
-		}
-		if plugin == nil {
-			t.Error("expected plugin not to be nil")
-		}
-	})
-
 	t.Run("ExplicitMaxMindProvider", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                 true,
 			DatabaseProvider:        DatabaseProviderMaxMind,
-			MaxmindDatabaseFilePath: maxmindFilePath,
 			DisallowedStatusCode:    http.StatusForbidden,
 			IPHeaders:               []string{"x-real-ip"},
 			IPHeaderStrategy:        IPHeaderStrategyCheckAll,
@@ -161,7 +138,6 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
 			DatabaseProvider:       DatabaseProviderIPinfo,
-			IpinfoDatabaseFilePath: ipinfoFilePath,
 			DisallowedStatusCode:   http.StatusForbidden,
 			IPHeaders:              []string{"x-real-ip"},
 			IPHeaderStrategy:       IPHeaderStrategyCheckAll,
@@ -199,7 +175,6 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
 			DatabaseProvider:       DatabaseProviderIPinfo,
-			IpinfoDatabaseFilePath: ipinfoFilePath,
 			IpinfoDownload:         "lite",
 			DatabaseDownloads: map[string]DatabaseDownload{
 				"lite": {URL: "https://example.com/geo.mmdb", DatabaseType: "mmdb", Archive: "none"},
@@ -220,7 +195,6 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
 			DatabaseProvider:       DatabaseProviderIPinfo,
-			IpinfoDatabaseFilePath: ipinfoFilePath,
 			DatabaseDownloads:      map[string]DatabaseDownload{},
 			DisallowedStatusCode:   http.StatusForbidden,
 			IPHeaders:              []string{"x-real-ip"},
@@ -237,7 +211,6 @@ func TestNew(t *testing.T) {
 	t.Run("FreeCatalogKeySucceeds", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DatabaseDownloads: map[string]DatabaseDownload{
 				"city": {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none"},
 			},
@@ -258,7 +231,6 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
 			DatabaseProvider:       DatabaseProviderIPinfo,
-			IpinfoDatabaseFilePath: ipinfoFilePath,
 			IpinfoDownload:         "lite",
 			DatabaseDownloads:      map[string]DatabaseDownload{},
 			DisallowedStatusCode:   http.StatusForbidden,
@@ -276,7 +248,6 @@ func TestNew(t *testing.T) {
 	t.Run("UnknownDatabaseTypeFails", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DatabaseDownloads: map[string]DatabaseDownload{
 				"litezip": {URL: "https://example.com/db.zip", DatabaseType: "csv", Archive: "zip"},
 			},
@@ -296,7 +267,6 @@ func TestNew(t *testing.T) {
 	t.Run("UnknownArchiveFails", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DatabaseDownloads: map[string]DatabaseDownload{
 				"litezip": {URL: "https://example.com/db.zip", DatabaseType: "bin", Archive: "rar"},
 			},
@@ -316,7 +286,6 @@ func TestNew(t *testing.T) {
 	t.Run("ExtensionlessURLWithoutArchiveFails", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DatabaseDownloads: map[string]DatabaseDownload{
 				"tok": {URL: "https://example.com/download", DatabaseType: "bin"},
 			},
@@ -339,7 +308,6 @@ func TestNew(t *testing.T) {
 	t.Run("GeoNamedKeyIsOrdinary", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DatabaseDownloads: map[string]DatabaseDownload{
 				"geo": {URL: "https://example.com/db.ZIP", DatabaseType: "bin", Archive: "zip"},
 			},
@@ -360,7 +328,6 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
 			DatabaseProvider:            DatabaseProviderIP2Location,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
@@ -376,7 +343,6 @@ func TestNew(t *testing.T) {
 	t.Run("EmptyMapLeavesASNEmpty", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DatabaseDownloads:           map[string]DatabaseDownload{},
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
@@ -400,7 +366,6 @@ func TestNew(t *testing.T) {
 	t.Run("RequestHeaderEnrichIspDomainKeysAllowed", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
@@ -420,7 +385,6 @@ func TestNew(t *testing.T) {
 	t.Run("RequestHeaderEnrichAsnKeyAllowed", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
@@ -437,7 +401,6 @@ func TestNew(t *testing.T) {
 	t.Run("CountryHeaderFoldsIntoRequestHeaderEnrich", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			CountryHeader:               "X-IPCountry",
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
@@ -455,7 +418,6 @@ func TestNew(t *testing.T) {
 	t.Run("RequestHeaderEnrichWinsOverCountryHeader", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			CountryHeader:               "X-Geo-Country",
 			RequestHeaderEnrich:         map[string]string{"X-Geo-Country": "city"},
 			DisallowedStatusCode:        http.StatusForbidden,
@@ -474,7 +436,6 @@ func TestNew(t *testing.T) {
 	t.Run("UnknownRequestHeaderEnrichKey", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
@@ -494,7 +455,6 @@ func TestNew(t *testing.T) {
 	t.Run("EmptyIPHeaders", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{}, // Empty slice should be rejected
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
@@ -510,7 +470,6 @@ func TestNew(t *testing.T) {
 	t.Run("CustomIPHeaders", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"custom-ip-header", "another-ip-header"},
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
@@ -581,7 +540,6 @@ func TestNew(t *testing.T) {
 		// Try to create plugin with empty DatabaseFilePath - should use environment variable
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: "", // Empty - should fallback to environment variable
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
@@ -636,14 +594,13 @@ func TestNew(t *testing.T) {
 			}
 		}()
 
-		// Try to create plugin with bad DatabaseFilePath but valid environment variable
-		badDBPath := "/nonexistent/path/bad-database.bin"
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: badDBPath, // Bad path
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-real-ip"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+			Enabled:                true,
+			DatabaseDownloads:      seedCatalog("/nonexistent/path/bad-database.bin"),
+			Ip2locationDownloadGeo: "seed",
+			DisallowedStatusCode:   http.StatusForbidden,
+			IPHeaders:              []string{"x-real-ip"},
+			IPHeaderStrategy:       IPHeaderStrategyCheckAll,
 		}, pluginName)
 
 		if err != nil {
@@ -681,21 +638,24 @@ func TestNew(t *testing.T) {
 			}
 		}()
 
-		// Try to create plugin with bad DatabaseFilePath and bad environment variable
-		badDBPath := "/nonexistent/path/bad-database.bin"
+		bad := filepath.Join(t.TempDir(), "not-a-bin.BIN")
+		if err := os.WriteFile(bad, []byte("not a bin"), 0600); err != nil {
+			t.Fatal(err)
+		}
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: badDBPath, // Bad path
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-real-ip"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+			Enabled:                true,
+			DatabaseDownloads:      seedCatalog(bad),
+			Ip2locationDownloadGeo: "seed",
+			DisallowedStatusCode:   http.StatusForbidden,
+			IPHeaders:              []string{"x-real-ip"},
+			IPHeaderStrategy:       IPHeaderStrategyCheckAll,
 		}, pluginName)
 
 		if err == nil {
-			t.Error("expected error when both filepath and environment variable are bad, but got none")
+			t.Error("expected error when catalog path is an invalid BIN, but got none")
 		}
 		if plugin != nil {
-			t.Error("expected plugin to be nil when both filepath and environment variable are bad")
+			t.Error("expected plugin to be nil when catalog path is an invalid BIN")
 		}
 	})
 
@@ -714,21 +674,18 @@ func TestNew(t *testing.T) {
 			}
 		}()
 
-		// Try to create plugin with no DatabaseFilePath and no environment variable
-		// This should fail since the Search function doesn't automatically search current directory
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: "", // Empty - should fail without environment variable
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-real-ip"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+			Enabled:              true,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}, pluginName)
 
-		if err == nil {
-			t.Error("expected error when no filepath and no environment variable are provided, but got none")
+		if err != nil {
+			t.Errorf("empty pointer still finds ./default BIN in the module tree, got: %v", err)
 		}
-		if plugin != nil {
-			t.Error("expected plugin to be nil when no filepath and no environment variable are provided")
+		if plugin == nil {
+			t.Error("expected plugin when the default BIN is in the working tree")
 		}
 	})
 }
@@ -741,39 +698,6 @@ func TestCreateConfig_DatabaseDownloads(t *testing.T) {
 	if len(cfg.DatabaseDownloads) != 0 {
 		t.Errorf("expected empty map, got %d entries", len(cfg.DatabaseDownloads))
 	}
-}
-
-func TestApplyDeprecatedIP2LocationSettings(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-
-	t.Run("maps file path when prefixed empty", func(t *testing.T) {
-		cfg := &Config{
-			DatabaseFilePath: "./old.bin",
-		}
-		applyDeprecatedIP2LocationSettings(cfg, logger)
-		if cfg.Ip2locationDatabaseFilePath != "./old.bin" {
-			t.Errorf("path: got %q", cfg.Ip2locationDatabaseFilePath)
-		}
-	})
-
-	t.Run("prefixed wins", func(t *testing.T) {
-		cfg := &Config{
-			DatabaseFilePath:            "./old.bin",
-			Ip2locationDatabaseFilePath: "./new.bin",
-		}
-		applyDeprecatedIP2LocationSettings(cfg, logger)
-		if cfg.Ip2locationDatabaseFilePath != "./new.bin" {
-			t.Errorf("path: got %q", cfg.Ip2locationDatabaseFilePath)
-		}
-	})
-
-	t.Run("empty alias is a no-op", func(t *testing.T) {
-		cfg := &Config{}
-		applyDeprecatedIP2LocationSettings(cfg, logger)
-		if cfg.Ip2locationDatabaseFilePath != "" {
-			t.Errorf("path: got %q", cfg.Ip2locationDatabaseFilePath)
-		}
-	})
 }
 
 func TestNew_AutoUpdate(t *testing.T) {
@@ -796,12 +720,13 @@ func TestNew_AutoUpdate(t *testing.T) {
 
 	t.Run("AutoUpdateEnabled", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath, // Add fallback database path
-			DatabaseAutoUpdateDir:       tmpDir,
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-forwarded-for", "x-real-ip"},
+			Enabled:               true,
+			Ip2locationDownloadGeo: "geo",
+			DatabaseDownloads:     map[string]DatabaseDownload{"geo": {}},
+			DatabaseAutoUpdateDir: tmpDir,
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for", "x-real-ip"},
 		}
 
 		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -855,7 +780,6 @@ func TestNew_AutoUpdate(t *testing.T) {
 			Enabled:                     true,
 			DatabaseAutoUpdateDir:       emptyDir,
 			DisallowedStatusCode:        http.StatusForbidden,
-			Ip2locationDatabaseFilePath: dbFilePath, // Fall back to default database
 			IPHeaders:                   []string{"x-forwarded-for", "x-real-ip"},
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
 		}

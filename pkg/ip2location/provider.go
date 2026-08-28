@@ -32,7 +32,6 @@ func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error
 
 func geoFactoryConfig(cfg DatabaseConfig) *DatabaseConfig {
 	return &DatabaseConfig{
-		DatabaseFilePath:      cfg.DatabaseFilePath,
 		DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
 		Download:              cfg.Download,
 		BinRole:               dbutils.SlotGeo,
@@ -41,11 +40,10 @@ func geoFactoryConfig(cfg DatabaseConfig) *DatabaseConfig {
 
 func asnFactoryConfig(geo DatabaseConfig) *DatabaseConfig {
 	return &DatabaseConfig{
-		DatabaseFilePath:      geo.AsnDatabaseFilePath,
 		DatabaseAutoUpdateDir: geo.DatabaseAutoUpdateDir,
 		Download:              geo.AsnDownload,
 		BinRole:               dbutils.SlotASN,
-		AllowMissing:          geo.AsnDatabaseFilePath == "",
+		AllowMissing:          geo.AsnDownload.Path == "",
 	}
 }
 

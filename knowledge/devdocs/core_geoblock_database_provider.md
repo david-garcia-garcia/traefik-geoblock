@@ -24,10 +24,10 @@ Traefik Config key that names the implementation. Empty defaults to `ip2location
 - Set `databaseProvider` (`ip2location` default, `ipinfo`, or `maxmind`).
 - Call `Lookup(ip)` from the plugin. Use `Record.Country` for allow/block. Map errors through `banIfError`.
 - Map headers with `requestHeaderEnrich`. Unknown keys fail `New`. Write `null` when the Record field is empty.
-- Download is a named catalog (`databaseDownloads`) plus pointers (`ip2location_download_geo`, `ip2location_download_asn`, `ipinfo_download`, `maxmind_download`) and shared `databaseAutoUpdateDir`. Each catalog value is `url`, `databaseType` (`bin`/`mmdb`), `archive` (`none`/`zip`/`tar.gz`), optional `headers`. Empty pointer = seed/path only. A pointer to a missing key, unknown type/archive, or a bound URL without the dir fails `New`. Unused pointers for another provider are ignored.
-- At init the auto-update dir is preferred (newest `YYYYMMDD_<catalogKey>`). `ip2location_databaseFilePath` / `ip2location_asnDatabaseFilePath` are the seed when that dir has no file for the bound key.
-- IPinfo: empty `ipinfo_databaseFilePath` uses bundled `ipinfo_lite.mmdb`. Point `ipinfo_download` at a catalog entry whose `url` is `https://ipinfo.io/data/ipinfo_{lite|core|plus}.mmdb?token=`, `databaseType` `mmdb`, `archive` `none`. Country is `country_code`. Also fills `country_name`, `continent`, `continent_code`, `region`, `city` (empty on Lite), `isp` (`as_name`), `domain` (`as_domain`), `asn`.
-- MaxMind: empty `maxmind_databaseFilePath` uses bundled `GeoIP2-Country-Test.mmdb`. Point `maxmind_download` at a catalog entry with the official permalink, `databaseType` `mmdb`, `archive` `tar.gz`, and `Authorization: Basic …` on `headers`. The plugin does not parse `accountId:licenseKey`. Country is nested `country.iso_code`. ASN/ISP stay empty on Country/City files.
+- Download is a named catalog (`databaseDownloads`) plus pointers (`ip2location_download_geo`, `ip2location_download_asn`, `ipinfo_download`, `maxmind_download`) and shared `databaseAutoUpdateDir`. Each catalog value is `url`, `databaseType` (`bin`/`mmdb`), `archive` (`none`/`zip`/`tar.gz`), optional `headers`, optional `path`. Empty pointer = bundled default / env. A named `path` needs a pointer. A pointer to a missing key, unknown type/archive, or a bound URL without the dir fails `New`. Unused pointers for another provider are ignored.
+- `pkg/dbdownload.Resolve` picks the file: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path), else `TRAEFIK_PLUGIN_GEOBLOCK_PATH` for the vendor default filename under `seeds/`. There is no `*_databaseFilePath` or `databaseFilePath`.
+- IPinfo: empty pointer uses bundled `ipinfo_lite.mmdb`. Point `ipinfo_download` at a catalog entry whose `url` is `https://ipinfo.io/data/ipinfo_{lite|core|plus}.mmdb?token=`, `databaseType` `mmdb`, `archive` `none`. Country is `country_code`. Also fills `country_name`, `continent`, `continent_code`, `region`, `city` (empty on Lite), `isp` (`as_name`), `domain` (`as_domain`), `asn`.
+- MaxMind: empty pointer uses bundled `GeoIP2-Country-Test.mmdb`. Point `maxmind_download` at a catalog entry with the official permalink, `databaseType` `mmdb`, `archive` `tar.gz`, and `Authorization: Basic …` on `headers`. The plugin does not parse `accountId:licenseKey`. Country is nested `country.iso_code`. ASN/ISP stay empty on Country/City files.
 - `countryHeader` is deprecated. `New` copies it onto `requestHeaderEnrich` as key `country` when that header name is unset. Prefer `requestHeaderEnrich` only.
 
 ## Gotchas
@@ -47,6 +47,6 @@ req.Header.Set("X-Geo-Country", rec.Field("country"))
 - `pkg/ip2location` — geo `Get_all` plus optional ASN `Get_asn`
 - `pkg/ipinfo` — IPinfo Lite MMDB Lookup + hot-swap
 - `pkg/maxmind` — GeoIP2 / GeoLite2 MMDB Lookup + hot-swap
-- `pkg/dbdownload` — shared GET, unpack-by-`archive`, date-by-`databaseType`, dated write, ticker
+- `pkg/dbdownload` — Resolve (dated file, catalog `path`, default name), GET, unpack-by-`archive`, date-by-`databaseType`, dated write, ticker
 - `pkg/dbutils` — HTTP GET, dated-file find, `DownloadHint`
 - `plugin.go` — `requestHeaderEnrich`, `applyGeoHeaders`

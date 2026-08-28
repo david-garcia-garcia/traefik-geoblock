@@ -6,7 +6,6 @@ import (
 	"hash/fnv"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -16,12 +15,10 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbdownload"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
-// DatabaseConfig is IPinfo MMDB seed path plus one download component config.
+// DatabaseConfig is IPinfo download slot plus shared auto-update dir.
 type DatabaseConfig struct {
-	DatabaseFilePath      string
 	DatabaseAutoUpdateDir string
 	Download              dbdownload.Config
 }
@@ -86,7 +83,7 @@ func newProvider(config DatabaseConfig, logger *slog.Logger) (*provider, error) 
 		config: config,
 	}
 
-	path, err := p.resolveInitPath()
+	path, err := dbdownload.Resolve(p.downloadCfg(), p.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +98,11 @@ func newProvider(config DatabaseConfig, logger *slog.Logger) (*provider, error) 
 }
 
 func (p *provider) downloadCfg() dbdownload.Config {
-	return dbdownload.WithDefaults(p.config.Download, p.config.DatabaseAutoUpdateDir, dbdownload.TypeMMDB, dbdownload.DefaultMinAge)
+	cfg := dbdownload.WithDefaults(p.config.Download, p.config.DatabaseAutoUpdateDir, dbdownload.TypeMMDB, dbdownload.DefaultMinAge)
+	if cfg.DefaultFileName == "" {
+		cfg.DefaultFileName = DefaultFileName
+	}
+	return cfg
 }
 
 func (p *provider) startDownload() error {
@@ -118,40 +119,6 @@ func (p *provider) startDownload() error {
 	}
 	p.download = slot
 	return nil
-}
-
-func (p *provider) resolveInitPath() (string, error) {
-	if p.config.DatabaseAutoUpdateDir != "" && p.config.Download.Key != "" {
-		latest, err := dbdownload.Latest(p.config.DatabaseAutoUpdateDir, p.config.Download.Key, dbdownload.TypeMMDB)
-		if err != nil {
-			p.logger.Debug("no IPinfo MMDB in auto-update dir", "error", err)
-		} else if latest != "" {
-			p.logger.Debug("using IPinfo MMDB from auto-update dir", "path", latest)
-			return latest, nil
-		}
-	}
-
-	seed, err := resolveSeedPath(p.config.DatabaseFilePath, p.logger)
-	if err != nil {
-		return "", err
-	}
-	return seed, nil
-}
-
-func resolveSeedPath(configured string, logger *slog.Logger) (string, error) {
-	name := DefaultFileName
-	if configured != "" && fileutils.Exists(configured) {
-		return configured, nil
-	}
-	if found, err := fileutils.Default.Search(configured, name, logger); err == nil && found != "" {
-		return found, nil
-	}
-	for _, cand := range []string{name, filepath.Join(".", name)} {
-		if fileutils.Exists(cand) {
-			return cand, nil
-		}
-	}
-	return "", fmt.Errorf("IPinfo database file not found (set ipinfo_databaseFilePath or keep %s in the plugin tree)", name)
 }
 
 func (p *provider) open(path string) error {
@@ -223,7 +190,7 @@ func configHash(cfg DatabaseConfig) string {
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		return fmt.Sprintf("%s_%s_%s",
-			cfg.DatabaseFilePath,
+			cfg.Download.Path,
 			cfg.DatabaseAutoUpdateDir,
 			cfg.Download.URL)
 	}

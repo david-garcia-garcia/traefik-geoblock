@@ -23,17 +23,15 @@ import (
 // DownloadMinAge is how long a dated BIN stays current before GET.
 const DownloadMinAge = 30 * 24 * time.Hour
 
-// DatabaseConfig is IP2Location seed path plus one download component config.
+// DatabaseConfig is IP2Location download slots plus shared auto-update dir.
 type DatabaseConfig struct {
-	DatabaseFilePath      string
 	DatabaseAutoUpdateDir string
 	Download              dbdownload.Config
-	// BinRole is geo vs asn for the seed filename and temp copy. Not a catalog key.
+	// BinRole is geo vs asn for the default filename and temp copy. Not a catalog key.
 	BinRole string
 
-	// ASN fields are used only on the parent config passed to New.
-	AsnDatabaseFilePath string
-	AsnDownload         dbdownload.Config
+	// AsnDownload is used only on the parent config passed to New.
+	AsnDownload dbdownload.Config
 
 	// AllowMissing lets initialize succeed when the BIN is not on disk yet
 	// (ASN first start: download lands later, then hot-swap).
@@ -197,32 +195,36 @@ func (df *DatabaseFactory) Close() error {
 }
 
 func (df *DatabaseFactory) downloadCfg() dbdownload.Config {
-	return dbdownload.WithDefaults(df.config.Download, df.config.DatabaseAutoUpdateDir, dbdownload.TypeBIN, DownloadMinAge)
+	cfg := dbdownload.WithDefaults(df.config.Download, df.config.DatabaseAutoUpdateDir, dbdownload.TypeBIN, DownloadMinAge)
+	if cfg.DefaultFileName == "" {
+		cfg.DefaultFileName = defaultFileNameForSlot(df.binRole())
+	}
+	return cfg
 }
 
 // initialize sets up the initial database using the best available version.
-// Auto-update dir wins when it already has a BIN. The configured file path
-// (ip2location_databaseFilePath / ip2location_asnDatabaseFilePath) is the seed
-// used only when that dir is empty or auto-update is off.
+// Download Resolve picks dated file, catalog path, or the vendor default name.
 func (df *DatabaseFactory) initialize() error {
-	var targetPath string
-
-	if df.config.DatabaseAutoUpdateDir != "" {
-		updatedPath, err := df.handleAutoUpdateInit("")
-		if err != nil {
-			df.logger.Warn("auto-update initialization failed, using configured database path", "error", err)
-		} else if updatedPath != "" {
-			targetPath = updatedPath
-			df.logger.Debug("using auto-updated database", "path", updatedPath)
-		}
+	cfg := df.downloadCfg()
+	resolved, err := dbdownload.Resolve(cfg, df.logger)
+	if err != nil && resolved == "" && !df.config.AllowMissing {
+		return fmt.Errorf("failed to resolve database path: %w", err)
 	}
 
-	if targetPath == "" {
-		resolved, err := df.resolveDatabasePath()
-		if err != nil {
-			return fmt.Errorf("failed to resolve database path: %w", err)
+	var targetPath string
+	if resolved != "" {
+		if latest, lerr := dbdownload.Latest(cfg.Dir, cfg.Key, dbdownload.TypeBIN); lerr == nil && latest != "" && latest == resolved {
+			df.sourceDbPath = latest
+			copied, cerr := df.createLocalDatabaseCopy(latest)
+			if cerr != nil {
+				df.logger.Warn("local copy failed, opening source", "error", cerr)
+				targetPath = latest
+			} else {
+				targetPath = copied
+			}
+		} else {
+			targetPath = resolved
 		}
-		targetPath = resolved
 	}
 
 	df.logger.Debug("initializing database", "path", targetPath)
@@ -271,54 +273,6 @@ func (df *DatabaseFactory) initialize() error {
 	}
 
 	return nil
-}
-
-// resolveDatabasePath determines the best database path based on configuration
-func (df *DatabaseFactory) resolveDatabasePath() (string, error) {
-	databasePath := df.config.DatabaseFilePath
-	defaultName := defaultFileNameForSlot(df.binRole())
-
-	if df.config.AllowMissing {
-		if databasePath != "" && fileutils.Exists(databasePath) {
-			return databasePath, nil
-		}
-		return "", nil
-	}
-
-	databasePath, err := fileutils.Default.Search(databasePath, defaultName, df.logger)
-	if err != nil {
-		return "", fmt.Errorf("database file not found: %w", err)
-	}
-
-	return databasePath, nil
-}
-
-// handleAutoUpdateInit finds the newest available database for initialization (no downloads)
-func (df *DatabaseFactory) handleAutoUpdateInit(fallbackPath string) (string, error) {
-	if df.config.DatabaseAutoUpdateDir == "" {
-		return fallbackPath, nil
-	}
-
-	key := df.config.Download.Key
-	if key == "" {
-		return fallbackPath, nil
-	}
-	latest, err := dbdownload.Latest(df.config.DatabaseAutoUpdateDir, key, dbdownload.TypeBIN)
-	if err != nil {
-		df.logger.Debug("failed to list auto-update dir", "error", err)
-		return fallbackPath, nil
-	}
-
-	if latest != "" {
-		df.logger.Debug("found existing database in auto-update directory", "path", latest)
-		// Track the original source before creating local copy
-		df.sourceDbPath = latest
-		// Create local copy for consistent access
-		return df.createLocalDatabaseCopy(latest)
-	}
-
-	// Use fallback database directly
-	return fallbackPath, nil
 }
 
 // createLocalDatabaseCopy creates a timestamped local copy that doesn't overwrite existing files
@@ -414,7 +368,7 @@ func generateConfigHash(config *DatabaseConfig) string {
 	if err != nil {
 		// Fallback to a simple key if marshaling fails
 		return fmt.Sprintf("%s_%s_%s_%s",
-			config.DatabaseFilePath,
+			config.Download.Path,
 			config.DatabaseAutoUpdateDir,
 			config.Download.URL,
 			config.Download.Key)

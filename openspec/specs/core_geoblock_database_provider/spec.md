@@ -40,20 +40,19 @@ Creating the plugin SHALL open the DatabaseProvider named by `databaseProvider`.
 - **THEN** plugin creation fails
 
 ### Requirement: IP2Location settings are vendor-prefixed
-IP2Location-only file paths SHALL live on Traefik Config as `ip2location_databaseFilePath` and `ip2location_asnDatabaseFilePath`. IP2Location download pointers SHALL be `ip2location_download_geo` and `ip2location_download_asn`. The plugin MUST pass those fields to the IP2Location provider only. HTTP download SHALL use the catalog and `databaseAutoUpdateDir` as specified in `core_geoblock_database_url-download`.
+IP2Location download pointers SHALL live on Traefik Config as `ip2location_download_geo` and `ip2location_download_asn`. The plugin MUST pass those fields to the IP2Location provider only. File location SHALL be the catalog `path` and dated files as specified in `core_geoblock_database_url-download`. Config SHALL NOT expose `ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, or unprefixed `databaseFilePath`.
 
-#### Scenario: Prefixed seed path
-- **WHEN** `databaseProvider` is `ip2location` and `ip2location_databaseFilePath` is set to an existing BIN and download pointers are empty
+#### Scenario: Pointer reaches IP2Location only
+- **WHEN** `databaseProvider` is `ip2location` and `ip2location_download_geo` names a catalog entry whose `path` is an existing BIN
 - **THEN** plugin creation opens that file as the geo database
+- **AND** unused IPinfo and MaxMind pointers are ignored
 
-#### Scenario: Deprecated unprefixed file-path alias
-- **WHEN** unprefixed `databaseFilePath` is set and `ip2location_databaseFilePath` is unset
-- **THEN** the plugin copies the unprefixed value onto the prefixed field
-- **AND** logs a deprecation warning
-- **AND** a set `ip2location_databaseFilePath` wins over the alias
+#### Scenario: Empty geo pointer uses bundled default
+- **WHEN** `databaseProvider` is `ip2location` and `ip2location_download_geo` is empty and the default geo BIN exists
+- **THEN** plugin creation opens that bundled geo database
 
 ### Requirement: Provider implementations are isolated
-Vendor Lookup open and hot-swap SHALL live in that vendor’s provider package. HTTP GET, archive unpack, file-date read, lock, ticker, and dated write SHALL be one shared download component, not copied into each vendor package. A later vendor MUST be addable by implementing DatabaseProvider, adding a `databaseProvider` branch, and pointing at a catalog entry. The plugin MUST NOT type-assert a concrete vendor wrapper to read provider state.
+Vendor Lookup open and hot-swap SHALL live in that vendor’s provider package. HTTP GET, archive unpack, file-date read, lock, ticker, dated write, and file-location Resolve SHALL be one shared download component, not copied into each vendor package. A later vendor MUST be addable by implementing DatabaseProvider, adding a `databaseProvider` branch, and pointing at a catalog entry. The plugin MUST NOT type-assert a concrete vendor wrapper to read provider state.
 
 #### Scenario: Implemented vendors
 - **WHEN** this change ships

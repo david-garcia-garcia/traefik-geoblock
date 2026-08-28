@@ -21,9 +21,9 @@ func testMMDB(t *testing.T) string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	p := filepath.Join(filepath.Dir(file), "..", "..", DefaultFileName)
+	p := filepath.Join(filepath.Dir(file), "..", "..", "seeds", DefaultFileName)
 	if !fileutils.Exists(p) {
-		t.Fatal("ipinfo_lite.mmdb not found; commit it at the module root")
+		t.Fatal("ipinfo_lite.mmdb not found; commit it under seeds/")
 	}
 	return p
 }
@@ -36,7 +36,7 @@ func TestLookup_PublicAndPrivate(t *testing.T) {
 	resetFactories()
 	t.Cleanup(resetFactories)
 
-	p, err := New(DatabaseConfig{DatabaseFilePath: testMMDB(t)}, testLogger())
+	p, err := New(DatabaseConfig{Download: dbdownload.Config{Path: testMMDB(t)}}, testLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestNew_EmptyMapUsesSeed(t *testing.T) {
 	t.Cleanup(resetFactories)
 
 	p, err := New(DatabaseConfig{
-		DatabaseFilePath:      testMMDB(t),
+		Download: dbdownload.Config{Path: testMMDB(t)},
 		DatabaseAutoUpdateDir: t.TempDir(),
 	}, testLogger())
 	if err != nil {
@@ -134,7 +134,7 @@ func TestNew_Singleton(t *testing.T) {
 	resetFactories()
 	t.Cleanup(resetFactories)
 
-	cfg := DatabaseConfig{DatabaseFilePath: testMMDB(t)}
+	cfg := DatabaseConfig{Download: dbdownload.Config{Path: testMMDB(t)}}
 	a, err := New(cfg, testLogger())
 	if err != nil {
 		t.Fatalf("New a: %v", err)
@@ -182,7 +182,6 @@ func TestDownloadThroughComponent_HTTP(t *testing.T) {
 	resetFactories()
 	t.Cleanup(resetFactories)
 	p, err := New(DatabaseConfig{
-		DatabaseFilePath:      testMMDB(t),
 		DatabaseAutoUpdateDir: dir,
 		Download: dbdownload.Config{
 			Key:          "lite",

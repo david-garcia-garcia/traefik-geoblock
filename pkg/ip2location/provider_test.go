@@ -24,7 +24,7 @@ func TestNew_LookupWithoutASNFile(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(DatabaseConfig{DatabaseFilePath: testDBFile}, logger)
+	p, err := New(DatabaseConfig{Download: dbdownload.Config{Path: testDBFile}}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestNew_LookupDB8(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(DatabaseConfig{DatabaseFilePath: db8}, logger)
+	p, err := New(DatabaseConfig{Download: dbdownload.Config{Path: db8}}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -101,8 +101,8 @@ func TestNew_LookupWithASNFile(t *testing.T) {
 	}))
 
 	p, err := New(DatabaseConfig{
-		DatabaseFilePath:    testDBFile,
-		AsnDatabaseFilePath: asnPath,
+		Download: dbdownload.Config{Path: testDBFile},
+		AsnDownload: dbdownload.Config{Path: asnPath},
 	}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -122,15 +122,14 @@ func TestNew_LookupWithASNFile(t *testing.T) {
 
 func TestGeoFactoryConfig(t *testing.T) {
 	cfg := geoFactoryConfig(DatabaseConfig{
-		DatabaseFilePath:    testDBFile,
-		AsnDatabaseFilePath: "/asn.bin",
-		AsnDownload:         dbdownload.Config{URL: "https://example.com/asn.zip"},
+		Download:    dbdownload.Config{Path: testDBFile},
+		AsnDownload: dbdownload.Config{URL: "https://example.com/asn.zip", Path: "/asn.bin"},
 	})
-	if cfg.AsnDatabaseFilePath != "" || cfg.AsnDownload.URL != "" {
+	if cfg.AsnDownload.URL != "" || cfg.AsnDownload.Path != "" {
 		t.Error("geo factory config must not carry ASN fields")
 	}
-	if cfg.DatabaseFilePath != testDBFile {
-		t.Errorf("geo path: got %q", cfg.DatabaseFilePath)
+	if cfg.Download.Path != testDBFile {
+		t.Errorf("geo path: got %q", cfg.Download.Path)
 	}
 	if cfg.BinRole != dbutils.SlotGeo {
 		t.Errorf("bin role: got %q", cfg.BinRole)
@@ -227,7 +226,6 @@ func TestNew_DownloadThroughComponent(t *testing.T) {
 	}
 
 	p, err := New(DatabaseConfig{
-		DatabaseFilePath:      testDBFile,
 		DatabaseAutoUpdateDir: dir,
 		Download: dbdownload.Config{
 			Key:          "litezip",

@@ -12,7 +12,7 @@ func TestIPHeaderStrategy_Integration(t *testing.T) {
 	// Create a plugin with blocked countries (e.g., block CN)
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowPrivate:                true,
 		DefaultAllow:                true,
 		BlockedCountries:            []string{"CN"},
@@ -114,7 +114,7 @@ func TestIPHeaderStrategy_CountryHeaderPriority(t *testing.T) {
 	// Test that real countries take priority over private IP countries in the header
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowPrivate:                true,
 		DefaultAllow:                true,
 		DisallowedStatusCode:        http.StatusForbidden,
@@ -181,7 +181,7 @@ func TestIPHeaderStrategy_CountryHeaderPriority(t *testing.T) {
 func TestIPHeaderStrategy_InvalidStrategy(t *testing.T) {
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		IPHeaders:                   []string{"x-forwarded-for"},
 		IPHeaderStrategy:            "InvalidStrategy",
 		DisallowedStatusCode:        http.StatusForbidden,
@@ -202,7 +202,7 @@ func TestIPHeaderStrategy_PrivateIPDoesNotOverridePublicCountry(t *testing.T) {
 	// Test that private IPs processed AFTER public IPs do not override the country header
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowPrivate:                true,
 		DefaultAllow:                true,
 		DisallowedStatusCode:        http.StatusForbidden,
@@ -287,7 +287,7 @@ func TestIPHeaderStrategy_CountryHeaderOverrideEdgeCases(t *testing.T) {
 	// Test edge cases for country header override protection
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowPrivate:                true,
 		DefaultAllow:                true,
 		DisallowedStatusCode:        http.StatusForbidden,
@@ -362,7 +362,7 @@ func TestIPHeaderStrategy_HeaderOrderRespected(t *testing.T) {
 	// Test that IP headers are processed in the order they are defined in ipHeaders
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowPrivate:                true,
 		DefaultAllow:                true,
 		DisallowedStatusCode:        http.StatusForbidden,
@@ -548,7 +548,7 @@ func TestIPHeaderStrategy_HeaderOrderWithStrategies(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
 				Enabled:                     true,
-				Ip2locationDatabaseFilePath: dbFilePath,
+				DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 				AllowPrivate:                true,
 				DefaultAllow:                true,
 				DisallowedStatusCode:        http.StatusForbidden,
@@ -715,7 +715,7 @@ func TestRemoteAddress_IntegrationWithStrategies(t *testing.T) {
 	// Test remoteAddress with different IP header strategies
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowPrivate:                true,
 		DefaultAllow:                true,
 		DisallowedStatusCode:        http.StatusForbidden,

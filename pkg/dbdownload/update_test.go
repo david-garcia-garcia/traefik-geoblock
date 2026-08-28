@@ -31,7 +31,11 @@ func repoFile(t *testing.T, name string) string {
 	if !ok {
 		t.Fatal("runtime.Caller")
 	}
-	p := filepath.Join(filepath.Dir(file), "..", "..", name)
+	root := filepath.Join(filepath.Dir(file), "..", "..")
+	p := filepath.Join(root, name)
+	if _, err := os.Stat(p); err != nil {
+		p = filepath.Join(root, SeedDir, name)
+	}
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("%s: %v", name, err)
 	}

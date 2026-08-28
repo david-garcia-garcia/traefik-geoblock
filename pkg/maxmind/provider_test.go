@@ -29,9 +29,9 @@ func testMMDB(t *testing.T) string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	p := filepath.Join(filepath.Dir(file), "..", "..", DefaultSeedFileName)
+	p := filepath.Join(filepath.Dir(file), "..", "..", "seeds", DefaultSeedFileName)
 	if !fileutils.Exists(p) {
-		t.Fatal("GeoIP2-Country-Test.mmdb not found; commit it at the module root")
+		t.Fatal("GeoIP2-Country-Test.mmdb not found; commit it under seeds/")
 	}
 	return p
 }
@@ -44,7 +44,7 @@ func TestLookup_DummyCountry(t *testing.T) {
 	resetFactories()
 	t.Cleanup(resetFactories)
 
-	p, err := New(DatabaseConfig{DatabaseFilePath: testMMDB(t)}, testLogger())
+	p, err := New(DatabaseConfig{Download: dbdownload.Config{Path: testMMDB(t)}}, testLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestNew_EmptyMapUsesSeed(t *testing.T) {
 	t.Cleanup(resetFactories)
 
 	p, err := New(DatabaseConfig{
-		DatabaseFilePath:      testMMDB(t),
+		Download: dbdownload.Config{Path: testMMDB(t)},
 		DatabaseAutoUpdateDir: t.TempDir(),
 	}, testLogger())
 	if err != nil {
@@ -174,7 +174,6 @@ func TestDownloadThroughComponent_HTTP(t *testing.T) {
 	resetFactories()
 	t.Cleanup(resetFactories)
 	p, err := New(DatabaseConfig{
-		DatabaseFilePath:      testMMDB(t),
 		DatabaseAutoUpdateDir: dir,
 		Download: dbdownload.Config{
 			Key:          "geolite",

@@ -212,9 +212,9 @@ The plugin looks up IPs with one of three providers (`databaseProvider`):
 
 | Provider | Config value | Bundled seed (when available) |
 | --- | --- | --- |
-| IP2Location (default) | `ip2location` or empty | `IP2LOCATION-LITE-DB1.IPV6.BIN` (country). ASN is a separate BIN and is **not** bundled. |
-| IPinfo | `ipinfo` | `ipinfo_lite.mmdb` (bundled seed, country + ASN). Core/Plus are operator URLs or seed paths. |
-| MaxMind | `maxmind` | `GeoIP2-Country-Test.mmdb` (official **dummy** Country fixture, not a live GeoLite file). Operator-supplied GeoLite2/GeoIP2 Country or City MMDBs use nested `country.iso_code`. |
+| IP2Location (default) | `ip2location` or empty | `seeds/IP2LOCATION-LITE-DB1.IPV6.BIN` (country). ASN is a separate BIN and is **not** bundled. |
+| IPinfo | `ipinfo` | `seeds/ipinfo_lite.mmdb` (bundled seed, country + ASN). Core/Plus are operator URLs or seed paths. |
+| MaxMind | `maxmind` | `seeds/GeoIP2-Country-Test.mmdb` (official **dummy** Country fixture, not a live GeoLite file). Operator-supplied GeoLite2/GeoIP2 Country or City MMDBs use nested `country.iso_code`. |
 
 This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com
 
@@ -226,8 +226,8 @@ Only the selected provider’s files are opened. Unused vendor paths are ignored
 
 How auto-update works:
 
-- Add named entries under `databaseDownloads` (`url`, `databaseType`, `archive`, optional `headers`). Keys are operator-chosen. A token may live in the URL query (`?token=`).
-- Point the selected provider at a catalog key: `ip2location_download_geo`, `ip2location_download_asn`, `ipinfo_download`, or `maxmind_download`. Empty pointer = seed/path only; no GET.
+- Add named entries under `databaseDownloads` (`url`, `databaseType`, `archive`, optional `headers` and `path`). Keys are operator-chosen. A token may live in the URL query (`?token=`). `path` is the operator seed **file** (use a full path). It is not the bundled `seeds/` copy.
+- Point the selected provider at a catalog key: `ip2location_download_geo`, `ip2location_download_asn`, `ipinfo_download`, or `maxmind_download`. A named seed requires that pointer. Empty pointer = bundled default / env only; no GET.
 - Set `databaseType` to `bin` or `mmdb`. Set `archive` to `none`, `zip`, or `tar.gz`. Empty `archive` is inferred from the URL path (`.zip`, `.tar.gz`/`.tgz`, `.mmdb`, `.bin`). Official IP2Location token and MaxMind permalink URLs have no path extension — set `archive` on those entries.
 - Set `databaseAutoUpdateDir` (required when a bound entry has a URL; must survive container restarts).
 - On startup the plugin uses the newest dated file for that catalog key already in that directory. A 24-hour ticker then checks again.
@@ -235,13 +235,13 @@ How auto-update works:
 - New files are stored as `YYYYMMDD_<catalogKey>.BIN` or `.mmdb`. The prefix is the date inside the file (IP2Location BIN header, MMDB `build_epoch`). IP2Location downloads when the dated file is older than 30 days. IPinfo and MaxMind skip the download when that dated file is less than 24 hours old.
 - Same config shares one factory (one ticker). See [Network Requirements](#network-requirements) for the download hosts.
 
-`ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, `ipinfo_databaseFilePath`, and `maxmind_databaseFilePath` are **seeds / fallbacks**, not the live copy once a dated file is stored. Resolution order for each database the provider needs:
+Catalog `path` is the seed / fallback, not the live copy once a dated file is stored. Resolution order for each database the provider needs:
 
 1. **Auto-update directory** — newest dated file for the bound catalog key already there (when the dir and pointer are set).
-2. **Configured seed path** — the matching `*_databaseFilePath` (file, or a directory searched for the default filename).
-3. **Bundled database** — the committed seed, when that provider ships one, found via `TRAEFIK_PLUGIN_GEOBLOCK_PATH`.
+2. **Catalog `path`** — the bound entry’s `path` if it is an existing file (full path to a file you mounted or copied).
+3. **Bundled database** — `seeds/<default filename>` under the plugin install, found via `TRAEFIK_PLUGIN_GEOBLOCK_PATH`. Do not put that relative name in `path`.
 
-If none of those exist, plugin creation fails (except an empty IP2Location ASN path, which means “no ASN”).
+If none of those exist, plugin creation fails (except an empty IP2Location ASN pointer and `path`, which means “no ASN”). There is no `*_databaseFilePath` or `databaseFilePath` key.
 
 ## Network Requirements
 
@@ -305,7 +305,7 @@ docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock traefik:latest
 export TRAEFIK_PLUGIN_GEOBLOCK_PATH=/opt/traefik-plugins/geoblock
 ```
 
-When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN`, `ipinfo_lite.mmdb`, `GeoIP2-Country-Test.mmdb`, and `geoblockban.html` in the specified directory if they are not found in their configured locations. An ASN BIN is opened when `ip2location_asnDatabaseFilePath` points at one, or after `ip2location_download_asn` has stored a dated file. Downloads run only when the matching pointer names a catalog entry with a URL.
+When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN`, `ipinfo_lite.mmdb`, `GeoIP2-Country-Test.mmdb`, and `geoblockban.html` in the specified directory (including `seeds/`) if they are not found in their configured locations. The committed copies live under `seeds/`. An ASN BIN is opened when `ip2location_download_asn` names a catalog entry with `path` or after that pointer has stored a dated file. Downloads run only when the matching pointer names a catalog entry with a URL.
 
 ### Example Docker Compose Setup
 
@@ -322,7 +322,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./traefik.yml:/etc/traefik/traefik.yml
       - ./dynamic-config.yml:/etc/traefik/dynamic-config.yml
-      - ./IP2LOCATION-LITE-DB1.IPV6.BIN:/plugins-storage/IP2LOCATION-LITE-DB1.IPV6.BIN
+      - ./seeds/IP2LOCATION-LITE-DB1.IPV6.BIN:/plugins-storage/IP2LOCATION-LITE-DB1.IPV6.BIN
     ports:
       - "80:80"
       - "443:443"
@@ -529,40 +529,12 @@ http:
           # ipinfo_download: lite
           # maxmind_download: geolite
 
-          #-------------------------------
-          # IP2Location Database
-          #-------------------------------
-          ip2location_databaseFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/IP2LOCATION-LITE-DB1.IPV6.BIN"
-          # Seed geo BIN (country; region/city/isp/domain on DB8+). Used only when
-          # the auto-update dir has no dated geo BIN yet.
-          # Deprecated alias: databaseFilePath (copied onto this key when unset).
-          # Can be:
-          # - Full path: /path/to/IP2LOCATION-LITE-DB1.IPV6.BIN
-          # - Directory: /path/to/ (will search for IP2LOCATION-LITE-DB1.IPV6.BIN recursively).
-          # Use /plugins-storage/sources/ if you are installing from plugin repository.
-          # - Empty: TRAEFIK_PLUGIN_GEOBLOCK_PATH, or skip if auto-update dir already has a BIN.
-          ip2location_asnDatabaseFilePath: ""
-          # Seed ASN BIN (https://lite.ip2location.com/database-asn). Used only when
-          # the auto-update dir has no dated asn BIN yet. Leave empty if you do not
-          # need ASN or you set ip2location_download_asn. The geo BIN has no ASN.
-
-          #-------------------------------
-          # IPinfo Database
-          #-------------------------------
-          # The repo ships ipinfo_lite.mmdb. Empty path uses that file.
-          # Core/Plus: set ipinfo_databaseFilePath or ipinfo_download + a catalog URL
-          # to https://ipinfo.io/data/ipinfo_{lite|core|plus}.mmdb?token=$TOKEN
-          # Core/Plus fill region and city; Lite leaves those empty.
-          ipinfo_databaseFilePath: ""
-
-          #-------------------------------
-          # MaxMind / GeoLite2 Database
-          #-------------------------------
-          # Country allow/block uses nested country.iso_code (not IPinfo country_code).
-          # The repo ships GeoIP2-Country-Test.mmdb (MaxMind official dummy fixture).
-          # Empty path uses that file. It is not a live GeoLite database.
-          # This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com
-          maxmind_databaseFilePath: ""
+          # Optional operator seed (full file path). Used when the auto-update dir
+          # has no dated file. Not the bundled seeds/ copy — that is step 3 via
+          # TRAEFIK_PLUGIN_GEOBLOCK_PATH. A named path requires the matching pointer.
+          # databaseDownloads.litezip.path: "/data/geo/IP2LOCATION-LITE-DB1.IPV6.BIN"
+          # ASN: set ip2location_download_asn and a full path on that catalog row.
+          # IPinfo / MaxMind: empty path + empty pointer opens seeds/*.mmdb via the env.
 
           #-------------------------------
           # Request header settings
@@ -587,8 +559,8 @@ http:
           # The first public IP wins. Every mapped header is written; empty or
           # unavailable fields are the string null (logs and backends need the header present).
           # IP2Location LITE DB1 is country-only; region/city/isp/domain need DB8 or richer.
-          # asn needs the ASN LITE BIN (ip2location_asnDatabaseFilePath, or
-          # ip2location_download_asn).
+          # asn needs the ASN LITE BIN (ip2location_download_asn catalog path
+          # or a dated file from that pointer).
           # IPinfo Lite fills country, country_name, continent, continent_code,
           # isp (as_name), domain (as_domain), and asn (AS15169 form).
           # region and city stay empty.

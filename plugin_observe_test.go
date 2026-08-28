@@ -24,7 +24,7 @@ func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
 
 	cfg := &Config{
 		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
+		DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 		AllowedCountries:            []string{"AU"},
 		BlockedCountries:            []string{"US"},
 		DefaultAllow:                false,
@@ -122,7 +122,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 	t.Run("IgnoreVerb_should_set_pass_ignore_verb", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			BlockedCountries:            []string{"US"},
 			DefaultAllow:                false,
 			DisallowedStatusCode:        http.StatusForbidden,
@@ -161,7 +161,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 	t.Run("ExcludedRegex_should_set_pass_excluded_regex", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			BlockedCountries:            []string{"US"},
 			DefaultAllow:                false,
 			DisallowedStatusCode:        http.StatusForbidden,
@@ -201,7 +201,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 	t.Run("NotIncludedRegex_should_set_pass_not_included_regex", func(t *testing.T) {
 		handler, err := New(context.TODO(), captureHandler, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			BlockedCountries:            []string{"US"},
 			DefaultAllow:                false,
 			AllowPrivate:                false,
@@ -228,7 +228,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 	t.Run("BypassHeader_should_set_pass_bypass_header", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			BlockedCountries:            []string{"US"},
 			DefaultAllow:                false,
 			DisallowedStatusCode:        http.StatusForbidden,
@@ -279,7 +279,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 	t.Run("DefaultAllow_true_should_set_pass_default_allow", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{}, // No countries explicitly allowed
 			BlockedCountries:            []string{}, // No countries blocked
 			DefaultAllow:                true,       // Allow by default
@@ -318,7 +318,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 	t.Run("DefaultAllow_false_should_set_block_default_allow", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{}, // No countries explicitly allowed
 			BlockedCountries:            []string{}, // No countries blocked
 			DefaultAllow:                false,      // Block by default
@@ -355,7 +355,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 	t.Run("AllowedIPBlock_should_set_pass_allowed_ip_block", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			BlockedCountries:            []string{"US"},         // Block US
 			AllowedIPBlocks:             []string{"8.8.8.0/24"}, // But allow this Google range
 			DefaultAllow:                false,
@@ -394,7 +394,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 	t.Run("BlockedIPBlock_should_set_block_blocked_ip_block", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			AllowedCountries:            []string{"AU"},         // Allow AU
 			BlockedIPBlocks:             []string{"1.1.1.0/24"}, // But block this AU range
 			DefaultAllow:                true,
@@ -431,7 +431,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 	t.Run("NoIPsFound_should_set_pass_none", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			DefaultAllow:                true,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-custom-ip"}, // Header that won't be set
@@ -576,7 +576,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 	t.Run("real BIN writes country and null for missing region city", func(t *testing.T) {
 		handler, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
+			DatabaseDownloads: seedCatalog(dbFilePath), Ip2locationDownloadGeo: "seed",
 			DefaultAllow:                true,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
@@ -609,7 +609,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		path := requireDB8(t)
 		handler, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			Ip2locationDatabaseFilePath: path,
+			DatabaseDownloads: seedCatalog(path), Ip2locationDownloadGeo: "seed",
 			DefaultAllow:                true,
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
@@ -647,7 +647,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		handler, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
 			DatabaseProvider:       DatabaseProviderIPinfo,
-			IpinfoDatabaseFilePath: ipinfoFilePath,
+			DatabaseDownloads: seedCatalog(ipinfoFilePath), IpinfoDownload: "seed",
 			DefaultAllow:           true,
 			DisallowedStatusCode:   http.StatusForbidden,
 			IPHeaders:              []string{"x-real-ip"},

@@ -10,11 +10,22 @@ import (
 
 const (
 	pluginName      = "geoblock"
-	dbFilePath      = "./IP2LOCATION-LITE-DB1.IPV6.BIN"
+	dbFilePath      = "./seeds/IP2LOCATION-LITE-DB1.IPV6.BIN"
 	db8FilePath     = "./testdata/IP2LOCATION-DB8.BIN"
-	ipinfoFilePath  = "./ipinfo_lite.mmdb"
-	maxmindFilePath = "./GeoIP2-Country-Test.mmdb"
+	ipinfoFilePath  = "./seeds/ipinfo_lite.mmdb"
+	maxmindFilePath = "./seeds/GeoIP2-Country-Test.mmdb"
 )
+
+func seedCatalog(path string) map[string]DatabaseDownload {
+	return map[string]DatabaseDownload{"seed": {Path: path}}
+}
+
+func seedCatalogPair(geo, asn string) map[string]DatabaseDownload {
+	return map[string]DatabaseDownload{
+		"geo": {Path: geo},
+		"asn": {Path: asn},
+	}
+}
 
 var fullEnrichHeaders = map[string]string{
 	"X-Geo-Country": dbprovider.MetaCountry,
