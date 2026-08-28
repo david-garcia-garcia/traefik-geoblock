@@ -1,68 +1,54 @@
 package dbutils
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
+	"unicode/utf8"
 )
 
-// DownloadHintPrefixBytes is how much of a rejected download body to quote in logs.
-const DownloadHintPrefixBytes = 80
+const DownloadHintPrefixBytes = 64
 
-// DownloadHint describes a rejected vendor download. Do not pass the URL
-// (tokens live in the query or Basic Auth).
-func DownloadHint(code, status, contentType string, size int64, prefix []byte) string {
-	if len(prefix) > DownloadHintPrefixBytes {
-		prefix = prefix[:DownloadHintPrefixBytes]
-	}
-	return fmt.Sprintf("file=%s status=%s content_type=%q bytes=%d prefix=%s",
-		code, status, contentType, size, strconv.Quote(string(prefix)))
-}
-
-// DownloadHintFromFile is DownloadHint using the saved body on disk.
-func DownloadHintFromFile(code, status, contentType, path string) string {
-	return DownloadHint(code, status, contentType, fileSize(path), ReadFilePrefix(path, DownloadHintPrefixBytes))
-}
-
-// ReadPrefix returns up to n bytes from r.
-func ReadPrefix(r io.Reader, n int) []byte {
+// ReadPrefix reads up to n bytes from r for a download error hint.
+func ReadPrefix(r io.Reader, n int) string {
 	if r == nil || n <= 0 {
-		return nil
+		return ""
 	}
 	buf := make([]byte, n)
 	got, _ := io.ReadFull(r, buf)
 	if got <= 0 {
-		return nil
+		return ""
 	}
-	return buf[:got]
+	return printablePrefix(buf[:got])
 }
 
-// ReadFilePrefix returns up to n bytes from path.
-func ReadFilePrefix(path string, n int) []byte {
+// DownloadHint describes a failed GET without the URL (tokens may be in the query).
+func DownloadHint(key, status, contentType string, contentLength int64, prefix string) string {
+	if len(prefix) > DownloadHintPrefixBytes {
+		prefix = prefix[:DownloadHintPrefixBytes]
+	}
+	return fmt.Sprintf("key=%s status=%s content_type=%s content_length=%d prefix=%q",
+		key, status, contentType, contentLength, prefix)
+}
+
+// DownloadHintFromFile reads a prefix from a saved body for a download error hint.
+func DownloadHintFromFile(key, status, contentType, path string) string {
+	fi, err := os.Stat(path)
+	length := int64(-1)
+	if err == nil {
+		length = fi.Size()
+	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil
+		return DownloadHint(key, status, contentType, length, "")
 	}
 	defer f.Close()
-	return ReadPrefix(f, n)
+	return DownloadHint(key, status, contentType, length, ReadPrefix(f, DownloadHintPrefixBytes))
 }
 
-// TeePrefix returns a reader equivalent to r and the first n bytes so a later
-// format error can quote the payload without a second fetch.
-func TeePrefix(r io.Reader, n int) (io.Reader, []byte) {
-	prefix := ReadPrefix(r, n)
-	if len(prefix) == 0 {
-		return r, nil
+func printablePrefix(b []byte) string {
+	if utf8.Valid(b) {
+		return string(b)
 	}
-	return io.MultiReader(bytes.NewReader(prefix), r), prefix
-}
-
-func fileSize(path string) int64 {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return -1
-	}
-	return fi.Size()
+	return fmt.Sprintf("%x", b)
 }

@@ -9,7 +9,9 @@ testData:
   # This will cause the plugin to not attempt to load the database file.
   enabled: false
   # databaseProvider: ip2location
-  # ip2location_databaseFilePath: IP2LOCATION-LITE-DB1.IPV6.BIN
+  # path is a full file path (operator seed). Omit it to use seeds/ via TRAEFIK_PLUGIN_GEOBLOCK_PATH.
+  # databaseSources.seed.path: /data/geo/IP2LOCATION-LITE-DB1.IPV6.BIN
+  # ip2location_source_geo: seed
   # allowedCountries: [ "CH", "DE" ]
   # blockedCountries: [ "RU" ]
   # defaultAllow: false

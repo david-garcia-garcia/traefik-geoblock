@@ -1,8 +1,6 @@
 package dbutils
 
 import (
-	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +8,7 @@ import (
 	"time"
 )
 
-var dbFilePath = filepath.Join("..", "..", "IP2LOCATION-LITE-DB1.IPV6.BIN")
+var dbFilePath = filepath.Join("..", "..", "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
 
 func TestGetDateFromName(t *testing.T) {
 	tests := []struct {
@@ -157,12 +155,12 @@ func TestGetDBVersion(t *testing.T) {
 }
 
 func TestDownloadHint_HTMLErrorPage(t *testing.T) {
-	html := []byte("<html><title>NO PERMISSION</title></html>")
+	html := "<html><title>NO PERMISSION</title></html>"
 	got := DownloadHint("DB8BINIPV6", "200 OK", "text/html", int64(len(html)), html)
 	for _, want := range []string{
-		"file=DB8BINIPV6",
+		"key=DB8BINIPV6",
 		"status=200 OK",
-		`content_type="text/html"`,
+		"content_type=text/html",
 		"NO PERMISSION",
 	} {
 		if !strings.Contains(got, want) {
@@ -175,7 +173,7 @@ func TestDownloadHint_HTMLErrorPage(t *testing.T) {
 }
 
 func TestDownloadHint_TruncatesPrefix(t *testing.T) {
-	prefix := bytes.Repeat([]byte("A"), DownloadHintPrefixBytes+20)
+	prefix := strings.Repeat("A", DownloadHintPrefixBytes+20)
 	got := DownloadHint("DB1", "200 OK", "application/octet-stream", int64(len(prefix)), prefix)
 	if strings.Count(got, "A") != DownloadHintPrefixBytes {
 		t.Errorf("prefix A count=%d, want %d in %q", strings.Count(got, "A"), DownloadHintPrefixBytes, got)
@@ -188,25 +186,7 @@ func TestDownloadHintFromFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := DownloadHintFromFile("GeoLite2-Country", "200 OK", "text/html", path)
-	if !strings.Contains(got, "denied") || !strings.Contains(got, "bytes=21") {
+	if !strings.Contains(got, "denied") || !strings.Contains(got, "content_length=21") {
 		t.Errorf("hint=%q", got)
-	}
-	if fileSize(filepath.Join(t.TempDir(), "missing")) != -1 {
-		t.Error("missing file size should be -1")
-	}
-}
-
-func TestTeePrefix(t *testing.T) {
-	body := bytes.NewBufferString("PK\x03\x04rest-of-zip")
-	r, prefix := TeePrefix(body, 4)
-	if string(prefix) != "PK\x03\x04" {
-		t.Fatalf("prefix=%q", prefix)
-	}
-	all, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(all) != "PK\x03\x04rest-of-zip" {
-		t.Errorf("replay=%q", all)
 	}
 }

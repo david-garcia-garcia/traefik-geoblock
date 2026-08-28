@@ -3,15 +3,16 @@ package traefik_geoblock
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
-
-	"log/slog"
+	"time"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
@@ -20,7 +21,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
-//go:generate go run ./tools/dbdownload/main.go -o ./IP2LOCATION-LITE-DB1.IPV6.BIN
+//go:generate go run ./tools/dbdownload/main.go -o ./seeds/IP2LOCATION-LITE-DB1.IPV6.BIN
 
 const (
 	PrivateIpCountryAlias       = "PRIVATE"
@@ -69,36 +70,16 @@ type Config struct {
 	// Database provider. Empty defaults to ip2location. Implemented: ip2location, ipinfo, maxmind.
 	DatabaseProvider string `json:"databaseProvider,omitempty" mapstructure:"databaseProvider"`
 
-	// IP2Location provider settings. Each vendor keeps its own prefixed keys.
-	Ip2locationDatabaseFilePath          string `json:"ip2location_databaseFilePath,omitempty" mapstructure:"ip2location_databaseFilePath"`
-	Ip2locationDatabaseAutoUpdate        bool   `json:"ip2location_databaseAutoUpdate,omitempty" mapstructure:"ip2location_databaseAutoUpdate"`
-	Ip2locationDatabaseAutoUpdateDir     string `json:"ip2location_databaseAutoUpdateDir,omitempty" mapstructure:"ip2location_databaseAutoUpdateDir"`
-	Ip2locationDatabaseAutoUpdateToken   string `json:"ip2location_databaseAutoUpdateToken,omitempty" mapstructure:"ip2location_databaseAutoUpdateToken"`
-	Ip2locationDatabaseAutoUpdateCode    string `json:"ip2location_databaseAutoUpdateCode,omitempty" mapstructure:"ip2location_databaseAutoUpdateCode"`
-	Ip2locationAsnDatabaseFilePath       string `json:"ip2location_asnDatabaseFilePath,omitempty" mapstructure:"ip2location_asnDatabaseFilePath"`
-	Ip2locationAsnDatabaseAutoUpdate     bool   `json:"ip2location_asnDatabaseAutoUpdate,omitempty" mapstructure:"ip2location_asnDatabaseAutoUpdate"`
-	Ip2locationAsnDatabaseAutoUpdateCode string `json:"ip2location_asnDatabaseAutoUpdateCode,omitempty" mapstructure:"ip2location_asnDatabaseAutoUpdateCode"`
+	// DatabaseSources is the catalog of database files (seed path and/or URL). Keys are operator-chosen.
+	DatabaseSources map[string]DatabaseSource `json:"databaseSources,omitempty" mapstructure:"databaseSources"`
+	// DatabaseAutoUpdateDir is the shared dir for dated files. Required when a bound entry has a URL.
+	DatabaseAutoUpdateDir string `json:"databaseAutoUpdateDir,omitempty" mapstructure:"databaseAutoUpdateDir"`
 
-	// IPinfo MMDB. Auto-update requires a token. Code is lite (default), core, or plus.
-	IpinfoDatabaseFilePath        string `json:"ipinfo_databaseFilePath,omitempty" mapstructure:"ipinfo_databaseFilePath"`
-	IpinfoDatabaseAutoUpdate      bool   `json:"ipinfo_databaseAutoUpdate,omitempty" mapstructure:"ipinfo_databaseAutoUpdate"`
-	IpinfoDatabaseAutoUpdateDir   string `json:"ipinfo_databaseAutoUpdateDir,omitempty" mapstructure:"ipinfo_databaseAutoUpdateDir"`
-	IpinfoDatabaseAutoUpdateToken string `json:"ipinfo_databaseAutoUpdateToken,omitempty" mapstructure:"ipinfo_databaseAutoUpdateToken"`
-	IpinfoDatabaseAutoUpdateCode  string `json:"ipinfo_databaseAutoUpdateCode,omitempty" mapstructure:"ipinfo_databaseAutoUpdateCode"`
-
-	// MaxMind / GeoLite2 MMDB. Token is accountId:licenseKey. Default code is GeoLite2-Country.
-	MaxmindDatabaseFilePath        string `json:"maxmind_databaseFilePath,omitempty" mapstructure:"maxmind_databaseFilePath"`
-	MaxmindDatabaseAutoUpdate      bool   `json:"maxmind_databaseAutoUpdate,omitempty" mapstructure:"maxmind_databaseAutoUpdate"`
-	MaxmindDatabaseAutoUpdateDir   string `json:"maxmind_databaseAutoUpdateDir,omitempty" mapstructure:"maxmind_databaseAutoUpdateDir"`
-	MaxmindDatabaseAutoUpdateToken string `json:"maxmind_databaseAutoUpdateToken,omitempty" mapstructure:"maxmind_databaseAutoUpdateToken"`
-	MaxmindDatabaseAutoUpdateCode  string `json:"maxmind_databaseAutoUpdateCode,omitempty" mapstructure:"maxmind_databaseAutoUpdateCode"`
-
-	// Deprecated unprefixed aliases. Copied onto the ip2location_ fields when those are unset.
-	DatabaseFilePath        string `json:"databaseFilePath,omitempty" mapstructure:"databaseFilePath"`
-	DatabaseAutoUpdate      bool   `json:"databaseAutoUpdate,omitempty" mapstructure:"databaseAutoUpdate"`
-	DatabaseAutoUpdateDir   string `json:"databaseAutoUpdateDir,omitempty" mapstructure:"databaseAutoUpdateDir"`
-	DatabaseAutoUpdateToken string `json:"databaseAutoUpdateToken,omitempty" mapstructure:"databaseAutoUpdateToken"`
-	DatabaseAutoUpdateCode  string `json:"databaseAutoUpdateCode,omitempty" mapstructure:"databaseAutoUpdateCode"`
+	// Catalog pointers. Empty = bundled default / env. Unused pointers for another provider are ignored.
+	Ip2locationSourceGeo string `json:"ip2location_source_geo,omitempty" mapstructure:"ip2location_source_geo"`
+	Ip2locationSourceAsn string `json:"ip2location_source_asn,omitempty" mapstructure:"ip2location_source_asn"`
+	IpinfoSource         string `json:"ipinfo_source,omitempty" mapstructure:"ipinfo_source"`
+	MaxmindSource        string `json:"maxmind_source,omitempty" mapstructure:"maxmind_source"`
 
 	// Country-based rules (ISO 3166-1 alpha-2 format)
 	AllowedCountries []string // Whitelist of countries to allow
@@ -143,6 +124,15 @@ type Config struct {
 	ExcludedPathsRegex string
 }
 
+// DatabaseSource is one catalog row (seed path and/or GET URL).
+type DatabaseSource struct {
+	URL          string            `json:"url,omitempty" mapstructure:"url"`
+	Headers      map[string]string `json:"headers,omitempty" mapstructure:"headers"`
+	DatabaseType string            `json:"databaseType,omitempty" mapstructure:"databaseType"`
+	Archive      string            `json:"archive,omitempty" mapstructure:"archive"`
+	Path         string            `json:"path,omitempty" mapstructure:"path"`
+}
+
 // CreateConfig creates the default plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
@@ -156,6 +146,7 @@ func CreateConfig() *Config {
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,                 // Default to checking all IPs
 		DatabaseProvider:     DatabaseProviderIP2Location,              // Default provider
 		CountryHeader:        "",                                       // Default to empty thus not setting the header
+		DatabaseSources:      make(map[string]DatabaseSource),
 	}
 }
 
@@ -236,10 +227,12 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 	requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich, logger)
 
-	applyDeprecatedIP2LocationSettings(cfg, bootstrapLogger)
+	if err := validateDatabaseSources(cfg); err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
 
 	// Bootstrap logger: the provider/factory is shared between plugin instances.
-	db, err := openDatabaseProvider(cfg, bootstrapLogger, name)
+	db, err := openDatabaseProvider(cfg, bootstrapLogger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to get database provider: %w", name, err)
 	}
@@ -330,88 +323,111 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	return plugin, nil
 }
 
-// applyDeprecatedIP2LocationSettings copies unprefixed IP2Location keys onto the
-// ip2location_ fields when those are unset, then defaults the database code to DB1.
-// Prefixed values win. CreateConfig must not pre-fill the new code field or an
-// old-only databaseAutoUpdateCode would be ignored after Traefik decode.
-func applyDeprecatedIP2LocationSettings(cfg *Config, logger *slog.Logger) {
-	used := make([]string, 0, 5)
-	if cfg.DatabaseFilePath != "" {
-		used = append(used, "databaseFilePath")
-		if cfg.Ip2locationDatabaseFilePath == "" {
-			cfg.Ip2locationDatabaseFilePath = cfg.DatabaseFilePath
+const mmdbSourceMinAge = dbsource.DefaultMinAge
+
+func providerName(cfg *Config) string {
+	name := strings.ToLower(strings.TrimSpace(cfg.DatabaseProvider))
+	if name == "" {
+		return DatabaseProviderIP2Location
+	}
+	return name
+}
+
+func boundSourceKeys(cfg *Config) []string {
+	switch providerName(cfg) {
+	case DatabaseProviderIP2Location:
+		return []string{cfg.Ip2locationSourceGeo, cfg.Ip2locationSourceAsn}
+	case DatabaseProviderIPinfo:
+		return []string{cfg.IpinfoSource}
+	case DatabaseProviderMaxMind:
+		return []string{cfg.MaxmindSource}
+	default:
+		return nil
+	}
+}
+
+func catalogSource(cfg *Config, key, databaseType string, minAge time.Duration) dbsource.Config {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return dbsource.Config{}
+	}
+	var entry DatabaseSource
+	if cfg.DatabaseSources != nil {
+		entry = cfg.DatabaseSources[key]
+	}
+	return dbsource.Config{
+		Key:          key,
+		URL:          strings.TrimSpace(entry.URL),
+		Path:         strings.TrimSpace(entry.Path),
+		Headers:      entry.Headers,
+		DatabaseType: firstNonEmpty(entry.DatabaseType, databaseType),
+		Archive:      entry.Archive,
+		Dir:          strings.TrimSpace(cfg.DatabaseAutoUpdateDir),
+		MinAge:       minAge,
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
 		}
 	}
-	if cfg.DatabaseAutoUpdate {
-		used = append(used, "databaseAutoUpdate")
-		if !cfg.Ip2locationDatabaseAutoUpdate {
-			cfg.Ip2locationDatabaseAutoUpdate = true
+	return ""
+}
+
+func validateDatabaseSources(cfg *Config) error {
+	for name, entry := range cfg.DatabaseSources {
+		c := dbsource.Config{
+			Key:          name,
+			URL:          entry.URL,
+			DatabaseType: entry.DatabaseType,
+			Archive:      entry.Archive,
+		}
+		if err := dbsource.Normalize(&c); err != nil {
+			return fmt.Errorf("databaseSources.%s: %w", name, err)
 		}
 	}
-	if cfg.DatabaseAutoUpdateDir != "" {
-		used = append(used, "databaseAutoUpdateDir")
-		if cfg.Ip2locationDatabaseAutoUpdateDir == "" {
-			cfg.Ip2locationDatabaseAutoUpdateDir = cfg.DatabaseAutoUpdateDir
+	dir := strings.TrimSpace(cfg.DatabaseAutoUpdateDir)
+	for _, key := range boundSourceKeys(cfg) {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if cfg.DatabaseSources == nil {
+			return fmt.Errorf("source pointer %q is not a key in databaseSources", key)
+		}
+		entry, ok := cfg.DatabaseSources[key]
+		if !ok {
+			return fmt.Errorf("source pointer %q is not a key in databaseSources", key)
+		}
+		if strings.TrimSpace(entry.URL) != "" && dir == "" {
+			return fmt.Errorf("databaseAutoUpdateDir must be set when a source url is bound")
 		}
 	}
-	if cfg.DatabaseAutoUpdateToken != "" {
-		used = append(used, "databaseAutoUpdateToken")
-		if cfg.Ip2locationDatabaseAutoUpdateToken == "" {
-			cfg.Ip2locationDatabaseAutoUpdateToken = cfg.DatabaseAutoUpdateToken
-		}
-	}
-	if cfg.DatabaseAutoUpdateCode != "" {
-		used = append(used, "databaseAutoUpdateCode")
-		if cfg.Ip2locationDatabaseAutoUpdateCode == "" {
-			cfg.Ip2locationDatabaseAutoUpdateCode = cfg.DatabaseAutoUpdateCode
-		}
-	}
-	if len(used) > 0 {
-		logger.Warn("deprecated IP2Location settings are set; use the ip2location_ prefixed keys",
-			"deprecated", used)
-	}
-	if cfg.Ip2locationDatabaseAutoUpdateCode == "" {
-		cfg.Ip2locationDatabaseAutoUpdateCode = "DB1"
-	}
-	if cfg.Ip2locationAsnDatabaseAutoUpdateCode == "" {
-		cfg.Ip2locationAsnDatabaseAutoUpdateCode = ip2location.DefaultASNDatabaseCode
-	}
+	return nil
 }
 
 // openDatabaseProvider constructs the geo DatabaseProvider selected by Config.
 // Empty DatabaseProvider defaults to ip2location. Unknown values fail.
-func openDatabaseProvider(cfg *Config, logger *slog.Logger, middleware string) (dbprovider.Provider, error) {
-	name := strings.TrimSpace(cfg.DatabaseProvider)
-	if name == "" {
-		name = DatabaseProviderIP2Location
-	}
-	switch strings.ToLower(name) {
+func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
+	name := providerName(cfg)
+	switch name {
 	case DatabaseProviderIP2Location:
 		return ip2location.New(ip2location.DatabaseConfig{
-			DatabaseFilePath:          cfg.Ip2locationDatabaseFilePath,
-			DatabaseAutoUpdate:        cfg.Ip2locationDatabaseAutoUpdate,
-			DatabaseAutoUpdateDir:     cfg.Ip2locationDatabaseAutoUpdateDir,
-			DatabaseAutoUpdateToken:   cfg.Ip2locationDatabaseAutoUpdateToken,
-			DatabaseAutoUpdateCode:    cfg.Ip2locationDatabaseAutoUpdateCode,
-			AsnDatabaseFilePath:       cfg.Ip2locationAsnDatabaseFilePath,
-			AsnDatabaseAutoUpdate:     cfg.Ip2locationAsnDatabaseAutoUpdate,
-			AsnDatabaseAutoUpdateCode: cfg.Ip2locationAsnDatabaseAutoUpdateCode,
-		}, logger, middleware)
+			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
+			Source:                catalogSource(cfg, cfg.Ip2locationSourceGeo, dbsource.TypeBIN, ip2location.DownloadMinAge),
+			AsnSource:             catalogSource(cfg, cfg.Ip2locationSourceAsn, dbsource.TypeBIN, ip2location.DownloadMinAge),
+		}, logger)
 	case DatabaseProviderIPinfo:
 		return ipinfo.New(ipinfo.DatabaseConfig{
-			DatabaseFilePath:        cfg.IpinfoDatabaseFilePath,
-			DatabaseAutoUpdate:      cfg.IpinfoDatabaseAutoUpdate,
-			DatabaseAutoUpdateDir:   cfg.IpinfoDatabaseAutoUpdateDir,
-			DatabaseAutoUpdateToken: cfg.IpinfoDatabaseAutoUpdateToken,
-			DatabaseAutoUpdateCode:  cfg.IpinfoDatabaseAutoUpdateCode,
+			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
+			Source:                catalogSource(cfg, cfg.IpinfoSource, dbsource.TypeMMDB, mmdbSourceMinAge),
 		}, logger)
 	case DatabaseProviderMaxMind:
 		return maxmind.New(maxmind.DatabaseConfig{
-			DatabaseFilePath:        cfg.MaxmindDatabaseFilePath,
-			DatabaseAutoUpdate:      cfg.MaxmindDatabaseAutoUpdate,
-			DatabaseAutoUpdateDir:   cfg.MaxmindDatabaseAutoUpdateDir,
-			DatabaseAutoUpdateToken: cfg.MaxmindDatabaseAutoUpdateToken,
-			DatabaseAutoUpdateCode:  cfg.MaxmindDatabaseAutoUpdateCode,
+			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
+			Source:                catalogSource(cfg, cfg.MaxmindSource, dbsource.TypeMMDB, mmdbSourceMinAge),
 		}, logger)
 	default:
 		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)

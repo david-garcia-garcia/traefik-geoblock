@@ -129,6 +129,11 @@ func MMDBBuildDate(buildEpoch uint) (time.Time, error) {
 	return time.Unix(int64(buildEpoch), 0).UTC(), nil
 }
 
+// DatedKeyGlob is a filename glob for YYYYMMDD_<key><ext>.
+func DatedKeyGlob(key, ext string) string {
+	return "*_" + key + ext
+}
+
 // FindLatestDatedFile returns the newest YYYYMMDD_* file in dir matching globPattern
 // (a filename glob, not a full path). Empty string means none matched.
 func FindLatestDatedFile(dir, globPattern string) (string, error) {

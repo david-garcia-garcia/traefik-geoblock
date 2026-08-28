@@ -40,23 +40,45 @@ Creating the plugin SHALL open the DatabaseProvider named by `databaseProvider`.
 - **THEN** plugin creation fails
 
 ### Requirement: IP2Location settings are vendor-prefixed
-IP2Location-only settings SHALL live on Traefik Config as `ip2location_databaseFilePath`, `ip2location_databaseAutoUpdate`, `ip2location_databaseAutoUpdateDir`, `ip2location_databaseAutoUpdateToken`, and `ip2location_databaseAutoUpdateCode`. The plugin MUST pass those fields to the IP2Location provider only. Token `file=` behavior SHALL stay as specified in `core_geoblock_database_token-download-file`.
+IP2Location download pointers SHALL live on Traefik Config as `ip2location_source_geo` and `ip2location_source_asn`. The plugin MUST pass those fields to the IP2Location provider only. File location SHALL be the catalog `path` and dated files as specified in `core_geoblock_database_url-download`. Config SHALL NOT expose `ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, or unprefixed `databaseFilePath`.
 
-#### Scenario: Auto-update enabled
-- **WHEN** `ip2location_databaseAutoUpdate` is true and a directory is set
-- **THEN** the IP2Location provider performs the existing init-from-dir and background update behavior
+#### Scenario: Pointer reaches IP2Location only
+- **WHEN** `databaseProvider` is `ip2location` and `ip2location_source_geo` names a catalog entry whose `path` is an existing BIN
+- **THEN** plugin creation opens that file as the geo database
+- **AND** unused IPinfo and MaxMind pointers are ignored
 
-#### Scenario: Deprecated unprefixed aliases
-- **WHEN** an unprefixed IP2Location key is set (`databaseFilePath`, `databaseAutoUpdate`, `databaseAutoUpdateDir`, `databaseAutoUpdateToken`, `databaseAutoUpdateCode`) and the matching `ip2location_` key is unset
-- **THEN** the plugin copies the unprefixed value onto the prefixed field
-- **AND** logs a deprecation warning
-- **AND** a set `ip2location_` key wins over its unprefixed alias
+#### Scenario: Empty geo pointer uses bundled default
+- **WHEN** `databaseProvider` is `ip2location` and `ip2location_source_geo` is empty and the default geo BIN exists
+- **THEN** plugin creation opens that bundled geo database
 
 ### Requirement: Provider implementations are isolated
-Vendor open, file version read, download, extract, and hot-swap SHALL live in that vendor’s provider package. A later vendor MUST be addable by implementing DatabaseProvider and adding a branch on `databaseProvider` without changing allow/block rules. The plugin MUST NOT type-assert a concrete vendor wrapper to read provider state.
+Vendor Lookup SHALL live in that vendor’s provider package. Open and hot-swap SHALL live in one shared format-wrapper package (`pkg/dbwrappers`), not copied into each vendor package. HTTP GET, archive unpack, file-date read, lock, ticker, dated write, and file-location Resolve SHALL stay one shared source component (`pkg/dbsource`). A later vendor MUST be addable by implementing DatabaseProvider, adding a `databaseProvider` branch, pointing at a catalog entry, and using the BIN or MMDB format wrapper. The plugin MUST NOT type-assert a format wrapper to read provider state.
 
 #### Scenario: Implemented vendors
 - **WHEN** this change ships
 - **THEN** the IP2Location provider exists
 - **AND** the IPinfo Lite provider exists
 - **AND** the MaxMind provider exists
+
+#### Scenario: Plugin does not use a wrapper type
+- **WHEN** the plugin looks up a public IP
+- **THEN** it calls DatabaseProvider Lookup only
+- **AND** it does not type-assert a BIN or MMDB wrapper
+
+### Requirement: Open and hot-swap are per format
+The format-wrapper package SHALL expose one BIN wrapper and one MMDB wrapper. IPinfo and MaxMind SHALL open through the MMDB wrapper. IP2Location SHALL open geo and ASN through the BIN wrapper (two instances). The same wrapper configuration SHALL share one open file and one download ticker. Closing a DatabaseProvider MUST NOT close that shared wrapper.
+
+#### Scenario: IPinfo and MaxMind share the MMDB wrapper
+- **WHEN** `databaseProvider` is `ipinfo` or `maxmind` and plugin creation opens the catalog or bundled MMDB
+- **THEN** that file is opened through the shared MMDB wrapper
+- **AND** the vendor package only maps lookup fields onto Record
+
+#### Scenario: IP2Location uses two BIN wrappers
+- **WHEN** `databaseProvider` is `ip2location` and geo and ASN files are resolved
+- **THEN** geo and ASN are opened through the shared BIN wrapper
+- **AND** the IP2Location provider maps geo Lookup plus ASN onto one Record
+
+#### Scenario: Same config shares one wrapper
+- **WHEN** two plugin instances are created with the same provider config
+- **THEN** both Lookups succeed
+- **AND** closing one DatabaseProvider does not make the other Lookup fail

@@ -23,17 +23,18 @@ func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
 	})
 
 	cfg := &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		AllowedCountries:            []string{"AU"},
-		BlockedCountries:            []string{"US"},
-		DefaultAllow:                false,
-		AllowPrivate:                true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		CountryHeader:               "X-Country",
-		LogStatusDetailHeader:       "X-Geoblock-Decision",
+		Enabled:               true,
+		DatabaseSources:       seedCatalog(dbFilePath),
+		Ip2locationSourceGeo:  "seed",
+		AllowedCountries:      []string{"AU"},
+		BlockedCountries:      []string{"US"},
+		DefaultAllow:          false,
+		AllowPrivate:          true,
+		DisallowedStatusCode:  http.StatusForbidden,
+		IPHeaders:             []string{"x-forwarded-for"},
+		IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+		CountryHeader:         "X-Country",
+		LogStatusDetailHeader: "X-Geoblock-Decision",
 	}
 
 	plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
@@ -121,15 +122,16 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 
 	t.Run("IgnoreVerb_should_set_pass_ignore_verb", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			BlockedCountries:            []string{"US"},
-			DefaultAllow:                false,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-forwarded-for"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			LogStatusDetailHeader:       "X-Geoblock-Decision",
-			IgnoreVerbs:                 []string{"OPTIONS"},
+			Enabled:               true,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			Ip2locationSourceGeo:  "seed",
+			BlockedCountries:      []string{"US"},
+			DefaultAllow:          false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			IgnoreVerbs:           []string{"OPTIONS"},
 		}
 
 		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
@@ -160,15 +162,16 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 
 	t.Run("ExcludedRegex_should_set_pass_excluded_regex", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			BlockedCountries:            []string{"US"},
-			DefaultAllow:                false,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-forwarded-for"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			LogStatusDetailHeader:       "X-Geoblock-Decision",
-			ExcludedPathsRegex:          "^[^/]*/api/.*",
+			Enabled:               true,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			Ip2locationSourceGeo:  "seed",
+			BlockedCountries:      []string{"US"},
+			DefaultAllow:          false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			ExcludedPathsRegex:    "^[^/]*/api/.*",
 		}
 
 		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
@@ -200,16 +203,17 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 
 	t.Run("NotIncludedRegex_should_set_pass_not_included_regex", func(t *testing.T) {
 		handler, err := New(context.TODO(), captureHandler, &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			BlockedCountries:            []string{"US"},
-			DefaultAllow:                false,
-			AllowPrivate:                false,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-real-ip"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			LogStatusDetailHeader:       "X-Geoblock-Decision",
-			IncludedPathsRegex:          "^[^/]*/secure/.*",
+			Enabled:               true,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			Ip2locationSourceGeo:  "seed",
+			BlockedCountries:      []string{"US"},
+			DefaultAllow:          false,
+			AllowPrivate:          false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			IncludedPathsRegex:    "^[^/]*/secure/.*",
 		}, pluginName)
 		if err != nil {
 			t.Fatalf("New: %v", err)
@@ -227,15 +231,16 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 
 	t.Run("BypassHeader_should_set_pass_bypass_header", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			BlockedCountries:            []string{"US"},
-			DefaultAllow:                false,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-forwarded-for"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			LogStatusDetailHeader:       "X-Geoblock-Decision",
-			BypassHeaders:               map[string]string{"X-Bypass": "secret123"},
+			Enabled:               true,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			Ip2locationSourceGeo:  "seed",
+			BlockedCountries:      []string{"US"},
+			DefaultAllow:          false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			BypassHeaders:         map[string]string{"X-Bypass": "secret123"},
 		}
 
 		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
@@ -278,15 +283,16 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("DefaultAllow_true_should_set_pass_default_allow", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			AllowedCountries:            []string{}, // No countries explicitly allowed
-			BlockedCountries:            []string{}, // No countries blocked
-			DefaultAllow:                true,       // Allow by default
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-forwarded-for"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			LogStatusDetailHeader:       "X-Geoblock-Decision",
+			Enabled:               true,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			Ip2locationSourceGeo:  "seed",
+			AllowedCountries:      []string{}, // No countries explicitly allowed
+			BlockedCountries:      []string{}, // No countries blocked
+			DefaultAllow:          true,       // Allow by default
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
 		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
@@ -317,15 +323,16 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("DefaultAllow_false_should_set_block_default_allow", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			AllowedCountries:            []string{}, // No countries explicitly allowed
-			BlockedCountries:            []string{}, // No countries blocked
-			DefaultAllow:                false,      // Block by default
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-forwarded-for"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			LogStatusDetailHeader:       "X-Geoblock-Decision",
+			Enabled:               true,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			Ip2locationSourceGeo:  "seed",
+			AllowedCountries:      []string{}, // No countries explicitly allowed
+			BlockedCountries:      []string{}, // No countries blocked
+			DefaultAllow:          false,      // Block by default
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
 		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
@@ -354,15 +361,16 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("AllowedIPBlock_should_set_pass_allowed_ip_block", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			BlockedCountries:            []string{"US"},         // Block US
-			AllowedIPBlocks:             []string{"8.8.8.0/24"}, // But allow this Google range
-			DefaultAllow:                false,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-forwarded-for"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			LogStatusDetailHeader:       "X-Geoblock-Decision",
+			Enabled:               true,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			Ip2locationSourceGeo:  "seed",
+			BlockedCountries:      []string{"US"},         // Block US
+			AllowedIPBlocks:       []string{"8.8.8.0/24"}, // But allow this Google range
+			DefaultAllow:          false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
 		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
@@ -393,15 +401,16 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("BlockedIPBlock_should_set_block_blocked_ip_block", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			AllowedCountries:            []string{"AU"},         // Allow AU
-			BlockedIPBlocks:             []string{"1.1.1.0/24"}, // But block this AU range
-			DefaultAllow:                true,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-forwarded-for"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			LogStatusDetailHeader:       "X-Geoblock-Decision",
+			Enabled:               true,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			Ip2locationSourceGeo:  "seed",
+			AllowedCountries:      []string{"AU"},         // Allow AU
+			BlockedIPBlocks:       []string{"1.1.1.0/24"}, // But block this AU range
+			DefaultAllow:          true,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
 		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
@@ -430,13 +439,14 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("NoIPsFound_should_set_pass_none", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			DefaultAllow:                true,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-custom-ip"}, // Header that won't be set
-			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-			LogStatusDetailHeader:       "X-Geoblock-Decision",
+			Enabled:               true,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			Ip2locationSourceGeo:  "seed",
+			DefaultAllow:          true,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-custom-ip"}, // Header that won't be set
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
 		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
@@ -575,12 +585,13 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("real BIN writes country and null for missing region city", func(t *testing.T) {
 		handler, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: dbFilePath,
-			DefaultAllow:                true,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-real-ip"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckFirst,
+			Enabled:              true,
+			DatabaseSources:      seedCatalog(dbFilePath),
+			Ip2locationSourceGeo: "seed",
+			DefaultAllow:         true,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
 			RequestHeaderEnrich: map[string]string{
 				"X-Geo-Country": "country",
 				"X-Geo-Region":  "region",
@@ -608,13 +619,14 @@ func TestRequestHeaderEnrich(t *testing.T) {
 	t.Run("DB8 writes region city isp domain", func(t *testing.T) {
 		path := requireDB8(t)
 		handler, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:                     true,
-			Ip2locationDatabaseFilePath: path,
-			DefaultAllow:                true,
-			DisallowedStatusCode:        http.StatusForbidden,
-			IPHeaders:                   []string{"x-real-ip"},
-			IPHeaderStrategy:            IPHeaderStrategyCheckFirst,
-			RequestHeaderEnrich:         fullEnrichHeaders,
+			Enabled:              true,
+			DatabaseSources:      seedCatalog(path),
+			Ip2locationSourceGeo: "seed",
+			DefaultAllow:         true,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+			RequestHeaderEnrich:  fullEnrichHeaders,
 		}, pluginName)
 		if err != nil {
 			t.Fatalf("New: %v", err)
@@ -645,13 +657,13 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("IPinfo Lite writes valued fields and null for empty region city", func(t *testing.T) {
 		handler, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:                true,
-			DatabaseProvider:       DatabaseProviderIPinfo,
-			IpinfoDatabaseFilePath: ipinfoFilePath,
-			DefaultAllow:           true,
-			DisallowedStatusCode:   http.StatusForbidden,
-			IPHeaders:              []string{"x-real-ip"},
-			IPHeaderStrategy:       IPHeaderStrategyCheckFirst,
+			Enabled:          true,
+			DatabaseProvider: DatabaseProviderIPinfo,
+			DatabaseSources:  seedCatalog(ipinfoFilePath), IpinfoSource: "seed",
+			DefaultAllow:         true,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
 			RequestHeaderEnrich: map[string]string{
 				"X-Geo-Country":        "country",
 				"X-Geo-Country-Name":   "country_name",

@@ -11,14 +11,15 @@ import (
 func TestIPHeaderStrategy_Integration(t *testing.T) {
 	// Create a plugin with blocked countries (e.g., block CN)
 	cfg := &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		AllowPrivate:                true,
-		DefaultAllow:                true,
-		BlockedCountries:            []string{"CN"},
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		CountryHeader:               "x-country-code",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowPrivate:         true,
+		DefaultAllow:         true,
+		BlockedCountries:     []string{"CN"},
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		CountryHeader:        "x-country-code",
 	}
 
 	tests := []struct {
@@ -113,14 +114,15 @@ func TestIPHeaderStrategy_Integration(t *testing.T) {
 func TestIPHeaderStrategy_CountryHeaderPriority(t *testing.T) {
 	// Test that real countries take priority over private IP countries in the header
 	cfg := &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		AllowPrivate:                true,
-		DefaultAllow:                true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		CountryHeader:               "x-country-code",
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowPrivate:         true,
+		DefaultAllow:         true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		CountryHeader:        "x-country-code",
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -180,11 +182,12 @@ func TestIPHeaderStrategy_CountryHeaderPriority(t *testing.T) {
 
 func TestIPHeaderStrategy_InvalidStrategy(t *testing.T) {
 	cfg := &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            "InvalidStrategy",
-		DisallowedStatusCode:        http.StatusForbidden,
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     "InvalidStrategy",
+		DisallowedStatusCode: http.StatusForbidden,
 	}
 
 	_, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -201,14 +204,15 @@ func TestIPHeaderStrategy_InvalidStrategy(t *testing.T) {
 func TestIPHeaderStrategy_PrivateIPDoesNotOverridePublicCountry(t *testing.T) {
 	// Test that private IPs processed AFTER public IPs do not override the country header
 	cfg := &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		AllowPrivate:                true,
-		DefaultAllow:                true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		CountryHeader:               "x-country-code",
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll, // Check all IPs to test override scenario
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowPrivate:         true,
+		DefaultAllow:         true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		CountryHeader:        "x-country-code",
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll, // Check all IPs to test override scenario
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -286,14 +290,15 @@ func TestIPHeaderStrategy_PrivateIPDoesNotOverridePublicCountry(t *testing.T) {
 func TestIPHeaderStrategy_CountryHeaderOverrideEdgeCases(t *testing.T) {
 	// Test edge cases for country header override protection
 	cfg := &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		AllowPrivate:                true,
-		DefaultAllow:                true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for", "x-real-ip"},
-		CountryHeader:               "x-country-code",
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowPrivate:         true,
+		DefaultAllow:         true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
+		CountryHeader:        "x-country-code",
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -361,13 +366,14 @@ func TestIPHeaderStrategy_CountryHeaderOverrideEdgeCases(t *testing.T) {
 func TestIPHeaderStrategy_HeaderOrderRespected(t *testing.T) {
 	// Test that IP headers are processed in the order they are defined in ipHeaders
 	cfg := &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		AllowPrivate:                true,
-		DefaultAllow:                true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		CountryHeader:               "x-country-code",
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowPrivate:         true,
+		DefaultAllow:         true,
+		DisallowedStatusCode: http.StatusForbidden,
+		CountryHeader:        "x-country-code",
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 	}
 
 	tests := []struct {
@@ -547,14 +553,15 @@ func TestIPHeaderStrategy_HeaderOrderWithStrategies(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				Enabled:                     true,
-				Ip2locationDatabaseFilePath: dbFilePath,
-				AllowPrivate:                true,
-				DefaultAllow:                true,
-				DisallowedStatusCode:        http.StatusForbidden,
-				IPHeaders:                   tt.ipHeaders,
-				IPHeaderStrategy:            tt.strategy,
-				CountryHeader:               "x-country-code",
+				Enabled:              true,
+				DatabaseSources:      seedCatalog(dbFilePath),
+				Ip2locationSourceGeo: "seed",
+				AllowPrivate:         true,
+				DefaultAllow:         true,
+				DisallowedStatusCode: http.StatusForbidden,
+				IPHeaders:            tt.ipHeaders,
+				IPHeaderStrategy:     tt.strategy,
+				CountryHeader:        "x-country-code",
 			}
 
 			plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -714,12 +721,13 @@ func TestGetRemoteIPs_SyntheticRemoteAddress(t *testing.T) {
 func TestRemoteAddress_IntegrationWithStrategies(t *testing.T) {
 	// Test remoteAddress with different IP header strategies
 	cfg := &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		AllowPrivate:                true,
-		DefaultAllow:                true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		CountryHeader:               "x-country-code",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowPrivate:         true,
+		DefaultAllow:         true,
+		DisallowedStatusCode: http.StatusForbidden,
+		CountryHeader:        "x-country-code",
 	}
 
 	tests := []struct {

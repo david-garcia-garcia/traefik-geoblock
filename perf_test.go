@@ -19,17 +19,18 @@ const (
 func newThroughputPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		AllowedCountries:            []string{"US", "AU"},
-		DefaultAllow:                false,
-		AllowPrivate:                false,
-		BanIfError:                  true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-real-ip"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckFirst,
-		LogLevel:                    "error",
-		LogFormat:                   "text",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowedCountries:     []string{"US", "AU"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		BanIfError:           true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+		LogLevel:             "error",
+		LogFormat:            "text",
 	}, pluginName)
 	if err != nil {
 		tb.Fatalf("failed to create plugin: %v", err)
@@ -117,17 +118,18 @@ func BenchmarkPlugin_ServeHTTP(b *testing.B) {
 // Plugin-only allocs: request and recorder are reused (Traefik does this).
 func BenchmarkPlugin_ServeHTTP_Enrich(b *testing.B) {
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: dbFilePath,
-		AllowedCountries:            []string{"US", "AU"},
-		DefaultAllow:                false,
-		AllowPrivate:                false,
-		BanIfError:                  true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-real-ip"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckFirst,
-		LogLevel:                    "error",
-		LogFormat:                   "text",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowedCountries:     []string{"US", "AU"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		BanIfError:           true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+		LogLevel:             "error",
+		LogFormat:            "text",
 		RequestHeaderEnrich: map[string]string{
 			"X-Geo-Country": "country",
 			"X-Geo-Region":  "region",
@@ -153,18 +155,19 @@ func newLITEASNPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	asn := requireASN(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                        true,
-		Ip2locationDatabaseFilePath:    dbFilePath,
-		Ip2locationAsnDatabaseFilePath: asn,
-		AllowedCountries:               []string{"US", "AU"},
-		DefaultAllow:                   false,
-		AllowPrivate:                   false,
-		BanIfError:                     true,
-		DisallowedStatusCode:           http.StatusForbidden,
-		IPHeaders:                      []string{"x-real-ip"},
-		IPHeaderStrategy:               IPHeaderStrategyCheckFirst,
-		LogLevel:                       "error",
-		LogFormat:                      "text",
+		Enabled:              true,
+		DatabaseSources:      seedCatalogPair(dbFilePath, asn),
+		Ip2locationSourceGeo: "geo",
+		Ip2locationSourceAsn: "asn",
+		AllowedCountries:     []string{"US", "AU"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		BanIfError:           true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+		LogLevel:             "error",
+		LogFormat:            "text",
 	}, pluginName)
 	if err != nil {
 		tb.Fatalf("failed to create LITE+ASN plugin: %v", err)
@@ -177,19 +180,20 @@ func newDB8ASNPlugin(tb testing.TB) *Plugin {
 	path := requireDB8(tb)
 	asn := requireASN(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                        true,
-		Ip2locationDatabaseFilePath:    path,
-		Ip2locationAsnDatabaseFilePath: asn,
-		AllowedCountries:               []string{"US", "AU"},
-		DefaultAllow:                   false,
-		AllowPrivate:                   false,
-		BanIfError:                     true,
-		DisallowedStatusCode:           http.StatusForbidden,
-		IPHeaders:                      []string{"x-real-ip"},
-		IPHeaderStrategy:               IPHeaderStrategyCheckFirst,
-		LogLevel:                       "error",
-		LogFormat:                      "text",
-		RequestHeaderEnrich:            fullEnrichHeaders,
+		Enabled:              true,
+		DatabaseSources:      seedCatalogPair(path, asn),
+		Ip2locationSourceGeo: "geo",
+		Ip2locationSourceAsn: "asn",
+		AllowedCountries:     []string{"US", "AU"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		BanIfError:           true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+		LogLevel:             "error",
+		LogFormat:            "text",
+		RequestHeaderEnrich:  fullEnrichHeaders,
 	}, pluginName)
 	if err != nil {
 		tb.Fatalf("failed to create DB8+ASN plugin: %v", err)
@@ -201,17 +205,18 @@ func newDB8CountryPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	path := requireDB8(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: path,
-		AllowedCountries:            []string{"US", "AU"},
-		DefaultAllow:                false,
-		AllowPrivate:                false,
-		BanIfError:                  true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-real-ip"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckFirst,
-		LogLevel:                    "error",
-		LogFormat:                   "text",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(path),
+		Ip2locationSourceGeo: "seed",
+		AllowedCountries:     []string{"US", "AU"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		BanIfError:           true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+		LogLevel:             "error",
+		LogFormat:            "text",
 	}, pluginName)
 	if err != nil {
 		tb.Fatalf("failed to create DB8 country plugin: %v", err)
@@ -227,18 +232,19 @@ func newDB8FullEnrichPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	path := requireDB8(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                     true,
-		Ip2locationDatabaseFilePath: path,
-		AllowedCountries:            []string{"US", "AU"},
-		DefaultAllow:                false,
-		AllowPrivate:                false,
-		BanIfError:                  true,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-real-ip"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckFirst,
-		LogLevel:                    "error",
-		LogFormat:                   "text",
-		RequestHeaderEnrich:         fullEnrichHeaders,
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(path),
+		Ip2locationSourceGeo: "seed",
+		AllowedCountries:     []string{"US", "AU"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		BanIfError:           true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+		LogLevel:             "error",
+		LogFormat:            "text",
+		RequestHeaderEnrich:  fullEnrichHeaders,
 	}, pluginName)
 	if err != nil {
 		tb.Fatalf("failed to create DB8 enrich plugin: %v", err)
@@ -412,18 +418,18 @@ const maxmindDummyIP = "81.2.69.142"
 func newMaxMindPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                 true,
-		DatabaseProvider:        DatabaseProviderMaxMind,
-		MaxmindDatabaseFilePath: maxmindFilePath,
-		AllowedCountries:        []string{"GB"},
-		DefaultAllow:            false,
-		AllowPrivate:            false,
-		BanIfError:              true,
-		DisallowedStatusCode:    http.StatusForbidden,
-		IPHeaders:               []string{"x-real-ip"},
-		IPHeaderStrategy:        IPHeaderStrategyCheckFirst,
-		LogLevel:                "error",
-		LogFormat:               "text",
+		Enabled:          true,
+		DatabaseProvider: DatabaseProviderMaxMind,
+		DatabaseSources:  seedCatalog(maxmindFilePath), MaxmindSource: "seed",
+		AllowedCountries:     []string{"GB"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		BanIfError:           true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+		LogLevel:             "error",
+		LogFormat:            "text",
 	}, pluginName)
 	if err != nil {
 		tb.Fatalf("failed to create MaxMind plugin: %v", err)
@@ -485,18 +491,18 @@ func BenchmarkPlugin_ServeHTTP_MaxMind(b *testing.B) {
 
 func BenchmarkPlugin_ServeHTTP_MaxMindEnrich(b *testing.B) {
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                 true,
-		DatabaseProvider:        DatabaseProviderMaxMind,
-		MaxmindDatabaseFilePath: maxmindFilePath,
-		AllowedCountries:        []string{"GB"},
-		DefaultAllow:            false,
-		AllowPrivate:            false,
-		BanIfError:              true,
-		DisallowedStatusCode:    http.StatusForbidden,
-		IPHeaders:               []string{"x-real-ip"},
-		IPHeaderStrategy:        IPHeaderStrategyCheckFirst,
-		LogLevel:                "error",
-		LogFormat:               "text",
+		Enabled:          true,
+		DatabaseProvider: DatabaseProviderMaxMind,
+		DatabaseSources:  seedCatalog(maxmindFilePath), MaxmindSource: "seed",
+		AllowedCountries:     []string{"GB"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		BanIfError:           true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckFirst,
+		LogLevel:             "error",
+		LogFormat:            "text",
 		RequestHeaderEnrich: map[string]string{
 			"X-Geo-Country": "country",
 			"X-Geo-Region":  "region",

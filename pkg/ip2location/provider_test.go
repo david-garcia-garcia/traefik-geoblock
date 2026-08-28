@@ -1,25 +1,32 @@
 package ip2location
 
 import (
+	"archive/zip"
 	"bytes"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 )
 
+var testDBFile = filepath.Join("..", "..", "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
+
 func TestNew_LookupWithoutASNFile(t *testing.T) {
-	CleanupFactories()
-	defer CleanupFactories()
+	dbwrappers.Reset()
+	defer dbwrappers.Reset()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(DatabaseConfig{DatabaseFilePath: testDBFile}, logger, "")
+	p, err := New(DatabaseConfig{Source: dbsource.Config{Path: testDBFile}}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -42,14 +49,14 @@ func TestNew_LookupDB8(t *testing.T) {
 		t.Skip("paid DB8 BIN not present; place testdata/IP2LOCATION-DB8.BIN")
 	}
 
-	CleanupFactories()
-	defer CleanupFactories()
+	dbwrappers.Reset()
+	defer dbwrappers.Reset()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(DatabaseConfig{DatabaseFilePath: db8}, logger, "")
+	p, err := New(DatabaseConfig{Source: dbsource.Config{Path: db8}}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -88,17 +95,17 @@ func TestNew_LookupWithASNFile(t *testing.T) {
 		t.Skip("no ASN BIN; set IP2LOCATION_ASN_BIN or place IP2LOCATION-LITE-ASN.IPV6.BIN at repo root")
 	}
 
-	CleanupFactories()
-	defer CleanupFactories()
+	dbwrappers.Reset()
+	defer dbwrappers.Reset()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelError,
 	}))
 
 	p, err := New(DatabaseConfig{
-		DatabaseFilePath:    testDBFile,
-		AsnDatabaseFilePath: asnPath,
-	}, logger, "")
+		Source:    dbsource.Config{Path: testDBFile},
+		AsnSource: dbsource.Config{Path: asnPath},
+	}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -115,70 +122,53 @@ func TestNew_LookupWithASNFile(t *testing.T) {
 	}
 }
 
-func TestGeoFactoryConfig(t *testing.T) {
-	cfg := geoFactoryConfig(DatabaseConfig{
-		DatabaseFilePath:          testDBFile,
-		AsnDatabaseFilePath:       "/asn.bin",
-		AsnDatabaseAutoUpdate:     true,
-		AsnDatabaseAutoUpdateCode: "DBASNLITEBIN",
+func TestGeoBINConfig(t *testing.T) {
+	cfg := geoBINConfig(DatabaseConfig{
+		Source:    dbsource.Config{Path: testDBFile},
+		AsnSource: dbsource.Config{URL: "https://example.com/asn.zip", Path: "/asn.bin"},
 	})
-	if cfg.AsnDatabaseFilePath != "" || cfg.AsnDatabaseAutoUpdate || cfg.AsnDatabaseAutoUpdateCode != "" {
-		t.Error("geo factory config must not carry ASN fields")
+	if cfg.Source.URL != "" && cfg.Source.Path != testDBFile {
+		t.Error("geo config must use the geo source")
 	}
-	if cfg.DatabaseFilePath != testDBFile {
-		t.Errorf("geo path: got %q", cfg.DatabaseFilePath)
+	if cfg.Source.Path != testDBFile {
+		t.Errorf("geo path: got %q", cfg.Source.Path)
+	}
+	if cfg.DefaultFileName != defaultGeoFileName {
+		t.Errorf("geo default name: got %q", cfg.DefaultFileName)
 	}
 }
 
-func TestAsnFactoryConfig(t *testing.T) {
-	cfg := asnFactoryConfig(DatabaseConfig{
-		DatabaseAutoUpdateDir:   "/data",
-		DatabaseAutoUpdateToken: "tok",
-		AsnDatabaseAutoUpdate:   true,
+func TestAsnBINConfig(t *testing.T) {
+	cfg := asnBINConfig(DatabaseConfig{
+		DatabaseAutoUpdateDir: "/data",
+		AsnSource: dbsource.Config{
+			URL:     "https://example.com/asn.zip",
+			Headers: map[string]string{"X-Test": "1"},
+		},
 	})
-	if cfg.DatabaseAutoUpdateCode != DefaultASNDatabaseCode {
-		t.Errorf("code: got %q", cfg.DatabaseAutoUpdateCode)
+	if cfg.DefaultFileName != defaultASNFileName {
+		t.Errorf("asn default name: got %q", cfg.DefaultFileName)
 	}
 	if !cfg.AllowMissing {
 		t.Error("expected AllowMissing when ASN path is empty")
 	}
-	if !cfg.DatabaseAutoUpdate {
-		t.Error("expected ASN auto-update when a token is set")
+	if cfg.Source.URL != "https://example.com/asn.zip" {
+		t.Error("expected ASN config to take the asn source URL")
 	}
-	if cfg.DatabaseAutoUpdateDir != "/data" || cfg.DatabaseAutoUpdateToken != "tok" {
-		t.Error("expected ASN factory to reuse geo dir and token")
-	}
-}
-
-func TestNew_AsnAutoUpdateWithoutTokenLogsError(t *testing.T) {
-	CleanupFactories()
-	defer CleanupFactories()
-
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError}))
-	_, err := New(DatabaseConfig{
-		DatabaseFilePath:      testDBFile,
-		AsnDatabaseAutoUpdate: true,
-	}, logger, "")
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "level=ERROR") {
-		t.Errorf("expected ERROR log, got %q", out)
-	}
-	if !strings.Contains(out, "ip2location_databaseAutoUpdateToken") {
-		t.Errorf("expected token mentioned in error, got %q", out)
+	if cfg.Dir != "/data" || cfg.Source.Headers["X-Test"] != "1" {
+		t.Error("expected ASN config to reuse dir and headers")
 	}
 }
 
-func TestAsnFactoryConfig_NoTokenDisablesAutoUpdate(t *testing.T) {
-	cfg := asnFactoryConfig(DatabaseConfig{
+func TestAsnBINConfig_NoURLAllowsMissing(t *testing.T) {
+	cfg := asnBINConfig(DatabaseConfig{
 		DatabaseAutoUpdateDir: "/data",
-		AsnDatabaseAutoUpdate: true,
 	})
-	if cfg.DatabaseAutoUpdate {
-		t.Error("ASN auto-update must stay off without a download token")
+	if cfg.Source.URL != "" {
+		t.Error("empty asn URL must stay empty")
+	}
+	if !cfg.AllowMissing {
+		t.Error("expected AllowMissing when no ASN path")
 	}
 }
 
@@ -190,7 +180,87 @@ func TestProvider_Close(t *testing.T) {
 	_ = dbprovider.MetaAsn
 }
 
+func TestNew_CloseDoesNotBreakSharedWrapper(t *testing.T) {
+	dbwrappers.Reset()
+	t.Cleanup(dbwrappers.Reset)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := DatabaseConfig{Source: dbsource.Config{Path: testDBFile}}
+	a, err := New(cfg, logger)
+	if err != nil {
+		t.Fatalf("first New: %v", err)
+	}
+	b, err := New(cfg, logger)
+	if err != nil {
+		t.Fatalf("second New: %v", err)
+	}
+	if err := a.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	rec, err := b.Lookup("8.8.8.8")
+	if err != nil || rec.Country != "US" {
+		t.Fatalf("shared lookup after Close: rec=%+v err=%v", rec, err)
+	}
+}
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func TestNew_DownloadThroughComponent(t *testing.T) {
+	src, err := os.ReadFile(testDBFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("IP2LOCATION-LITE-DB1.IPV6.BIN")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(buf.Bytes())
+	}))
+	t.Cleanup(srv.Close)
+
+	dbwrappers.Reset()
+	t.Cleanup(dbwrappers.Reset)
+
+	dir := t.TempDir()
+	dl := dbsource.Config{
+		Key:          "litezip",
+		URL:          srv.URL + "/db.ZIP",
+		DatabaseType: dbsource.TypeBIN,
+		Archive:      dbsource.ArchiveZIP,
+		Dir:          dir,
+	}
+	path, err := dbsource.Update(dl, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})))
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if !strings.Contains(filepath.Base(path), "_litezip.BIN") {
+		t.Errorf("dated name: %s", path)
+	}
+
+	p, err := New(DatabaseConfig{
+		DatabaseAutoUpdateDir: dir,
+		Source: dbsource.Config{
+			Key:          "litezip",
+			DatabaseType: dbsource.TypeBIN,
+		},
+	}, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	rec, err := p.Lookup("8.8.8.8")
+	if err != nil || rec.Country != "US" {
+		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
+	}
 }
