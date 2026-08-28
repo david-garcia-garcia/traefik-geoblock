@@ -43,7 +43,7 @@ w := v.(*BIN)
 
 - `pkg/reclaim/table.go` — `Table`, `Open`, logs
 - `pkg/reclaim/default.go` — `Default`, package `Open`, `Reset`
-- `openspec/specs` leaf `std_go_reclaim_context-lease` (after archive)
+- `openspec/specs/std_go_reclaim_context-lease/spec.md`
 
 ## Gotchas
 

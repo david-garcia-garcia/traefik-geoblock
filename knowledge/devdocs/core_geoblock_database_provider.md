@@ -24,6 +24,7 @@ Traefik Config key that names the implementation. Empty defaults to `ip2location
 - Set `databaseProvider` (`ip2location` default, `ipinfo`, or `maxmind`).
 - Call `Lookup(ip)` from the plugin. Use `Record.Country` for allow/block. Map errors through `banIfError`.
 - Map headers with `requestHeaderEnrich`. Unknown keys fail `New`. Write `null` when the Record field is empty.
+- Pass the plugin `New` context into the vendor constructor (`openDatabaseProvider`). Do not pass `req.Context()`.
 - File location and keep-current: see Source (`core_geoblock_database_source`). Open and hot-swap: see Wrapper (`core_geoblock_database_wrapper`).
 - IPinfo maps `country_code` onto Country, plus `country_name`, continent, `isp` (`as_name`), `domain` (`as_domain`), `asn`. Region/city stay empty on Lite.
 - MaxMind maps nested `country.iso_code`. ASN/ISP stay empty on Country/City files. The plugin does not parse `accountId:licenseKey`.
