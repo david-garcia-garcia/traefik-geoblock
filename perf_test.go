@@ -19,8 +19,9 @@ const (
 func newThroughputPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:         true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -117,8 +118,9 @@ func BenchmarkPlugin_ServeHTTP(b *testing.B) {
 // Plugin-only allocs: request and recorder are reused (Traefik does this).
 func BenchmarkPlugin_ServeHTTP_Enrich(b *testing.B) {
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:         true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -203,8 +205,9 @@ func newDB8CountryPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	path := requireDB8(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:         true,
-		DatabaseSources: seedCatalog(path), Ip2locationSourceGeo: "seed",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(path),
+		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -229,8 +232,9 @@ func newDB8FullEnrichPlugin(tb testing.TB) *Plugin {
 	tb.Helper()
 	path := requireDB8(tb)
 	handler, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:         true,
-		DatabaseSources: seedCatalog(path), Ip2locationSourceGeo: "seed",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(path),
+		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,

@@ -11,15 +11,16 @@ import (
 func TestBypassHeaders_ShouldStillEnrichWithGeoIP(t *testing.T) {
 	// Test that bypass headers skip blocking but still enrich with country information
 	cfg := &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		AllowPrivate:                false,          // Block private IPs
-		DefaultAllow:                false,          // Block by default
-		BlockedCountries:            []string{"US"}, // Block US
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		CountryHeader:               "x-country-code",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowPrivate:         false,          // Block private IPs
+		DefaultAllow:         false,          // Block by default
+		BlockedCountries:     []string{"US"}, // Block US
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		CountryHeader:        "x-country-code",
 		BypassHeaders: map[string]string{
 			"x-bypass-token": "secret123",
 		},
@@ -123,16 +124,17 @@ func TestBypassHeaders_ShouldStillEnrichWithGeoIP(t *testing.T) {
 func TestIgnoreVerbs_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 	// Test that ignored HTTP verbs skip blocking but still get GeoIP enrichment
 	cfg := &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		AllowPrivate:                false,
-		DefaultAllow:                false,
-		BlockedCountries:            []string{"US"}, // Block US
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		CountryHeader:               "x-country-code",
-		IgnoreVerbs:                 []string{"OPTIONS", "HEAD"}, // Ignore these verbs
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowPrivate:         false,
+		DefaultAllow:         false,
+		BlockedCountries:     []string{"US"}, // Block US
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		CountryHeader:        "x-country-code",
+		IgnoreVerbs:          []string{"OPTIONS", "HEAD"}, // Ignore these verbs
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -233,16 +235,17 @@ func TestIgnoreVerbs_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 
 func TestExcludedPathsRegex_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 	cfg := &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		AllowedCountries:            []string{"AU"}, // Only AU allowed
-		BlockedCountries:            []string{"US"}, // US blocked
-		DefaultAllow:                false,          // Block by default
-		AllowPrivate:                false,          // Block private IPs to test regex properly
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		CountryHeader:               "x-country-code",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowedCountries:     []string{"AU"}, // Only AU allowed
+		BlockedCountries:     []string{"US"}, // US blocked
+		DefaultAllow:         false,          // Block by default
+		AllowPrivate:         false,          // Block private IPs to test regex properly
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		CountryHeader:        "x-country-code",
 		// Regex matches against "{host}{path}" - httptest uses "example.com" as default host
 		// Pattern matches: example.com/api/*, example.com/health, example.com/metrics
 		ExcludedPathsRegex: "^[^/]*/(api/.*|health|metrics)$",
@@ -362,17 +365,18 @@ func TestExcludedPathsRegex_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 
 func TestIncludedPathsRegex_OnlyMatchingPathsAreBlocked(t *testing.T) {
 	cfg := &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		AllowedCountries:            []string{"AU"},
-		BlockedCountries:            []string{"US"},
-		DefaultAllow:                false,
-		AllowPrivate:                false,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		CountryHeader:               "x-country-code",
-		IncludedPathsRegex:          "^[^/]*/secure/.*",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		AllowedCountries:     []string{"AU"},
+		BlockedCountries:     []string{"US"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		CountryHeader:        "x-country-code",
+		IncludedPathsRegex:   "^[^/]*/secure/.*",
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -409,17 +413,18 @@ func TestIncludedPathsRegex_OnlyMatchingPathsAreBlocked(t *testing.T) {
 
 func TestIncludedPathsRegex_ExcludeStillWinsAfterInclude(t *testing.T) {
 	cfg := &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		BlockedCountries:            []string{"US"},
-		DefaultAllow:                false,
-		AllowPrivate:                false,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		CountryHeader:               "x-country-code",
-		IncludedPathsRegex:          "^[^/]*/secure/.*",
-		ExcludedPathsRegex:          "^[^/]*/secure/health$",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		BlockedCountries:     []string{"US"},
+		DefaultAllow:         false,
+		AllowPrivate:         false,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		CountryHeader:        "x-country-code",
+		IncludedPathsRegex:   "^[^/]*/secure/.*",
+		ExcludedPathsRegex:   "^[^/]*/secure/health$",
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -453,12 +458,13 @@ func TestIncludedPathsRegex_ExcludeStillWinsAfterInclude(t *testing.T) {
 
 func TestIncludedPathsRegex_InvalidRegex(t *testing.T) {
 	_, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		IncludedPathsRegex:          "[invalid(regex",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		IncludedPathsRegex:   "[invalid(regex",
 	}, pluginName)
 	if err == nil {
 		t.Fatal("expected error for invalid includedPathsRegex")
@@ -470,14 +476,15 @@ func TestIncludedPathsRegex_InvalidRegex(t *testing.T) {
 
 func TestIncludedPathsRegex_EmptyRegex(t *testing.T) {
 	plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		BlockedCountries:            []string{"US"},
-		DefaultAllow:                false,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		IncludedPathsRegex:          "",
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		BlockedCountries:     []string{"US"},
+		DefaultAllow:         false,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		IncludedPathsRegex:   "",
 	}, pluginName)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -493,12 +500,13 @@ func TestIncludedPathsRegex_EmptyRegex(t *testing.T) {
 
 func TestExcludedPathsRegex_InvalidRegex(t *testing.T) {
 	cfg := &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		ExcludedPathsRegex:          "[invalid(regex", // Invalid regex pattern
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		ExcludedPathsRegex:   "[invalid(regex", // Invalid regex pattern
 	}
 
 	_, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -512,14 +520,15 @@ func TestExcludedPathsRegex_InvalidRegex(t *testing.T) {
 
 func TestExcludedPathsRegex_EmptyRegex(t *testing.T) {
 	cfg := &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		BlockedCountries:            []string{"US"},
-		DefaultAllow:                false,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
-		ExcludedPathsRegex:          "", // Empty regex - should not affect blocking
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		BlockedCountries:     []string{"US"},
+		DefaultAllow:         false,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		ExcludedPathsRegex:   "", // Empty regex - should not affect blocking
 	}
 
 	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
@@ -543,13 +552,14 @@ func TestExcludedPathsRegex_DomainBasedMatching(t *testing.T) {
 	// Test that regex can match specific domains
 	// Pattern: only exclude paths on "api.example.com" domain
 	cfg := &Config{
-		Enabled:                     true,
-		DatabaseSources: seedCatalog(dbFilePath), Ip2locationSourceGeo: "seed",
-		BlockedCountries:            []string{"US"},
-		DefaultAllow:                false,
-		DisallowedStatusCode:        http.StatusForbidden,
-		IPHeaders:                   []string{"x-forwarded-for"},
-		IPHeaderStrategy:            IPHeaderStrategyCheckAll,
+		Enabled:              true,
+		DatabaseSources:      seedCatalog(dbFilePath),
+		Ip2locationSourceGeo: "seed",
+		BlockedCountries:     []string{"US"},
+		DefaultAllow:         false,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-forwarded-for"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		// Only exclude /api/* on api.example.com, not on other domains
 		ExcludedPathsRegex: "^api\\.example\\.com/api/.*",
 	}

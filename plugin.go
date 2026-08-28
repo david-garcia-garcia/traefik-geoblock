@@ -3,14 +3,13 @@ package traefik_geoblock
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
 	"time"
-
-	"log/slog"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
