@@ -19,13 +19,14 @@ See proposal.md Why. Measured on `traefik:v3.7.11`: `CreateRouters` cancels one 
 
 ## Decisions
 
-1. **Package `pkg/reclaim`, type `Set`.**
-   `NewSet(grace time.Duration) *Set`. `Bind(key string, ctx context.Context, dispose func())`. First bind for a key stores dispose. Last live ctx Done starts grace; `Bind` same key cancels grace. Grace fire runs dispose once and forgets the key.
+1. **Package `pkg/reclaim`, type `Set`. Put vs Bind.**
+   `NewSet(grace time.Duration) *Set`. `Put(key, dispose)` once per incarnation (creator). `Bind(key, ctx)` per holder. Last live ctx Done starts grace; `Bind` same key cancels grace. Grace fire runs the Put dispose once and forgets the key.
+   Alternative: `Bind(key, ctx, dispose)` on every owner — rejected; many holders, one incarnation, unclear who owns dispose.
    Alternative: generic `Registry[T]` — rejected; Yaegi + `any` map already failed in `dbprovider`.
-   Alternative: put the timer inside `dbwrappers` only — rejected; human asked for other-project reuse.
+   Alternative: timer only inside `dbwrappers` — rejected; other-project reuse.
 
 2. **Caller keeps the typed singleton.**
-   `dbwrappers` still owns `map[string]*BIN` / `*MMDB` and `InstanceLock`. After create-or-get, `reclaim.Bind(hash, ctx, func() { w.close(); delete(map, hash) })`. Reclaim never sees `*BIN`.
+   `dbwrappers` still owns `map[string]*BIN` / `*MMDB` and `InstanceLock`. On **create**: `Put(hash, func() { w.close(); delete(map, hash) })`. On **every open** (create, share, or grace reclaim): `Bind(hash, ctx)`. Reclaim never sees `*BIN`.
    Alternative: reclaim stores the wrapper — rejected (Yaegi `any`).
 
 3. **Set of contexts, not a refcount integer alone.**
@@ -54,4 +55,4 @@ See proposal.md Why. Measured on `traefik:v3.7.11`: `CreateRouters` cancels one 
 
 ## Open Questions
 
-None that change specs. Grace 10s is the explore assumed value, taken here.
+None. Dispose ownership is Put (creator), not Bind (holders). Grace 10s stays.

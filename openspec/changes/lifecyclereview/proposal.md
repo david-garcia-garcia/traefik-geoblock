@@ -4,7 +4,7 @@ Traefik cancels the `New` context for a whole router generation, then calls `New
 
 ## What Changes
 
-- Add a **stdlib-only** reclaim package (`pkg/reclaim`): keyed bind of `context.Context` + dispose callback, set of live contexts per key, grace timer, reclaim cancels dispose. No plugin, wrapper, or vendor imports. Another repo can copy the package.
+- Add a **stdlib-only** reclaim package (`pkg/reclaim`): `Put` (one dispose per incarnation) and `Bind` (one context per holder), grace timer, reclaim cancels dispose. No plugin, wrapper, or vendor imports. Another repo can copy the package.
 - `OpenBIN` / `OpenMMDB` take the `New` context and bind the wrapper hash to that package. Unreclaimed hash (config gone or last router dropped) disposes after grace: stop updater, close file, drop the map entry.
 - Same-hash `New` after cancel reclaims and does **not** dispose.
 - Plugin `New` passes `ctx` into the provider open path.
