@@ -113,13 +113,13 @@ func TestGetDatabaseFactory_Singleton(t *testing.T) {
 	}
 
 	// Get factory first time
-	factory1, err := GetDatabaseFactory(config, logger)
+	factory1, err := GetDatabaseFactory(config, logger, "")
 	if err != nil {
 		t.Fatalf("Failed to get first factory: %v", err)
 	}
 
 	// Get factory second time with same config
-	factory2, err := GetDatabaseFactory(config, logger)
+	factory2, err := GetDatabaseFactory(config, logger, "")
 	if err != nil {
 		t.Fatalf("Failed to get second factory: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestGetDatabaseFactory_Singleton(t *testing.T) {
 		DatabaseAutoUpdate: false,
 	}
 
-	factory3, err := GetDatabaseFactory(config2, logger)
+	factory3, err := GetDatabaseFactory(config2, logger, "")
 	// This should fail because the file doesn't exist, but we're testing the singleton pattern
 	if err == nil {
 		// If it doesn't fail, factory3 should be different from factory1
@@ -166,7 +166,7 @@ func TestGetDatabaseFactory_BadPathFallsBackToEnv(t *testing.T) {
 	}))
 	factory, err := GetDatabaseFactory(&DatabaseConfig{
 		DatabaseFilePath: "/nonexistent/path/bad-database.bin",
-	}, logger)
+	}, logger, "")
 	if err != nil {
 		t.Fatalf("expected factory from env dir: %v", err)
 	}
@@ -469,7 +469,7 @@ func TestCleanupFactories(t *testing.T) {
 		DatabaseAutoUpdate: false,
 	}
 
-	factory1, err := GetDatabaseFactory(config1, logger)
+	factory1, err := GetDatabaseFactory(config1, logger, "")
 	if err != nil {
 		t.Fatalf("Failed to create first factory: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestCleanupFactories(t *testing.T) {
 		DatabaseAutoUpdateCode: "DB1",
 	}
 
-	factory2, err := GetDatabaseFactory(config2, logger)
+	factory2, err := GetDatabaseFactory(config2, logger, "")
 	if err != nil {
 		t.Fatalf("Failed to create second factory: %v", err)
 	}
@@ -552,7 +552,7 @@ func TestDatabaseFactory_Integration(t *testing.T) {
 		DatabaseAutoUpdateCode: "DB1",
 	}
 
-	got, err := New(cfg, logger)
+	got, err := New(cfg, logger, "")
 	if err != nil {
 		t.Fatalf("Failed to create provider: %v", err)
 	}

@@ -19,7 +19,7 @@ func TestNew_LookupWithoutASNFile(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(DatabaseConfig{DatabaseFilePath: testDBFile}, logger)
+	p, err := New(DatabaseConfig{DatabaseFilePath: testDBFile}, logger, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestNew_LookupDB8(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(DatabaseConfig{DatabaseFilePath: db8}, logger)
+	p, err := New(DatabaseConfig{DatabaseFilePath: db8}, logger, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestNew_LookupWithASNFile(t *testing.T) {
 	p, err := New(DatabaseConfig{
 		DatabaseFilePath:    testDBFile,
 		AsnDatabaseFilePath: asnPath,
-	}, logger)
+	}, logger, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestNew_AsnAutoUpdateWithoutTokenLogsError(t *testing.T) {
 	_, err := New(DatabaseConfig{
 		DatabaseFilePath:      testDBFile,
 		AsnDatabaseAutoUpdate: true,
-	}, logger)
+	}, logger, "")
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

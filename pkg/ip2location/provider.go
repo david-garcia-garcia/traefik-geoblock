@@ -13,9 +13,10 @@ type provider struct {
 }
 
 // New constructs the IP2Location DatabaseProvider (geo factory plus optional ASN).
-func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
+// middleware is the Traefik plugin instance name (logged on factory create).
+func New(config DatabaseConfig, logger *slog.Logger, middleware string) (dbprovider.Provider, error) {
 	geoCfg := geoFactoryConfig(config)
-	geoFactory, err := GetDatabaseFactory(geoCfg, logger)
+	geoFactory, err := GetDatabaseFactory(geoCfg, logger, middleware)
 	if err != nil {
 		return nil, err
 	}
@@ -26,7 +27,7 @@ func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error
 		logger.Error("ip2location_asnDatabaseAutoUpdate is true but ip2location_databaseAutoUpdateToken is empty; ASN download skipped (LITE ASN is not on the public CDN)")
 	}
 
-	asnFactory, err := GetDatabaseFactory(asnFactoryConfig(config), logger)
+	asnFactory, err := GetDatabaseFactory(asnFactoryConfig(config), logger, middleware)
 	if err != nil {
 		return nil, err
 	}
