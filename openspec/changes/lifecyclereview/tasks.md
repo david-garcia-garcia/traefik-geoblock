@@ -10,6 +10,7 @@
 - [x] 2.2 `Open*` is `Table.Open` (create + bind). Product grace 10s.
 - [x] 2.3 Wrapper tests: same-hash cancel then open again before grace (one ticker, Lookup works). Do not change BIN hot-swap 10s close.
 - [x] 2.4 Wrapper test: open H1, cancel ctx, open H2 (config change), wait grace. Assert reclaim logs; H2 Lookup works; H1 loop stopped.
+- [x] 2.5 Plugin `New` integration: ctx bind; same-hash reclaim after generation cancel; unreclaimed dispose; provider Close does not dispose; hash-change dispose. Short grace. BIN and one MMDB provider.
 
 ## 3. Usage docs
 

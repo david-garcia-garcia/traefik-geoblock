@@ -20,7 +20,7 @@ _Avoid_: treating vendor as the share axis
 - Those opens go through `Table[*BIN]` / `Table[*MMDB]` in this package (`std_go_reclaim.md`). Unreclaimed hash disposes after grace.
 - IP2Location holds two BIN wrappers (geo + ASN). IPinfo and MaxMind each hold one MMDB wrapper.
 - `provider.Close` must not close the shared wrapper.
-- Tests call `dbwrappers.Reset`.
+- Tests call `dbwrappers.Reset`. Short-grace plugin tests call `ResetWith`.
 
 ## Gotchas
 
