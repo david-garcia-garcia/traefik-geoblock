@@ -12,8 +12,8 @@ import (
 
 	"log/slog"
 
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
