@@ -9,3 +9,9 @@ Allowlist of root + domain: `openspec/specs/domains.md`.
 
 - database
 - observability
+
+## std
+
+### go
+
+- reclaim
