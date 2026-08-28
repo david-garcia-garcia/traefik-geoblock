@@ -52,3 +52,14 @@ The set SHALL use a caller-supplied grace duration. A zero or negative grace SHA
 #### Scenario: Default grace
 - **WHEN** a set is created without an explicit grace
 - **THEN** grace is 10 seconds
+
+### Requirement: Lifecycle events are logged
+The set SHALL emit a structured log line for each of: incarnation created (`Put`), holder attached (`Bind`), last holder gone and grace started (orphan), holder attached during grace (reclaim), and dispose. Each line MUST include the key. Message strings SHALL be stable package constants so a test can assert the sequence without scraping free text.
+
+#### Scenario: Hash change orphan then dispose
+- **WHEN** key A is Put and Bound, then all of A’s contexts are Done
+- **AND** key B is Put and Bound (new incarnation) before or after A’s grace starts
+- **AND** A is not Bound again during grace
+- **THEN** logs include create A, bind A, orphan A, create B, bind B, and dispose A
+- **AND** dispose A occurs only after grace for A
+- **AND** B’s dispose is not invoked

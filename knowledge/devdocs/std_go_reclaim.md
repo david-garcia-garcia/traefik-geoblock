@@ -24,7 +24,8 @@ Stdlib-only. Copy `pkg/reclaim` into another module. The caller keeps the typed 
 
 ## How to use
 
-- `s := reclaim.NewSet(10 * time.Second)` (or a short grace in tests).
+- `s := reclaim.NewSet(10 * time.Second, logger)` (or a short grace in tests).
+- Watch `reclaim_put`, `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`, `reclaim_dispose` (stable `msg`, attr `key`).
 - When you **create** the object: `s.Put(key, dispose)`.
 - On every holder (including the creator and a grace reclaim): `s.Bind(key, ctx)`.
 - `ctx` is the host teardown context (Traefik `New` ctx), not `req.Context()`.
@@ -34,7 +35,7 @@ Stdlib-only. Copy `pkg/reclaim` into another module. The caller keeps the typed 
 ## Pattern snippet
 
 ```go
-s := reclaim.NewSet(10 * time.Second)
+s := reclaim.NewSet(10 * time.Second, logger)
 obj, created, err := getOrCreate(key)
 if created {
 	s.Put(key, func() { obj.Stop(); delete(byKey, key) })
@@ -52,3 +53,4 @@ s.Bind(key, ctx)
 - Hosts that cancel before they call the constructor again need grace (Traefik: ~1 ms, then `New`).
 - Yaegi: keep typed maps in the caller package.
 - A second `Put` while the incarnation is live or in grace does not replace dispose.
+- Tests assert the `msg` constants, not Traefik compose. A config change is two keys: cancel A, Put+Bind B, wait grace, expect `reclaim_dispose` A.

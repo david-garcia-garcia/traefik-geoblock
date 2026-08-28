@@ -40,6 +40,8 @@ See proposal.md Why. Measured on `traefik:v3.7.11`: `CreateRouters` cancels one 
 
 6. **Usage packet `std_go_reclaim.md`** (root `std`, domain `go`) so another repo can implement from Language + snippet without reading geoblock wrappers.
 
+7. **Lifecycle logs on the set.** `NewSet(grace, logger *slog.Logger)`. `log/slog` is stdlib. Stable `msg` constants: `reclaim_put`, `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`, `reclaim_dispose`, plus `key`. Tests install a recording handler and assert the sequence. A plugin-config change is two wrapper hashes: cancel H1’s ctx, `Open*` H2, wait grace, assert orphan H1 then dispose H1 and create H2. No compose required for that proof.
+
 ## Risks / Trade-offs
 
 - [Slow Traefik apply > grace] → dispose then recreate. Mitigation: 10s vs ~1 ms measured; tests use a short grace, product stays 10s.

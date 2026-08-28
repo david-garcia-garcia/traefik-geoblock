@@ -32,3 +32,12 @@ When no live `New` context remains for a wrapper configuration and grace elapses
 #### Scenario: Provider Close does not dispose
 - **WHEN** one DatabaseProvider is closed and another still holds the same wrapper configuration with a live `New` context
 - **THEN** lookups on the remaining instance still succeed
+
+#### Scenario: Dynamic config hash change disposes the old wrapper
+- **WHEN** a wrapper is opened with configuration H1 and a context
+- **AND** that context is cancelled
+- **AND** a wrapper is opened with different configuration H2 and a new context
+- **AND** grace for H1 elapses with no open of H1
+- **THEN** reclaim logs show create H1, orphan H1, create H2, and dispose H1 after grace
+- **AND** H2 lookups succeed
+- **AND** H1’s keep-current loop is stopped
