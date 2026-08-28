@@ -28,11 +28,11 @@ type MMDBConfig struct {
 
 // MMDB is one open MaxMind DB (FromBytes) with hot-swap and a download ticker.
 type MMDB struct {
-	mu       sync.RWMutex
-	db       *maxminddb.Reader
-	path     string
-	logger   *slog.Logger
-	cfg      MMDBConfig
+	mu      sync.RWMutex
+	db      *maxminddb.Reader
+	path    string
+	logger  *slog.Logger
+	cfg     MMDBConfig
 	updater *dbsource.Updater
 }
 

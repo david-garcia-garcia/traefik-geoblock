@@ -103,7 +103,7 @@ func TestNew_LookupWithASNFile(t *testing.T) {
 	}))
 
 	p, err := New(DatabaseConfig{
-		Source: dbsource.Config{Path: testDBFile},
+		Source:    dbsource.Config{Path: testDBFile},
 		AsnSource: dbsource.Config{Path: asnPath},
 	}, logger)
 	if err != nil {

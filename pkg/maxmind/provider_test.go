@@ -110,7 +110,7 @@ func TestNew_EmptyMapUsesSeed(t *testing.T) {
 	t.Cleanup(dbwrappers.Reset)
 
 	p, err := New(DatabaseConfig{
-		Source: dbsource.Config{Path: testMMDB(t)},
+		Source:                dbsource.Config{Path: testMMDB(t)},
 		DatabaseAutoUpdateDir: t.TempDir(),
 	}, testLogger())
 	if err != nil {
