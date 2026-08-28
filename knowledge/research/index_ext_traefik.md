@@ -9,3 +9,8 @@ description: Whether Traefik Yaegi plugins may keep New and CreateConfig in the 
 priority: normal
 local: ext_traefik_plugins_middleware-lifecycle/
 description: How Traefik instantiates, reloads, and tears down Yaegi and local plugin middleware.
+
+## Yaegi plugin generics
+priority: normal
+local: ext_traefik_plugins_yaegi-generics/
+description: Whether Traefik Yaegi v0.16.1 can interpret a generic Table[T] used as a plugin singleton.
