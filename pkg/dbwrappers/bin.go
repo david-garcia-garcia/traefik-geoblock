@@ -1,6 +1,7 @@
 package dbwrappers
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,34 +42,22 @@ type BIN struct {
 	updater            *dbsource.Updater
 }
 
-var (
-	binLock  = dbprovider.NewInstanceLock()
-	binByKey = map[string]*BIN{}
-)
+var bins *Table[*BIN]
 
-// OpenBIN returns the singleton BIN for cfg.
-func OpenBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
-	key := configHash(cfg)
-	var out *BIN
-	err := binLock.LoadOrStore(func() bool {
-		w, ok := binByKey[key]
-		if ok {
-			out = w
-		}
-		return ok
-	}, func() error {
-		w, err := newBIN(cfg, logger)
-		if err != nil {
-			return err
-		}
-		binByKey[key] = w
-		out = w
-		return nil
-	})
-	if err != nil {
-		return nil, err
+func binTable() *Table[*BIN] {
+	tablesMu.Lock()
+	defer tablesMu.Unlock()
+	if bins == nil {
+		bins = NewTable[*BIN](DefaultGrace, slog.Default())
 	}
-	return out, nil
+	return bins
+}
+
+// OpenBIN returns the singleton BIN for cfg and binds ctx on the table.
+func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, error) {
+	return binTable().Open(ctx, configHash(cfg), func() (*BIN, error) {
+		return newBIN(cfg, logger)
+	}, func(w *BIN) { w.close() })
 }
 
 func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {

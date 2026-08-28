@@ -1,17 +1,17 @@
 package dbwrappers
 
-// Reset closes every singleton wrapper. Tests only.
+import "log/slog"
+
+// Reset disposes every singleton wrapper. Tests only.
 func Reset() {
-	binLock.Reset(func() {
-		for key, w := range binByKey {
-			w.close()
-			delete(binByKey, key)
-		}
-	})
-	mmdbLock.Reset(func() {
-		for key, w := range mmdbByKey {
-			w.close()
-			delete(mmdbByKey, key)
-		}
-	})
+	tablesMu.Lock()
+	defer tablesMu.Unlock()
+	if bins != nil {
+		bins.Reset()
+	}
+	if mmdbs != nil {
+		mmdbs.Reset()
+	}
+	bins = NewTable[*BIN](DefaultGrace, slog.Default())
+	mmdbs = NewTable[*MMDB](DefaultGrace, slog.Default())
 }

@@ -232,7 +232,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 
 	// Bootstrap logger: the provider/factory is shared between plugin instances.
-	db, err := openDatabaseProvider(cfg, bootstrapLogger)
+	db, err := openDatabaseProvider(ctx, cfg, bootstrapLogger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to get database provider: %w", name, err)
 	}
@@ -410,22 +410,22 @@ func validateDatabaseSources(cfg *Config) error {
 
 // openDatabaseProvider constructs the geo DatabaseProvider selected by Config.
 // Empty DatabaseProvider defaults to ip2location. Unknown values fail.
-func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
+func openDatabaseProvider(ctx context.Context, cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
 	name := providerName(cfg)
 	switch name {
 	case DatabaseProviderIP2Location:
-		return ip2location.New(ip2location.DatabaseConfig{
+		return ip2location.New(ctx, ip2location.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
 			Source:                catalogSource(cfg, cfg.Ip2locationSourceGeo, dbsource.TypeBIN, ip2location.DownloadMinAge),
 			AsnSource:             catalogSource(cfg, cfg.Ip2locationSourceAsn, dbsource.TypeBIN, ip2location.DownloadMinAge),
 		}, logger)
 	case DatabaseProviderIPinfo:
-		return ipinfo.New(ipinfo.DatabaseConfig{
+		return ipinfo.New(ctx, ipinfo.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
 			Source:                catalogSource(cfg, cfg.IpinfoSource, dbsource.TypeMMDB, mmdbSourceMinAge),
 		}, logger)
 	case DatabaseProviderMaxMind:
-		return maxmind.New(maxmind.DatabaseConfig{
+		return maxmind.New(ctx, maxmind.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
 			Source:                catalogSource(cfg, cfg.MaxmindSource, dbsource.TypeMMDB, mmdbSourceMinAge),
 		}, logger)

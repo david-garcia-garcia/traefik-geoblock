@@ -4,8 +4,8 @@ Traefik cancels the `New` context for a whole router generation, then calls `New
 
 ## What Changes
 
-- Add a **stdlib-only** reclaim package (`pkg/reclaim`): `Put` (one dispose per incarnation) and `Bind` (one context per holder), grace timer, reclaim cancels dispose. No plugin, wrapper, or vendor imports. Another repo can copy the package.
-- `OpenBIN` / `OpenMMDB` take the `New` context and bind the wrapper hash to that package. Unreclaimed hash (config gone or last router dropped) disposes after grace: stop updater, close file, drop the map entry.
+- Add `Table[T]` in `pkg/dbwrappers/table.go` (stdlib imports only): store `T`, bind contexts, grace, dispose. Same package as `*BIN` / `*MMDB` (Yaegi). Another repo copies `table.go` into the package that owns `T`.
+- `OpenBIN` / `OpenMMDB` take the `New` context and `Open` the wrapper hash on that table. Unreclaimed hash disposes after grace: stop updater, close file.
 - Same-hash `New` after cancel reclaims and does **not** dispose.
 - Plugin `New` passes `ctx` into the provider open path.
 - BIN hot-swap 10s delayed close stays. Not this change.
@@ -15,7 +15,7 @@ Traefik cancels the `New` context for a whole router generation, then calls `New
 
 ### New Capabilities
 
-- `std_go_reclaim_context-lease`: stdlib keyed reclaim — bind contexts, grace, dispose callback. No product types.
+- `std_go_reclaim_context-lease`: `Table[T]` in the owner package — store, bind contexts, grace, dispose.
 - `core_geoblock_database_wrapper-reclaim`: format wrappers open with `New` ctx and dispose through reclaim; hash-change leak ends.
 
 ### Modified Capabilities
@@ -24,8 +24,8 @@ None.
 
 ## Impact
 
-- New `pkg/reclaim` (stdlib only)
-- `pkg/dbwrappers` `OpenBIN` / `OpenMMDB` take `ctx`; bind + dispose
+- `pkg/dbwrappers/table.go` (`Table[T]`)
+- `pkg/dbwrappers` `OpenBIN` / `OpenMMDB` take `ctx`; table `Open`
 - `plugin.go` `openDatabaseProvider` and vendor `New` pass `ctx`
 - Tests: reclaim unit tests (no Traefik); wrapper reclaim / hash-evict
 - Usage: `knowledge/devdocs/std_go_reclaim.md`; wrapper packet `Open` grows a `ctx`

@@ -1,6 +1,7 @@
 package ip2location
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
@@ -25,12 +26,12 @@ type provider struct {
 }
 
 // New constructs the IP2Location DatabaseProvider (geo factory plus optional ASN).
-func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
-	geo, err := dbwrappers.OpenBIN(geoBINConfig(config), logger)
+func New(ctx context.Context, config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
+	geo, err := dbwrappers.OpenBIN(ctx, geoBINConfig(config), logger)
 	if err != nil {
 		return nil, err
 	}
-	asn, err := dbwrappers.OpenBIN(asnBINConfig(config), logger)
+	asn, err := dbwrappers.OpenBIN(ctx, asnBINConfig(config), logger)
 	if err != nil {
 		return nil, err
 	}

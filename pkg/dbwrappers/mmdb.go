@@ -1,6 +1,7 @@
 package dbwrappers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/oschwald/maxminddb-golang"
 
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 )
 
@@ -36,34 +36,22 @@ type MMDB struct {
 	updater *dbsource.Updater
 }
 
-var (
-	mmdbLock  = dbprovider.NewInstanceLock()
-	mmdbByKey = map[string]*MMDB{}
-)
+var mmdbs *Table[*MMDB]
 
-// OpenMMDB returns the singleton MMDB for cfg.
-func OpenMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
-	key := configHash(cfg)
-	var out *MMDB
-	err := mmdbLock.LoadOrStore(func() bool {
-		w, ok := mmdbByKey[key]
-		if ok {
-			out = w
-		}
-		return ok
-	}, func() error {
-		w, err := newMMDB(cfg, logger)
-		if err != nil {
-			return err
-		}
-		mmdbByKey[key] = w
-		out = w
-		return nil
-	})
-	if err != nil {
-		return nil, err
+func mmdbTable() *Table[*MMDB] {
+	tablesMu.Lock()
+	defer tablesMu.Unlock()
+	if mmdbs == nil {
+		mmdbs = NewTable[*MMDB](DefaultGrace, slog.Default())
 	}
-	return out, nil
+	return mmdbs
+}
+
+// OpenMMDB returns the singleton MMDB for cfg and binds ctx on the table.
+func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
+	return mmdbTable().Open(ctx, configHash(cfg), func() (*MMDB, error) {
+		return newMMDB(cfg, logger)
+	}, func(w *MMDB) { w.close() })
 }
 
 func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
