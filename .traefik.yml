@@ -10,8 +10,8 @@ testData:
   enabled: false
   # databaseProvider: ip2location
   # path is a full file path (operator seed). Omit it to use seeds/ via TRAEFIK_PLUGIN_GEOBLOCK_PATH.
-  # databaseDownloads.seed.path: /data/geo/IP2LOCATION-LITE-DB1.IPV6.BIN
-  # ip2location_download_geo: seed
+  # databaseSources.seed.path: /data/geo/IP2LOCATION-LITE-DB1.IPV6.BIN
+  # ip2location_source_geo: seed
   # allowedCountries: [ "CH", "DE" ]
   # blockedCountries: [ "RU" ]
   # defaultAllow: false

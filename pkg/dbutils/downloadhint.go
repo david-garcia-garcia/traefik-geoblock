@@ -23,13 +23,13 @@ func ReadPrefix(r io.Reader, n int) string {
 }
 
 // DownloadHint describes a failed GET without the URL (tokens may be in the query).
-func DownloadHint(slot, status, contentType string, contentLength int64, prefix string) string {
-	return fmt.Sprintf("slot=%s status=%s content_type=%s content_length=%d prefix=%q",
-		slot, status, contentType, contentLength, prefix)
+func DownloadHint(key, status, contentType string, contentLength int64, prefix string) string {
+	return fmt.Sprintf("key=%s status=%s content_type=%s content_length=%d prefix=%q",
+		key, status, contentType, contentLength, prefix)
 }
 
 // DownloadHintFromFile reads a prefix from a saved body for a download error hint.
-func DownloadHintFromFile(slot, status, contentType, path string) string {
+func DownloadHintFromFile(key, status, contentType, path string) string {
 	fi, err := os.Stat(path)
 	length := int64(-1)
 	if err == nil {
@@ -37,10 +37,10 @@ func DownloadHintFromFile(slot, status, contentType, path string) string {
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return DownloadHint(slot, status, contentType, length, "")
+		return DownloadHint(key, status, contentType, length, "")
 	}
 	defer f.Close()
-	return DownloadHint(slot, status, contentType, length, ReadPrefix(f, DownloadHintPrefixBytes))
+	return DownloadHint(key, status, contentType, length, ReadPrefix(f, DownloadHintPrefixBytes))
 }
 
 func printablePrefix(b []byte) string {

@@ -16,12 +16,12 @@ const (
 	maxmindFilePath = "./seeds/GeoIP2-Country-Test.mmdb"
 )
 
-func seedCatalog(path string) map[string]DatabaseDownload {
-	return map[string]DatabaseDownload{"seed": {Path: path}}
+func seedCatalog(path string) map[string]DatabaseSource {
+	return map[string]DatabaseSource{"seed": {Path: path}}
 }
 
-func seedCatalogPair(geo, asn string) map[string]DatabaseDownload {
-	return map[string]DatabaseDownload{
+func seedCatalogPair(geo, asn string) map[string]DatabaseSource {
+	return map[string]DatabaseSource{
 		"geo": {Path: geo},
 		"asn": {Path: asn},
 	}

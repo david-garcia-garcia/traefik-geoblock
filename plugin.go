@@ -12,7 +12,7 @@ import (
 
 	"log/slog"
 
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbdownload"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
@@ -71,16 +71,16 @@ type Config struct {
 	// Database provider. Empty defaults to ip2location. Implemented: ip2location, ipinfo, maxmind.
 	DatabaseProvider string `json:"databaseProvider,omitempty" mapstructure:"databaseProvider"`
 
-	// DatabaseDownloads is the central GET catalog. Keys are operator-chosen.
-	DatabaseDownloads map[string]DatabaseDownload `json:"databaseDownloads,omitempty" mapstructure:"databaseDownloads"`
-	// DatabaseAutoUpdateDir is the shared dir for dated downloads. Required when a bound entry has a URL.
+	// DatabaseSources is the catalog of database files (seed path and/or URL). Keys are operator-chosen.
+	DatabaseSources map[string]DatabaseSource `json:"databaseSources,omitempty" mapstructure:"databaseSources"`
+	// DatabaseAutoUpdateDir is the shared dir for dated files. Required when a bound entry has a URL.
 	DatabaseAutoUpdateDir string `json:"databaseAutoUpdateDir,omitempty" mapstructure:"databaseAutoUpdateDir"`
 
-	// Catalog pointers. Empty = no download for that role. Unused pointers for another provider are ignored.
-	Ip2locationDownloadGeo string `json:"ip2location_download_geo,omitempty" mapstructure:"ip2location_download_geo"`
-	Ip2locationDownloadAsn string `json:"ip2location_download_asn,omitempty" mapstructure:"ip2location_download_asn"`
-	IpinfoDownload         string `json:"ipinfo_download,omitempty" mapstructure:"ipinfo_download"`
-	MaxmindDownload        string `json:"maxmind_download,omitempty" mapstructure:"maxmind_download"`
+	// Catalog pointers. Empty = bundled default / env. Unused pointers for another provider are ignored.
+	Ip2locationSourceGeo string `json:"ip2location_source_geo,omitempty" mapstructure:"ip2location_source_geo"`
+	Ip2locationSourceAsn string `json:"ip2location_source_asn,omitempty" mapstructure:"ip2location_source_asn"`
+	IpinfoSource         string `json:"ipinfo_source,omitempty" mapstructure:"ipinfo_source"`
+	MaxmindSource        string `json:"maxmind_source,omitempty" mapstructure:"maxmind_source"`
 
 	// Country-based rules (ISO 3166-1 alpha-2 format)
 	AllowedCountries []string // Whitelist of countries to allow
@@ -125,8 +125,8 @@ type Config struct {
 	ExcludedPathsRegex string
 }
 
-// DatabaseDownload is one central GET slot (URL may carry a query token).
-type DatabaseDownload struct {
+// DatabaseSource is one catalog row (seed path and/or GET URL).
+type DatabaseSource struct {
 	URL          string            `json:"url,omitempty" mapstructure:"url"`
 	Headers      map[string]string `json:"headers,omitempty" mapstructure:"headers"`
 	DatabaseType string            `json:"databaseType,omitempty" mapstructure:"databaseType"`
@@ -147,7 +147,7 @@ func CreateConfig() *Config {
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,                 // Default to checking all IPs
 		DatabaseProvider:     DatabaseProviderIP2Location,              // Default provider
 		CountryHeader:        "",                                       // Default to empty thus not setting the header
-		DatabaseDownloads:    make(map[string]DatabaseDownload),
+		DatabaseSources:      make(map[string]DatabaseSource),
 	}
 }
 
@@ -228,7 +228,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 	requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich, logger)
 
-	if err := validateDatabaseDownloads(cfg); err != nil {
+	if err := validateDatabaseSources(cfg); err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 
@@ -324,7 +324,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	return plugin, nil
 }
 
-const mmdbDownloadMinAge = dbdownload.DefaultMinAge
+const mmdbSourceMinAge = dbsource.DefaultMinAge
 
 func providerName(cfg *Config) string {
 	name := strings.ToLower(strings.TrimSpace(cfg.DatabaseProvider))
@@ -334,29 +334,29 @@ func providerName(cfg *Config) string {
 	return name
 }
 
-func boundDownloadKeys(cfg *Config) []string {
+func boundSourceKeys(cfg *Config) []string {
 	switch providerName(cfg) {
 	case DatabaseProviderIP2Location:
-		return []string{cfg.Ip2locationDownloadGeo, cfg.Ip2locationDownloadAsn}
+		return []string{cfg.Ip2locationSourceGeo, cfg.Ip2locationSourceAsn}
 	case DatabaseProviderIPinfo:
-		return []string{cfg.IpinfoDownload}
+		return []string{cfg.IpinfoSource}
 	case DatabaseProviderMaxMind:
-		return []string{cfg.MaxmindDownload}
+		return []string{cfg.MaxmindSource}
 	default:
 		return nil
 	}
 }
 
-func catalogDownload(cfg *Config, key, databaseType string, minAge time.Duration) dbdownload.Config {
+func catalogSource(cfg *Config, key, databaseType string, minAge time.Duration) dbsource.Config {
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return dbdownload.Config{}
+		return dbsource.Config{}
 	}
-	var entry DatabaseDownload
-	if cfg.DatabaseDownloads != nil {
-		entry = cfg.DatabaseDownloads[key]
+	var entry DatabaseSource
+	if cfg.DatabaseSources != nil {
+		entry = cfg.DatabaseSources[key]
 	}
-	return dbdownload.Config{
+	return dbsource.Config{
 		Key:          key,
 		URL:          strings.TrimSpace(entry.URL),
 		Path:         strings.TrimSpace(entry.Path),
@@ -377,33 +377,33 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func validateDatabaseDownloads(cfg *Config) error {
-	for name, entry := range cfg.DatabaseDownloads {
-		c := dbdownload.Config{
+func validateDatabaseSources(cfg *Config) error {
+	for name, entry := range cfg.DatabaseSources {
+		c := dbsource.Config{
 			Key:          name,
 			URL:          entry.URL,
 			DatabaseType: entry.DatabaseType,
 			Archive:      entry.Archive,
 		}
-		if err := dbdownload.Normalize(&c); err != nil {
-			return fmt.Errorf("databaseDownloads.%s: %w", name, err)
+		if err := dbsource.Normalize(&c); err != nil {
+			return fmt.Errorf("databaseSources.%s: %w", name, err)
 		}
 	}
 	dir := strings.TrimSpace(cfg.DatabaseAutoUpdateDir)
-	for _, key := range boundDownloadKeys(cfg) {
+	for _, key := range boundSourceKeys(cfg) {
 		key = strings.TrimSpace(key)
 		if key == "" {
 			continue
 		}
-		if cfg.DatabaseDownloads == nil {
-			return fmt.Errorf("download pointer %q is not a key in databaseDownloads", key)
+		if cfg.DatabaseSources == nil {
+			return fmt.Errorf("source pointer %q is not a key in databaseSources", key)
 		}
-		entry, ok := cfg.DatabaseDownloads[key]
+		entry, ok := cfg.DatabaseSources[key]
 		if !ok {
-			return fmt.Errorf("download pointer %q is not a key in databaseDownloads", key)
+			return fmt.Errorf("source pointer %q is not a key in databaseSources", key)
 		}
 		if strings.TrimSpace(entry.URL) != "" && dir == "" {
-			return fmt.Errorf("databaseAutoUpdateDir must be set when a download url is bound")
+			return fmt.Errorf("databaseAutoUpdateDir must be set when a source url is bound")
 		}
 	}
 	return nil
@@ -417,18 +417,18 @@ func openDatabaseProvider(cfg *Config, logger *slog.Logger) (dbprovider.Provider
 	case DatabaseProviderIP2Location:
 		return ip2location.New(ip2location.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Download:              catalogDownload(cfg, cfg.Ip2locationDownloadGeo, dbdownload.TypeBIN, ip2location.DownloadMinAge),
-			AsnDownload:           catalogDownload(cfg, cfg.Ip2locationDownloadAsn, dbdownload.TypeBIN, ip2location.DownloadMinAge),
+			Source:                catalogSource(cfg, cfg.Ip2locationSourceGeo, dbsource.TypeBIN, ip2location.DownloadMinAge),
+			AsnSource:             catalogSource(cfg, cfg.Ip2locationSourceAsn, dbsource.TypeBIN, ip2location.DownloadMinAge),
 		}, logger)
 	case DatabaseProviderIPinfo:
 		return ipinfo.New(ipinfo.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Download:              catalogDownload(cfg, cfg.IpinfoDownload, dbdownload.TypeMMDB, mmdbDownloadMinAge),
+			Source:                catalogSource(cfg, cfg.IpinfoSource, dbsource.TypeMMDB, mmdbSourceMinAge),
 		}, logger)
 	case DatabaseProviderMaxMind:
 		return maxmind.New(maxmind.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Download:              catalogDownload(cfg, cfg.MaxmindDownload, dbdownload.TypeMMDB, mmdbDownloadMinAge),
+			Source:                catalogSource(cfg, cfg.MaxmindSource, dbsource.TypeMMDB, mmdbSourceMinAge),
 		}, logger)
 	default:
 		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)

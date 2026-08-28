@@ -61,8 +61,8 @@ func TestHTTPGet_HintOmitsURL(t *testing.T) {
 	}
 }
 
-func TestDatedSlotGlob(t *testing.T) {
-	if DatedSlotGlob(SlotGeo, ".mmdb") != "*_geo.mmdb" {
-		t.Errorf("glob: %s", DatedSlotGlob(SlotGeo, ".mmdb"))
+func TestDatedKeyGlob(t *testing.T) {
+	if DatedKeyGlob("lite", ".mmdb") != "*_lite.mmdb" {
+		t.Errorf("glob: %s", DatedKeyGlob("lite", ".mmdb"))
 	}
 }

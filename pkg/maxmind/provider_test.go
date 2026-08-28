@@ -14,7 +14,8 @@ import (
 
 	"log/slog"
 
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbdownload"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
@@ -41,10 +42,10 @@ func testLogger() *slog.Logger {
 }
 
 func TestLookup_DummyCountry(t *testing.T) {
-	resetFactories()
-	t.Cleanup(resetFactories)
+	dbwrappers.Reset()
+	t.Cleanup(dbwrappers.Reset)
 
-	p, err := New(DatabaseConfig{Download: dbdownload.Config{Path: testMMDB(t)}}, testLogger())
+	p, err := New(DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}, testLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -89,8 +90,8 @@ func TestLookup_DummyCountry(t *testing.T) {
 }
 
 func TestNew_EmptyPathFindsBundled(t *testing.T) {
-	resetFactories()
-	t.Cleanup(resetFactories)
+	dbwrappers.Reset()
+	t.Cleanup(dbwrappers.Reset)
 
 	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", filepath.Dir(testMMDB(t)))
 
@@ -105,11 +106,11 @@ func TestNew_EmptyPathFindsBundled(t *testing.T) {
 }
 
 func TestNew_EmptyMapUsesSeed(t *testing.T) {
-	resetFactories()
-	t.Cleanup(resetFactories)
+	dbwrappers.Reset()
+	t.Cleanup(dbwrappers.Reset)
 
 	p, err := New(DatabaseConfig{
-		Download: dbdownload.Config{Path: testMMDB(t)},
+		Source: dbsource.Config{Path: testMMDB(t)},
 		DatabaseAutoUpdateDir: t.TempDir(),
 	}, testLogger())
 	if err != nil {
@@ -118,6 +119,28 @@ func TestNew_EmptyMapUsesSeed(t *testing.T) {
 	rec, err := p.Lookup(dummyGB)
 	if err != nil || rec.Country != "GB" {
 		t.Fatalf("seed lookup without download URL: rec=%+v err=%v", rec, err)
+	}
+}
+
+func TestNew_CloseDoesNotBreakSharedWrapper(t *testing.T) {
+	dbwrappers.Reset()
+	t.Cleanup(dbwrappers.Reset)
+
+	cfg := DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}
+	a, err := New(cfg, testLogger())
+	if err != nil {
+		t.Fatalf("New a: %v", err)
+	}
+	b, err := New(cfg, testLogger())
+	if err != nil {
+		t.Fatalf("New b: %v", err)
+	}
+	if err := a.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	rec, err := b.Lookup(dummyGB)
+	if err != nil || rec.Country != "GB" {
+		t.Fatalf("shared lookup after Close: rec=%+v err=%v", rec, err)
 	}
 }
 
@@ -152,15 +175,15 @@ func TestDownloadThroughComponent_HTTP(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	dir := t.TempDir()
-	dl := dbdownload.Config{
+	dl := dbsource.Config{
 		Key:          "geolite",
 		URL:          srv.URL,
 		Headers:      map[string]string{"Authorization": "Basic dGVzdA=="},
-		DatabaseType: dbdownload.TypeMMDB,
-		Archive:      dbdownload.ArchiveTarGz,
+		DatabaseType: dbsource.TypeMMDB,
+		Archive:      dbsource.ArchiveTarGz,
 		Dir:          dir,
 	}
-	path, err := dbdownload.Update(dl, testLogger())
+	path, err := dbsource.Update(dl, testLogger())
 	if err != nil {
 		t.Fatalf("download: %v", err)
 	}
@@ -171,13 +194,13 @@ func TestDownloadThroughComponent_HTTP(t *testing.T) {
 		t.Errorf("dated name: %s", path)
 	}
 
-	resetFactories()
-	t.Cleanup(resetFactories)
+	dbwrappers.Reset()
+	t.Cleanup(dbwrappers.Reset)
 	p, err := New(DatabaseConfig{
 		DatabaseAutoUpdateDir: dir,
-		Download: dbdownload.Config{
+		Source: dbsource.Config{
 			Key:          "geolite",
-			DatabaseType: dbdownload.TypeMMDB,
+			DatabaseType: dbsource.TypeMMDB,
 		},
 	}, testLogger())
 	if err != nil {

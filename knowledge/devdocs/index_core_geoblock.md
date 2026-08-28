@@ -10,6 +10,16 @@ priority: normal
 local: core_geoblock_database_provider.md
 description: How the plugin constructs and calls the geo DatabaseProvider.
 
+## Wrapper
+priority: normal
+local: core_geoblock_database_wrapper.md
+description: How this plugin opens one BIN or MMDB file and hot-swaps it.
+
+## Source
+priority: normal
+local: core_geoblock_database_source.md
+description: How this plugin resolves a catalog file and keeps it current.
+
 ## Test harness
 priority: normal
 local: core_geoblock_test-harness.md

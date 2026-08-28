@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
 )
 
 func TestNew(t *testing.T) {
@@ -71,7 +71,7 @@ func TestNew(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = os.Chdir(wd) })
 		t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", "")
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: http.StatusForbidden, DatabaseDownloads: seedCatalog(""), Ip2locationDownloadGeo: "seed", IPHeaders: []string{"x-real-ip"}}, pluginName)
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: http.StatusForbidden, DatabaseSources: seedCatalog(""), Ip2locationSourceGeo: "seed", IPHeaders: []string{"x-real-ip"}}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -87,8 +87,8 @@ func TestNew(t *testing.T) {
 		}
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
-			DatabaseDownloads:      seedCatalog(bad),
-			Ip2locationDownloadGeo: "seed",
+			DatabaseSources:      seedCatalog(bad),
+			Ip2locationSourceGeo: "seed",
 			IPHeaders:              []string{"x-real-ip"},
 		}, pluginName)
 		if err == nil {
@@ -175,8 +175,8 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
 			DatabaseProvider:       DatabaseProviderIPinfo,
-			IpinfoDownload:         "lite",
-			DatabaseDownloads: map[string]DatabaseDownload{
+			IpinfoSource:         "lite",
+			DatabaseSources: map[string]DatabaseSource{
 				"lite": {URL: "https://example.com/geo.mmdb", DatabaseType: "mmdb", Archive: "none"},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
@@ -195,7 +195,7 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
 			DatabaseProvider:       DatabaseProviderIPinfo,
-			DatabaseDownloads:      map[string]DatabaseDownload{},
+			DatabaseSources:      map[string]DatabaseSource{},
 			DisallowedStatusCode:   http.StatusForbidden,
 			IPHeaders:              []string{"x-real-ip"},
 			IPHeaderStrategy:       IPHeaderStrategyCheckAll,
@@ -211,7 +211,7 @@ func TestNew(t *testing.T) {
 	t.Run("FreeCatalogKeySucceeds", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			DatabaseDownloads: map[string]DatabaseDownload{
+			DatabaseSources: map[string]DatabaseSource{
 				"city": {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
@@ -231,8 +231,8 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
 			DatabaseProvider:       DatabaseProviderIPinfo,
-			IpinfoDownload:         "lite",
-			DatabaseDownloads:      map[string]DatabaseDownload{},
+			IpinfoSource:         "lite",
+			DatabaseSources:      map[string]DatabaseSource{},
 			DisallowedStatusCode:   http.StatusForbidden,
 			IPHeaders:              []string{"x-real-ip"},
 			IPHeaderStrategy:       IPHeaderStrategyCheckAll,
@@ -248,7 +248,7 @@ func TestNew(t *testing.T) {
 	t.Run("UnknownDatabaseTypeFails", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			DatabaseDownloads: map[string]DatabaseDownload{
+			DatabaseSources: map[string]DatabaseSource{
 				"litezip": {URL: "https://example.com/db.zip", DatabaseType: "csv", Archive: "zip"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
@@ -267,7 +267,7 @@ func TestNew(t *testing.T) {
 	t.Run("UnknownArchiveFails", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			DatabaseDownloads: map[string]DatabaseDownload{
+			DatabaseSources: map[string]DatabaseSource{
 				"litezip": {URL: "https://example.com/db.zip", DatabaseType: "bin", Archive: "rar"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
@@ -286,7 +286,7 @@ func TestNew(t *testing.T) {
 	t.Run("ExtensionlessURLWithoutArchiveFails", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			DatabaseDownloads: map[string]DatabaseDownload{
+			DatabaseSources: map[string]DatabaseSource{
 				"tok": {URL: "https://example.com/download", DatabaseType: "bin"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
@@ -308,7 +308,7 @@ func TestNew(t *testing.T) {
 	t.Run("GeoNamedKeyIsOrdinary", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			DatabaseDownloads: map[string]DatabaseDownload{
+			DatabaseSources: map[string]DatabaseSource{
 				"geo": {URL: "https://example.com/db.ZIP", DatabaseType: "bin", Archive: "zip"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
@@ -343,7 +343,7 @@ func TestNew(t *testing.T) {
 	t.Run("EmptyMapLeavesASNEmpty", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                     true,
-			DatabaseDownloads:           map[string]DatabaseDownload{},
+			DatabaseSources:           map[string]DatabaseSource{},
 			DisallowedStatusCode:        http.StatusForbidden,
 			IPHeaders:                   []string{"x-real-ip"},
 			IPHeaderStrategy:            IPHeaderStrategyCheckAll,
@@ -510,8 +510,8 @@ func TestNew(t *testing.T) {
 	// NEW: Test environment variable fallback when no filepath is provided
 	t.Run("EnvironmentVariableFallback_NoFilePath", func(t *testing.T) {
 		// Cleanup any existing factories to avoid conflicts
-		ip2location.CleanupFactories()
-		defer ip2location.CleanupFactories()
+		dbwrappers.Reset()
+		defer dbwrappers.Reset()
 
 		// Create a temporary directory and database file for the environment variable
 		envDir := t.TempDir()
@@ -567,8 +567,8 @@ func TestNew(t *testing.T) {
 	// NEW: Test environment variable fallback when bad filepath is provided
 	t.Run("BadFilePath_FallbackToEnvironmentVariable", func(t *testing.T) {
 		// Cleanup any existing factories to avoid conflicts
-		ip2location.CleanupFactories()
-		defer ip2location.CleanupFactories()
+		dbwrappers.Reset()
+		defer dbwrappers.Reset()
 
 		// Create a temporary directory and database file for the environment variable
 		envDir := t.TempDir()
@@ -596,8 +596,8 @@ func TestNew(t *testing.T) {
 
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
-			DatabaseDownloads:      seedCatalog("/nonexistent/path/bad-database.bin"),
-			Ip2locationDownloadGeo: "seed",
+			DatabaseSources:      seedCatalog("/nonexistent/path/bad-database.bin"),
+			Ip2locationSourceGeo: "seed",
 			DisallowedStatusCode:   http.StatusForbidden,
 			IPHeaders:              []string{"x-real-ip"},
 			IPHeaderStrategy:       IPHeaderStrategyCheckAll,
@@ -624,8 +624,8 @@ func TestNew(t *testing.T) {
 	// NEW: Test error when both filepath and environment variable are bad
 	t.Run("BadFilePath_BadEnvironmentVariable_ShouldError", func(t *testing.T) {
 		// Cleanup any existing factories to avoid conflicts
-		ip2location.CleanupFactories()
-		defer ip2location.CleanupFactories()
+		dbwrappers.Reset()
+		defer dbwrappers.Reset()
 
 		// Set a bad environment variable
 		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
@@ -644,8 +644,8 @@ func TestNew(t *testing.T) {
 		}
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:                true,
-			DatabaseDownloads:      seedCatalog(bad),
-			Ip2locationDownloadGeo: "seed",
+			DatabaseSources:      seedCatalog(bad),
+			Ip2locationSourceGeo: "seed",
 			DisallowedStatusCode:   http.StatusForbidden,
 			IPHeaders:              []string{"x-real-ip"},
 			IPHeaderStrategy:       IPHeaderStrategyCheckAll,
@@ -662,8 +662,8 @@ func TestNew(t *testing.T) {
 	// NEW: Test error when no filepath and no environment variable are provided
 	t.Run("NoFilePath_NoEnvironmentVariable_ShouldError", func(t *testing.T) {
 		// Cleanup any existing factories to avoid conflicts
-		ip2location.CleanupFactories()
-		defer ip2location.CleanupFactories()
+		dbwrappers.Reset()
+		defer dbwrappers.Reset()
 
 		// Ensure no environment variable is set
 		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
@@ -690,13 +690,13 @@ func TestNew(t *testing.T) {
 	})
 }
 
-func TestCreateConfig_DatabaseDownloads(t *testing.T) {
+func TestCreateConfig_DatabaseSources(t *testing.T) {
 	cfg := CreateConfig()
-	if cfg.DatabaseDownloads == nil {
-		t.Fatal("CreateConfig must initialize databaseDownloads")
+	if cfg.DatabaseSources == nil {
+		t.Fatal("CreateConfig must initialize DatabaseSources")
 	}
-	if len(cfg.DatabaseDownloads) != 0 {
-		t.Errorf("expected empty map, got %d entries", len(cfg.DatabaseDownloads))
+	if len(cfg.DatabaseSources) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(cfg.DatabaseSources))
 	}
 }
 
@@ -721,8 +721,8 @@ func TestNew_AutoUpdate(t *testing.T) {
 	t.Run("AutoUpdateEnabled", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:               true,
-			Ip2locationDownloadGeo: "geo",
-			DatabaseDownloads:     map[string]DatabaseDownload{"geo": {}},
+			Ip2locationSourceGeo: "geo",
+			DatabaseSources:     map[string]DatabaseSource{"geo": {}},
 			DatabaseAutoUpdateDir: tmpDir,
 			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -751,8 +751,8 @@ func TestNew_AutoUpdate(t *testing.T) {
 	t.Run("AutoUpdateEnabledNoDir", func(t *testing.T) {
 		cfg := &Config{
 			Enabled:                true,
-			Ip2locationDownloadGeo: "litezip",
-			DatabaseDownloads: map[string]DatabaseDownload{
+			Ip2locationSourceGeo: "litezip",
+			DatabaseSources: map[string]DatabaseSource{
 				"litezip": {URL: "https://example.com/geo.ZIP", DatabaseType: "bin", Archive: "zip"},
 			},
 			DisallowedStatusCode: http.StatusForbidden,

@@ -1,4 +1,4 @@
-package dbdownload
+package dbsource
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ func Latest(dir, key, databaseType string) (string, error) {
 	if dir == "" || key == "" {
 		return "", nil
 	}
-	return dbutils.FindLatestDatedFile(dir, dbutils.DatedSlotGlob(key, Ext(databaseType)))
+	return dbutils.FindLatestDatedFile(dir, dbutils.DatedKeyGlob(key, Ext(databaseType)))
 }
 
 // Update downloads and stores a dated file when the URL is set.
@@ -60,7 +60,7 @@ func Update(cfg Config, logger *slog.Logger) (string, error) {
 		_ = os.Remove(lockFile)
 	}()
 
-	tmpDir, err := os.MkdirTemp(cfg.Dir, "dbdownload-*")
+	tmpDir, err := os.MkdirTemp(cfg.Dir, "dbsource-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}

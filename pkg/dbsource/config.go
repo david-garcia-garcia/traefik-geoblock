@@ -1,4 +1,4 @@
-package dbdownload
+package dbsource
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ const (
 	SeedDir = "seeds"
 )
 
-// Config is one catalog download the shared component can run.
+// Config is one catalog source the shared component can resolve and keep current.
 type Config struct {
 	Key             string
 	URL             string

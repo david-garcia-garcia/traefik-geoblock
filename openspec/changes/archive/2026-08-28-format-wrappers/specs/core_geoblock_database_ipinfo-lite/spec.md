@@ -1,8 +1,4 @@
-## Purpose
-
-Defines IPinfo Lite as a selectable geo database: one MMDB for country and ASN, a committed snapshot so plugin creation works without a download, and catalog-pointer auto-update as specified in `core_geoblock_database_url-download`.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: IPinfo settings are vendor-prefixed
 IPinfo-only settings SHALL live on Traefik Config as `ipinfo_source`. The plugin MUST pass that field to the IPinfo provider only. File location SHALL be the catalog `path` and dated files as specified in `core_geoblock_database_url-download`. IPinfo MUST NOT use IP2Location `file=` query codes or a vendor-built `ipinfo_{code}.mmdb?token=` URL. Config SHALL NOT expose `ipinfo_databaseFilePath`.
@@ -22,16 +18,3 @@ When the bound catalog `path` is empty (or the IPinfo pointer is empty), the IPi
 #### Scenario: Auto-update dir wins over seed
 - **WHEN** `ipinfo_source` is `lite` and `databaseAutoUpdateDir` contains a dated `YYYYMMDD_lite` MMDB
 - **THEN** plugin creation opens that dated file instead of the bundled snapshot
-
-### Requirement: Lite lookup maps country code and ASN fields
-For a public IP found in the Lite MMDB, the provider SHALL set country used for allow/block to Lite `country_code`. It SHALL also expose country name (`country`), continent, continent code, ISP from `as_name`, domain from `as_domain`, and ASN from `asn` including any `AS` prefix present in the database. Region and city SHALL be empty. `requestHeaderEnrich` SHALL write every mapped header; an empty field SHALL be the string `null`.
-
-#### Scenario: Known public IP
-- **WHEN** the IPinfo provider looks up `8.8.8.8` in the Lite MMDB
-- **THEN** country used for allow/block is `US`
-- **AND** country name is `United States`
-- **AND** ASN is `AS15169`
-
-#### Scenario: Empty region and city are written as null
-- **WHEN** `requestHeaderEnrich` maps headers to `region` and `city` and the lookup is IPinfo Lite
-- **THEN** those headers are set to `null`

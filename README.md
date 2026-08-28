@@ -226,8 +226,8 @@ Only the selected provider’s files are opened. Unused vendor paths are ignored
 
 How auto-update works:
 
-- Add named entries under `databaseDownloads` (`url`, `databaseType`, `archive`, optional `headers` and `path`). Keys are operator-chosen. A token may live in the URL query (`?token=`). `path` is the operator seed **file** (use a full path). It is not the bundled `seeds/` copy.
-- Point the selected provider at a catalog key: `ip2location_download_geo`, `ip2location_download_asn`, `ipinfo_download`, or `maxmind_download`. A named seed requires that pointer. Empty pointer = bundled default / env only; no GET.
+- Add named entries under `databaseSources` (`url`, `databaseType`, `archive`, optional `headers` and `path`). Keys are operator-chosen. A token may live in the URL query (`?token=`). `path` is the operator seed **file** (use a full path). It is not the bundled `seeds/` copy.
+- Point the selected provider at a catalog key: `ip2location_source_geo`, `ip2location_source_asn`, `ipinfo_source`, or `maxmind_source`. A named seed requires that pointer. Empty pointer = bundled default / env only; no GET.
 - Set `databaseType` to `bin` or `mmdb`. Set `archive` to `none`, `zip`, or `tar.gz`. Empty `archive` is inferred from the URL path (`.zip`, `.tar.gz`/`.tgz`, `.mmdb`, `.bin`). Official IP2Location token and MaxMind permalink URLs have no path extension — set `archive` on those entries.
 - Set `databaseAutoUpdateDir` (required when a bound entry has a URL; must survive container restarts).
 - On startup the plugin uses the newest dated file for that catalog key already in that directory. A 24-hour ticker then checks again.
@@ -252,7 +252,7 @@ If none of those exist, plugin creation fails (except an empty IP2Location ASN p
 - `ipinfo.io` — IPinfo Lite MMDB (token required; the response redirects to IPinfo’s download CDN)
 - `download.maxmind.com` — MaxMind GeoLite2/GeoIP2 permalink (`accountId:licenseKey`; the response redirects to MaxMind’s download host)
 
-> **Note:** If `databaseDownloads` is empty, no external network access is required and the plugin operates entirely offline. Paste the official IP2Location lite ZIP URL if you want LITE without a token. ASN LITE, IPinfo, and MaxMind downloads need the official URL (and headers) you own.
+> **Note:** If `databaseSources` is empty, no external network access is required and the plugin operates entirely offline. Paste the official IP2Location lite ZIP URL if you want LITE without a token. ASN LITE, IPinfo, and MaxMind downloads need the official URL (and headers) you own.
 
 ## Testing and development
 
@@ -305,7 +305,7 @@ docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock traefik:latest
 export TRAEFIK_PLUGIN_GEOBLOCK_PATH=/opt/traefik-plugins/geoblock
 ```
 
-When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN`, `ipinfo_lite.mmdb`, `GeoIP2-Country-Test.mmdb`, and `geoblockban.html` in the specified directory (including `seeds/`) if they are not found in their configured locations. The committed copies live under `seeds/`. An ASN BIN is opened when `ip2location_download_asn` names a catalog entry with `path` or after that pointer has stored a dated file. Downloads run only when the matching pointer names a catalog entry with a URL.
+When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN`, `ipinfo_lite.mmdb`, `GeoIP2-Country-Test.mmdb`, and `geoblockban.html` in the specified directory (including `seeds/`) if they are not found in their configured locations. The committed copies live under `seeds/`. An ASN BIN is opened when `ip2location_source_asn` names a catalog entry with `path` or after that pointer has stored a dated file. Downloads run only when the matching pointer names a catalog entry with a URL.
 
 ### Example Docker Compose Setup
 
@@ -505,12 +505,12 @@ http:
           #-------------------------------
           # Named catalog. Keys are operator-chosen. Each value is
           # url + databaseType (bin|mmdb) + archive (none|zip|tar.gz) + optional headers.
-          # Bind with ip2location_download_geo / ip2location_download_asn /
-          # ipinfo_download / maxmind_download. Empty pointer = seed/path only.
+          # Bind with ip2location_source_geo / ip2location_source_asn /
+          # ipinfo_source / maxmind_source. Empty pointer = seed/path only.
           # databaseAutoUpdateDir is required when a bound entry has a url.
           # Dated files: YYYYMMDD_<catalogKey>.BIN or .mmdb.
           databaseAutoUpdateDir: "/data/geoblock"
-          databaseDownloads:
+          databaseSources:
             litezip:
               url: "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
               databaseType: bin
@@ -524,16 +524,16 @@ http:
             #   url: "https://www.ip2location.com/download?token=$TOKEN&file=DBASNLITEBINIPV6"
             #   databaseType: bin
             #   archive: zip
-          ip2location_download_geo: litezip
-          # ip2location_download_asn: asnlite
-          # ipinfo_download: lite
-          # maxmind_download: geolite
+          ip2location_source_geo: litezip
+          # ip2location_source_asn: asnlite
+          # ipinfo_source: lite
+          # maxmind_source: geolite
 
           # Optional operator seed (full file path). Used when the auto-update dir
           # has no dated file. Not the bundled seeds/ copy — that is step 3 via
           # TRAEFIK_PLUGIN_GEOBLOCK_PATH. A named path requires the matching pointer.
-          # databaseDownloads.litezip.path: "/data/geo/IP2LOCATION-LITE-DB1.IPV6.BIN"
-          # ASN: set ip2location_download_asn and a full path on that catalog row.
+          # databaseSources.litezip.path: "/data/geo/IP2LOCATION-LITE-DB1.IPV6.BIN"
+          # ASN: set ip2location_source_asn and a full path on that catalog row.
           # IPinfo / MaxMind: empty path + empty pointer opens seeds/*.mmdb via the env.
 
           #-------------------------------
@@ -559,7 +559,7 @@ http:
           # The first public IP wins. Every mapped header is written; empty or
           # unavailable fields are the string null (logs and backends need the header present).
           # IP2Location LITE DB1 is country-only; region/city/isp/domain need DB8 or richer.
-          # asn needs the ASN LITE BIN (ip2location_download_asn catalog path
+          # asn needs the ASN LITE BIN (ip2location_source_asn catalog path
           # or a dated file from that pointer).
           # IPinfo Lite fills country, country_name, continent, continent_code,
           # isp (as_name), domain (as_domain), and asn (AS15169 form).
