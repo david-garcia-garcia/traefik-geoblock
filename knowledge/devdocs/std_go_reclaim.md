@@ -25,7 +25,7 @@ Stdlib-only. Copy `pkg/reclaim` into another module. The caller keeps the typed 
 ## How to use
 
 - `s := reclaim.NewSet(10 * time.Second, logger)` (or a short grace in tests).
-- Watch `reclaim_put`, `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`, `reclaim_dispose` (stable `msg`, attr `key`).
+- Watch stable `msg` + `key`. Info: `reclaim_put`, `reclaim_dispose`. Debug: `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`.
 - When you **create** the object: `s.Put(key, dispose)`.
 - On every holder (including the creator and a grace reclaim): `s.Bind(key, ctx)`.
 - `ctx` is the host teardown context (Traefik `New` ctx), not `req.Context()`.

@@ -54,7 +54,7 @@ The set SHALL use a caller-supplied grace duration. A zero or negative grace SHA
 - **THEN** grace is 10 seconds
 
 ### Requirement: Lifecycle events are logged
-The set SHALL emit a structured log line for each of: incarnation created (`Put`), holder attached (`Bind`), last holder gone and grace started (orphan), holder attached during grace (reclaim), and dispose. Each line MUST include the key. Message strings SHALL be stable package constants so a test can assert the sequence without scraping free text.
+The set SHALL emit a structured log line for each of: incarnation created (`Put`), holder attached (`Bind`), last holder gone and grace started (orphan), holder attached during grace (reclaim), and dispose. Each line MUST include the key. Message strings SHALL be stable package constants so a test can assert the sequence without scraping free text. `reclaim_put` and `reclaim_dispose` SHALL be logged at info. `reclaim_bind`, `reclaim_orphan`, and `reclaim_reclaim` SHALL be logged at debug.
 
 #### Scenario: Hash change orphan then dispose
 - **WHEN** key A is Put and Bound, then all of A’s contexts are Done

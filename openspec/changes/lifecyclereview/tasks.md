@@ -1,8 +1,8 @@
 ## 1. Reclaim package (stdlib)
 
-- [ ] 1.1 Add `pkg/reclaim` with `Set`, `NewSet(grace, logger)`, `Put`, `Bind`. Log `reclaim_put` / `reclaim_bind` / `reclaim_orphan` / `reclaim_reclaim` / `reclaim_dispose` with `key`. Imports: standard library only.
+- [ ] 1.1 Add `pkg/reclaim` with `Set`, `NewSet(grace, logger)`, `Put`, `Bind`. Log `reclaim_put` and `reclaim_dispose` at info; `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim` at debug. Attr `key`. Imports: standard library only.
 - [ ] 1.2 Package tests: Put once + two Binds; cancel + Bind before grace (no dispose); grace without Bind (dispose once); second Put ignored; independent keys. Use a short grace in tests.
-- [ ] 1.3 Test hash-change sequence from logs: Put+Bind A, cancel A, Put+Bind B, wait grace → `reclaim_put` A, `reclaim_orphan` A, `reclaim_put` B, `reclaim_dispose` A; B not disposed.
+- [ ] 1.3 Test hash-change sequence from logs (handler at debug): Put+Bind A, cancel A, Put+Bind B, wait grace → `reclaim_put` A, `reclaim_orphan` A, `reclaim_put` B, `reclaim_dispose` A; B not disposed.
 
 ## 2. Wrappers bind New ctx
 
