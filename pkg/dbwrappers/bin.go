@@ -73,6 +73,7 @@ func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	logger = logger.With("key", cfg.Source.Key)
 	w := &BIN{cfg: cfg, logger: logger}
 	if err := w.initialize(); err != nil {
 		return nil, err

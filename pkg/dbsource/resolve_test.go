@@ -76,6 +76,17 @@ func TestResolve_MissingPathUsesEnvBundled(t *testing.T) {
 	}
 }
 
+func TestResolve_EmptyDefaultFileNameSkipsSearch(t *testing.T) {
+	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", t.TempDir())
+	got, err := Resolve(Config{Key: "asnlite", Path: filepath.Join(t.TempDir(), "missing.BIN")}, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Errorf("ASN without bundled default must be empty, got %q", got)
+	}
+}
+
 func TestResolve_EmptyKeySkipsLatest(t *testing.T) {
 	dir := t.TempDir()
 	dated := filepath.Join(dir, time.Now().Format("20060102")+"_lite.mmdb")

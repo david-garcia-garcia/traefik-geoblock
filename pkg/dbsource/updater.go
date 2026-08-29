@@ -53,7 +53,7 @@ func newUpdater(cfg Config, logger *slog.Logger) (*Updater, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Updater{cfg: cfg, logger: logger.With("source", cfg.Key)}, nil
+	return &Updater{cfg: cfg, logger: logger}, nil
 }
 
 // Latest is the newest dated file for this source key.

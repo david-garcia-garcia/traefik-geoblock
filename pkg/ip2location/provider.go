@@ -49,11 +49,10 @@ func geoBINConfig(cfg DatabaseConfig) dbwrappers.BINConfig {
 
 func asnBINConfig(cfg DatabaseConfig) dbwrappers.BINConfig {
 	return dbwrappers.BINConfig{
-		Dir:             cfg.DatabaseAutoUpdateDir,
-		Source:          cfg.AsnSource,
-		AllowMissing:    cfg.AsnSource.Path == "",
-		DefaultFileName: defaultASNFileName,
-		MinAge:          DownloadMinAge,
+		Dir:          cfg.DatabaseAutoUpdateDir,
+		Source:       cfg.AsnSource,
+		AllowMissing: cfg.AsnSource.Path == "",
+		MinAge:       DownloadMinAge,
 	}
 }
 

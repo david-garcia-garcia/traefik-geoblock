@@ -213,26 +213,38 @@ func TestFileUtils_Search(t *testing.T) {
 		}
 	})
 
-	t.Run("search in directory", func(t *testing.T) {
-		// Create a test directory structure
-		tmpDir := t.TempDir()
-		subDir := filepath.Join(tmpDir, "subdir")
-		if err := os.MkdirAll(subDir, 0755); err != nil {
-			t.Fatalf("failed to create subdirectory: %v", err)
+	t.Run("exact seeds path under plugin root env", func(t *testing.T) {
+		envDir := t.TempDir()
+		seedsDir := filepath.Join(envDir, "seeds")
+		if err := os.MkdirAll(seedsDir, 0755); err != nil {
+			t.Fatal(err)
 		}
-
-		// Create target file in subdirectory
-		targetFile := filepath.Join(subDir, "target.bin")
+		targetFile := filepath.Join(seedsDir, "target.bin")
 		if err := os.WriteFile(targetFile, []byte("test"), 0600); err != nil {
-			t.Fatalf("failed to create target file: %v", err)
+			t.Fatal(err)
 		}
-
-		result, err := fu.Search(tmpDir, "target.bin", logger)
+		t.Setenv(PluginPathEnv, envDir)
+		result, err := fu.Search("", "target.bin", logger)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if result != targetFile {
 			t.Errorf("expected %q, got %q", targetFile, result)
+		}
+	})
+
+	t.Run("does not walk an arbitrary subdirectory", func(t *testing.T) {
+		envDir := t.TempDir()
+		subDir := filepath.Join(envDir, "subdir")
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(subDir, "target.bin"), []byte("test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(PluginPathEnv, envDir)
+		if _, err := fu.Search("", "target.bin", logger); err == nil {
+			t.Fatal("walk of subdir must not find the file")
 		}
 	})
 
@@ -247,11 +259,7 @@ func TestFileUtils_Search(t *testing.T) {
 	})
 
 	t.Run("empty base path returns error without env var", func(t *testing.T) {
-		// Temporarily unset the environment variable to test basic behavior
-		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
-		os.Unsetenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
-		defer os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv)
-
+		t.Setenv(PluginPathEnv, "")
 		_, err := fu.Search("", "default.txt", logger)
 		if err == nil {
 			t.Error("expected error when no base path and no env var")

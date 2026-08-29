@@ -67,6 +67,7 @@ func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	logger = logger.With("key", cfg.Source.Key)
 	w := &MMDB{logger: logger, cfg: cfg}
 	path, err := dbsource.Resolve(w.sourceCfg(), w.logger)
 	if err != nil {

@@ -218,7 +218,7 @@ The plugin looks up IPs with one of three providers (`databaseProvider`):
 
 Only the selected provider’s files are opened. Unused vendor paths are ignored.
 
-**Finding the bundled files.** Traefik does not put the plugin tree on the process working directory. Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to the directory that contains the plugin (the local clone, or the registry unpack such as `/plugins-storage/sources/github.com/david-garcia-garcia/traefik-geoblock`). The plugin searches that directory for the bundled filenames when no other file is configured. Without this variable, empty seed paths fail unless the file is already on an auto-update volume.
+**Finding the bundled files.** Traefik does not put the plugin tree on the process working directory. Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to the plugin root (the local clone, or the registry unpack such as `/plugins-storage/sources/github.com/david-garcia-garcia/traefik-geoblock`). The plugin opens `{that dir}/seeds/<filename>` or `{that dir}/<filename>` — it does not walk the tree. If the env is unset, logs say it must be the plugin root. If it is set and those exact files are missing, logs say the env is probably not the plugin root. Without this variable, empty seed paths fail unless a dated file is already on an auto-update volume.
 
 **Recommendation: configure auto-update** and point the auto-update directory at a persistent volume. The bundled snapshots (and any static seed file you copy in) go stale. Auto-update downloads a current database, stores a dated copy, and hot-swaps it without restarting Traefik.
 
@@ -334,7 +334,7 @@ Token-protected downloads (IP2Location paid/LITE-with-token, ASN LITE, IPinfo Li
 
 The plugin supports the following environment variable for configuration:
 
-- **`TRAEFIK_PLUGIN_GEOBLOCK_PATH`**: Directory path used as fallback location for database and HTML files when they are not found in the specified paths or when paths are empty/omitted.
+- **`TRAEFIK_PLUGIN_GEOBLOCK_PATH`**: Plugin root. Used when a catalog `path` is empty or missing. Exact files only: `seeds/<bundled name>` then `<bundled name>` at that root (`geoblockban.html` is at the root, not under `seeds/`).
 
 Example usage:
 ```bash
@@ -349,7 +349,7 @@ docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/data/geoblock traefik:latest
 export TRAEFIK_PLUGIN_GEOBLOCK_PATH=/opt/traefik-plugins/geoblock
 ```
 
-When this environment variable is set, the plugin will automatically look for `IP2LOCATION-LITE-DB1.IPV6.BIN`, `ipinfo_lite.mmdb`, `GeoIP2-Country-Test.mmdb`, and `geoblockban.html` in the specified directory (including `seeds/`) if they are not found in their configured locations. The committed copies live under `seeds/`. An ASN BIN is opened when `ip2location_source_asn` names a catalog entry with `path` or after that pointer has stored a dated file. Downloads run only when the matching pointer names a catalog entry with a URL.
+When this environment variable is set, the plugin opens `seeds/IP2LOCATION-LITE-DB1.IPV6.BIN`, `seeds/ipinfo_lite.mmdb`, `seeds/GeoIP2-Country-Test.mmdb`, and `geoblockban.html` at that root if they are not found at the configured path. There is no bundled ASN file; ASN needs catalog `path` or a dated auto-update file. Downloads run only when the matching pointer names a catalog entry with a URL.
 
 ### Example Docker Compose Setup
 
@@ -527,12 +527,10 @@ http:
           
           banHtmlFilePath: "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
           # Can be:
-          # - Full path: /path/to/geoblockban.html
-          # - Directory: /path/to/ (will search for geoblockban.html recursively). Use /plugins-storage/sources/ if you are installing from plugin repository.
+          # - Full path to an existing file: /path/to/geoblockban.html
           # - Empty: returns only status code
-          # 
-          # Fallback search order when file is not found:
-          # 1. TRAEFIK_PLUGIN_GEOBLOCK_PATH environment variable directory
+          # If the path is missing, the plugin opens
+          # $TRAEFIK_PLUGIN_GEOBLOCK_PATH/geoblockban.html (plugin root).
           # Template variables available: {{.IP}} and {{.Country}}
           
           #-------------------------------

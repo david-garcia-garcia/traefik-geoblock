@@ -147,8 +147,8 @@ func TestAsnBINConfig(t *testing.T) {
 			Headers: map[string]string{"X-Test": "1"},
 		},
 	})
-	if cfg.DefaultFileName != defaultASNFileName {
-		t.Errorf("asn default name: got %q", cfg.DefaultFileName)
+	if cfg.DefaultFileName != "" {
+		t.Errorf("ASN must not search a bundled default, got %q", cfg.DefaultFileName)
 	}
 	if !cfg.AllowMissing {
 		t.Error("expected AllowMissing when ASN path is empty")
