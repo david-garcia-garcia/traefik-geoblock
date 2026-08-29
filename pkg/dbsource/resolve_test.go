@@ -10,10 +10,13 @@ import (
 	"time"
 )
 
+// testLiteMMDB is the committed IPinfo Lite snapshot used as the Resolve fixture.
+const testLiteMMDB = "ipinfo_lite.mmdb"
+
 func TestResolve_DatedFileWins(t *testing.T) {
 	dir := t.TempDir()
 	dated := filepath.Join(dir, time.Now().Format("20060102")+"_lite.mmdb")
-	src, err := os.ReadFile(repoFile(t, "ipinfo_lite.mmdb"))
+	src, err := os.ReadFile(repoFile(t, testLiteMMDB))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +42,7 @@ func TestResolve_DatedFileWins(t *testing.T) {
 }
 
 func TestResolve_CatalogPathFile(t *testing.T) {
-	seed := repoFile(t, "ipinfo_lite.mmdb")
+	seed := repoFile(t, testLiteMMDB)
 	got, err := Resolve(Config{Path: seed, DefaultFileName: "nope.mmdb"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
@@ -50,13 +53,13 @@ func TestResolve_CatalogPathFile(t *testing.T) {
 }
 
 func TestResolve_EmptyPathFindsEnvDefault(t *testing.T) {
-	pluginRoot := filepath.Join(filepath.Dir(repoFile(t, "ipinfo_lite.mmdb")), "..")
+	pluginRoot := filepath.Join(filepath.Dir(repoFile(t, testLiteMMDB)), "..")
 	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", pluginRoot)
-	got, err := Resolve(Config{DefaultFileName: "ipinfo_lite.mmdb"}, testLogger())
+	got, err := Resolve(Config{DefaultFileName: testLiteMMDB}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(got) != "ipinfo_lite.mmdb" {
+	if filepath.Base(got) != testLiteMMDB {
 		t.Errorf("got %q", got)
 	}
 	if filepath.Base(filepath.Dir(got)) != SeedDir {
@@ -65,35 +68,35 @@ func TestResolve_EmptyPathFindsEnvDefault(t *testing.T) {
 }
 
 func TestResolve_MissingPathUsesEnvBundled(t *testing.T) {
-	pluginRoot := filepath.Join(filepath.Dir(repoFile(t, "ipinfo_lite.mmdb")), "..")
+	pluginRoot := filepath.Join(filepath.Dir(repoFile(t, testLiteMMDB)), "..")
 	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", pluginRoot)
 	got, err := Resolve(Config{
 		Path:            filepath.Join(t.TempDir(), "not-here.mmdb"),
-		DefaultFileName: "ipinfo_lite.mmdb",
+		DefaultFileName: testLiteMMDB,
 	}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(got) != "ipinfo_lite.mmdb" {
+	if filepath.Base(got) != testLiteMMDB {
 		t.Errorf("missing catalog path should fall through to bundled, got %q", got)
 	}
 }
 
 // TestResolve_MissingPathWarns records WARN when catalog Path is set but the file is gone.
 func TestResolve_MissingPathWarns(t *testing.T) {
-	pluginRoot := filepath.Join(filepath.Dir(repoFile(t, "ipinfo_lite.mmdb")), "..")
+	pluginRoot := filepath.Join(filepath.Dir(repoFile(t, testLiteMMDB)), "..")
 	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", pluginRoot)
 	missing := filepath.Join(t.TempDir(), "not-here.mmdb")
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	got, err := Resolve(Config{
 		Path:            missing,
-		DefaultFileName: "ipinfo_lite.mmdb",
+		DefaultFileName: testLiteMMDB,
 	}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(got) != "ipinfo_lite.mmdb" {
+	if filepath.Base(got) != testLiteMMDB {
 		t.Errorf("missing catalog path should fall through to bundled, got %q", got)
 	}
 	out := buf.String()
@@ -122,7 +125,7 @@ func TestResolve_EmptyKeySkipsLatest(t *testing.T) {
 	if err := os.WriteFile(dated, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	seed := repoFile(t, "ipinfo_lite.mmdb")
+	seed := repoFile(t, testLiteMMDB)
 	got, err := Resolve(Config{
 		Dir:          dir,
 		DatabaseType: TypeMMDB,
