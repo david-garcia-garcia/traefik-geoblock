@@ -82,79 +82,49 @@ func (fu *FileUtils) Copy(src string, dst string, overwrite bool) error {
 	return nil
 }
 
-// Search looks for a file in the filesystem, handling both direct paths and directory searches.
-// If basePathOrFile is a direct path to an existing file, that path is returned.
-// If basePathOrFile is a directory, it recursively searches for defaultFile within that directory.
-//
-// Parameters:
-//   - basePathOrFile: Either a direct file path or directory to search in
-//   - defaultFile: Filename to search for if basePathOrFile is a directory
-//   - logger: Logger for error reporting
-//
-// Returns:
-//   - The path to the found file, or an error if the file is not found
-//
-// The function will return an error if the file cannot be found after trying all fallback options.
-func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *slog.Logger) (string, error) {
+// PluginPathEnv is the plugin-root directory (local clone or registry unpack).
+const PluginPathEnv = "TRAEFIK_PLUGIN_GEOBLOCK_PATH"
 
-	// Check if we received a file path and if it exists return that
+// Search returns an existing file path. It does not walk a directory tree.
+// If basePathOrFile is an existing file, that path is returned.
+// Otherwise it joins PluginPathEnv with seeds/<defaultFile>, then <defaultFile>.
+func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *slog.Logger) (string, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	// Configured path already names a file.
 	if basePathOrFile != "" && fu.ExistsAndIsFile(basePathOrFile) {
 		return basePathOrFile, nil
 	}
-
-	// If we are going to perform a search, defaultFileName must be provided
+	// No basename: cannot join seeds/ or plugin-root candidates.
 	if defaultFile == "" {
 		return "", fmt.Errorf("fileutils: defaultFile must be provided when performing a search")
 	}
 
-	// The basePathOrFile must be a directory
-	if fu.ExistsAndIsDir(basePathOrFile) {
-		logger.Debug("fileutils: basePathOrFile is a directory, searching recursively for file.", "basePathOrFile", basePathOrFile)
-	} else {
-		// Try to fallback to the environment variable path
-		envPath := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
-		if envPath != "" {
-			if fu.ExistsAndIsDir(envPath) {
-				logger.Debug("fileutils: using environment variable path TRAEFIK_PLUGIN_GEOBLOCK_PATH for file search.", "envPath", envPath)
-				basePathOrFile = envPath
-			} else {
-				logger.Error("fileutils: TRAEFIK_PLUGIN_GEOBLOCK_PATH is not a directory", "envPath", envPath)
-				return "", fmt.Errorf("fileutils: TRAEFIK_PLUGIN_GEOBLOCK_PATH is not a directory")
-			}
-		} else {
-			return "", fmt.Errorf("fileutils: TRAEFIK_PLUGIN_GEOBLOCK_PATH not provided and basePathOrFile is not a directory or does not exist")
-		}
+	envPath := os.Getenv(PluginPathEnv)
+	// Env unset: operator must point at the plugin root.
+	if envPath == "" {
+		logger.Error(PluginPathEnv + " must be set to the plugin root")
+		return "", fmt.Errorf("%s must be set to the plugin root", PluginPathEnv)
+	}
+	// Env set but not a directory: wrong plugin-root value.
+	if !fu.ExistsAndIsDir(envPath) {
+		logger.Error(PluginPathEnv+" is not a directory; it is probably not the plugin root", "path", envPath)
+		return "", fmt.Errorf("%s is not a directory: %s", PluginPathEnv, envPath)
 	}
 
-	// Try to search recursively in the provided directory
-	originalPath := basePathOrFile
-	foundPath := ""
-	err := filepath.Walk(basePathOrFile, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip errors and continue walking
-		}
-		if !info.IsDir() {
-			if filepath.Base(path) == defaultFile {
-				foundPath = path        // Update foundPath with the found path
-				return filepath.SkipAll // Stop walking once found
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		// Log error but continue with fallback
-		logger.Debug("error searching for file in specified path", "error", err, "path", originalPath)
+	// Exact joins only: seeds/<name>, then <name> at the plugin root.
+	seedsPath := filepath.Join(envPath, "seeds", defaultFile)
+	rootPath := filepath.Join(envPath, defaultFile)
+	if fu.ExistsAndIsFile(seedsPath) {
+		return seedsPath, nil
 	}
-
-	// If found in the specified path, return it
-	if foundPath != "" && fu.ExistsAndIsFile(foundPath) {
-		return foundPath, nil
+	if fu.ExistsAndIsFile(rootPath) {
+		return rootPath, nil
 	}
-
-	// No file found anywhere - return error
-	logger.Error("could not find file", "file", defaultFile, "originalPath", originalPath, "envFallbackChecked", true)
-	return "", fmt.Errorf("file not found: %s (searched in %s and TRAEFIK_PLUGIN_GEOBLOCK_PATH)", defaultFile, originalPath)
+	logger.Error("bundled file not found; "+PluginPathEnv+" is probably not the plugin root",
+		"tried", seedsPath, "also", rootPath)
+	return "", fmt.Errorf("file not found: %s (tried %s and %s)", defaultFile, seedsPath, rootPath)
 }
 
 // Default is the shared FileUtils used by package-level helpers.

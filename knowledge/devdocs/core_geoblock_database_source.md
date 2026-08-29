@@ -27,12 +27,14 @@ GEO and ASN are two independent wrapper + source pairs. The provider holds the w
 - Put seed `path` and/or `url` on a catalog entry. Bind with `ip2location_source_geo`, `ip2location_source_asn`, `ipinfo_source`, or `maxmind_source`.
 - `New` inserts reserved `default_ip2location` (free IP2Location geo LITE ZIP, `bin`/`zip`) and `default_geolite` (unofficial P3TERX Country MMDB, `mmdb`/`none`) unless the operator already set that key. Empty `ip2location_source_geo` binds `default_ip2location`. Empty `maxmind_source` binds `default_geolite`. Keep an operator-defined reserved row. Do not commit a live GeoLite file; Resolve still opens the official dummy Country seed until a dated file exists.
 - A pointer to a missing key WARNs and is treated as empty (IP2Location geo → `default_ip2location`; MaxMind → `default_geolite`; IPinfo → bundled seed; ASN → no ASN). Unknown `databaseType`/`archive` fails `New`. A bound pointer whose `databaseType` does not match the provider (`bin` vs `mmdb`) fails `New`. A bound URL with empty `databaseAutoUpdateDir` WARNs and uses `os.TempDir()`/`traefik-geoblock`. Unused pointers for another provider are ignored.
-- Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path), else the vendor default filename under `seeds/`. There is no `*_databaseFilePath`.
+- Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path). A set `path` that is not a file WARNs `seed was specified but not found`. Else `{TRAEFIK_PLUGIN_GEOBLOCK_PATH}/seeds/<DefaultFileName>` then `{env}/<DefaultFileName>`. No directory walk. ASN has no `DefaultFileName`. There is no `*_databaseFilePath`.
+- Wrapper and source logs include `key` (the `databaseSources` map key).
 - `Start` returns a nil Updater when the URL is empty.
 
 ## Gotchas
 
 - Failed GET/unpack errors use `DownloadHint` only. Do not log the URL (tokens may be in the query).
+- `TRAEFIK_PLUGIN_GEOBLOCK_PATH` must be the plugin root. Unset → say it must be set. Set but exact files missing → those paths plus “probably not the plugin root”.
 
 ## Pattern snippet
 

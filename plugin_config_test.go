@@ -16,7 +16,18 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
+// pluginRootDir is the module cwd so New tests can set PluginPathEnv to the plugin root.
+func pluginRootDir(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wd
+}
+
 func TestNew(t *testing.T) {
+	t.Setenv(fileutils.PluginPathEnv, pluginRootDir(t))
 	t.Run("Disabled", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: false, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
 		if err != nil {
@@ -793,17 +804,18 @@ func TestNew(t *testing.T) {
 		}()
 
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:              true,
-			DisallowedStatusCode: http.StatusForbidden,
-			IPHeaders:            []string{"x-real-ip"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			Enabled:               true,
+			DatabaseAutoUpdateDir: t.TempDir(),
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 		}, pluginName)
 
-		if err != nil {
-			t.Errorf("empty pointer still finds ./default BIN in the module tree, got: %v", err)
+		if err == nil {
+			t.Error("expected error when TRAEFIK_PLUGIN_GEOBLOCK_PATH is unset and no catalog path")
 		}
-		if plugin == nil {
-			t.Error("expected plugin when the default BIN is in the working tree")
+		if plugin != nil {
+			t.Error("expected plugin to be nil without plugin-root env or catalog path")
 		}
 	})
 }
@@ -888,6 +900,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 	})
 
 	t.Run("AutoUpdateEnabledEmptyDir", func(t *testing.T) {
+		t.Setenv(fileutils.PluginPathEnv, pluginRootDir(t))
 		emptyDir, err := os.MkdirTemp("", "geoblock-empty-*")
 		if err != nil {
 			t.Fatalf("Failed to create empty temp dir: %v", err)
