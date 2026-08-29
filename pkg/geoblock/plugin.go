@@ -191,34 +191,26 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	if cfg == nil {
 		return nil, fmt.Errorf("%s: no config provided", name)
 	}
-
-	bootstrapLogger := logging.NewBootstrap(name, cfg.LogLevel)
-	logger := logging.New(name, cfg.LogLevel, cfg.LogFormat, bootstrapLogger)
-	logger.Debug("initializing plugin",
-		"logLevel", cfg.LogLevel,
-		"logFormat", cfg.LogFormat)
-
-	if !cfg.Enabled {
-		bootstrapLogger.Warn("plugin disabled")
-		return (&Plugin{name: name, enabled: false, logger: logger}).ForRoute(next, nil), nil
-	}
-
-	if err := Prepare(cfg, name, logger); err != nil {
+	if err := Prepare(cfg, name); err != nil {
 		return nil, err
 	}
-	db, err := OpenDatabase(ctx, cfg, bootstrapLogger)
+	core, err := NewCore(name, cfg)
 	if err != nil {
 		return nil, err
 	}
-	core, err := NewCore(name, cfg, db, logger)
+	h, err := core.ForRoute(ctx, next, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return core.ForRoute(next, db), nil
+	return h, nil
 }
 
 // Prepare normalizes and validates cfg. Mutates cfg. Call before hashing or NewCore.
-func Prepare(cfg *Config, name string, logger *slog.Logger) error {
+func Prepare(cfg *Config, name string) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	logger := pluginLogger(name, cfg)
 	if http.StatusText(cfg.DisallowedStatusCode) == "" {
 		return fmt.Errorf("%s: %d is not a valid http status code", name, cfg.DisallowedStatusCode)
 	}
@@ -253,20 +245,25 @@ func Prepare(cfg *Config, name string, logger *slog.Logger) error {
 	return nil
 }
 
-// OpenDatabase opens the geo DatabaseProvider and binds format wrappers to ctx.
-func OpenDatabase(ctx context.Context, cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
-	db, err := openDatabaseProvider(ctx, cfg, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database provider: %w", err)
-	}
-	return db, nil
+// pluginLogger is the slog logger for this middleware name and config.
+func pluginLogger(name string, cfg *Config) *slog.Logger {
+	bootstrap := logging.NewBootstrap(name, cfg.LogLevel)
+	return logging.New(name, cfg.LogLevel, cfg.LogFormat, bootstrap)
 }
 
-// ForRoute returns a copy that serves next and uses db.
-func (p Plugin) ForRoute(next http.Handler, db dbprovider.Provider) *Plugin {
+// ForRoute returns a copy that serves next and binds wrappers to ctx.
+func (p Plugin) ForRoute(ctx context.Context, next http.Handler, cfg *Config) (*Plugin, error) {
 	p.next = next
+	if !p.enabled {
+		p.db = nil
+		return &p, nil
+	}
+	db, err := openDatabaseProvider(ctx, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to get database provider: %w", p.name, err)
+	}
 	p.db = db
-	return &p
+	return &p, nil
 }
 
 // SameCore reports whether a and b share stored incarnation fields (maps, IP helpers).
@@ -285,9 +282,14 @@ func (p *Plugin) Next() http.Handler {
 	return p.next
 }
 
-// NewCore builds the Plugin fields (no next). cfg must already be Prepare'd.
-func NewCore(name string, cfg *Config, db dbprovider.Provider, logger *slog.Logger) (*Plugin, error) {
+// NewCore builds the Plugin fields (no next, no provider). cfg must already be Prepare'd.
+func NewCore(name string, cfg *Config) (*Plugin, error) {
+	logger := pluginLogger(name, cfg)
+	logger.Debug("initializing plugin",
+		"logLevel", cfg.LogLevel,
+		"logFormat", cfg.LogFormat)
 	if !cfg.Enabled {
+		logger.Warn("plugin disabled")
 		return &Plugin{name: name, enabled: false, logger: logger}, nil
 	}
 
@@ -348,7 +350,6 @@ func NewCore(name string, cfg *Config, db dbprovider.Provider, logger *slog.Logg
 
 	return &Plugin{
 		name:                  name,
-		db:                    db,
 		enabled:               cfg.Enabled,
 		allowedCountries:      allowedCountries,
 		blockedCountries:      blockedCountries,

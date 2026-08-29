@@ -8,9 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/geoblock"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
@@ -34,33 +32,17 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	if cfg == nil {
 		return nil, fmt.Errorf("%s: no config provided", name)
 	}
-
-	bootstrapLogger := logging.NewBootstrap(name, cfg.LogLevel)
-	logger := logging.New(name, cfg.LogLevel, cfg.LogFormat, bootstrapLogger)
-
-	if !cfg.Enabled {
-		return bindPlugin(ctx, next, name, cfg, nil, func() (*geoblock.Plugin, error) {
-			return geoblock.NewCore(name, cfg, nil, logger)
-		})
-	}
-
-	if err := geoblock.Prepare(cfg, name, logger); err != nil {
+	// Normalize before hashing so two New with the same incoming config share a key.
+	if err := geoblock.Prepare(cfg, name); err != nil {
 		return nil, err
 	}
-	// Bind wrappers to this New ctx even when the Plugin incarnation is reused.
-	db, err := geoblock.OpenDatabase(ctx, cfg, bootstrapLogger)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
-	}
-	return bindPlugin(ctx, next, name, cfg, db, func() (*geoblock.Plugin, error) {
-		return geoblock.NewCore(name, cfg, db, logger)
-	})
+	return bindPlugin(ctx, next, name, cfg)
 }
 
-// bindPlugin stores or reclaims the Plugin for name+config, then attaches this next and provider.
-func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config, db dbprovider.Provider, create func() (*geoblock.Plugin, error)) (http.Handler, error) {
+// bindPlugin stores or reclaims the Plugin for name+config, then attaches this route.
+func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config) (http.Handler, error) {
 	v, err := reclaim.Open(ctx, pluginKey(name, cfg), func() (any, error) {
-		return create()
+		return geoblock.NewCore(name, cfg)
 	}, func(any) {})
 	if err != nil {
 		return nil, err
@@ -69,7 +51,11 @@ func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config
 	if !ok {
 		return nil, fmt.Errorf("%s: reclaim: want *geoblock.Plugin, got %T", name, v)
 	}
-	return core.ForRoute(next, db), nil
+	h, err := core.ForRoute(ctx, next, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return h, nil
 }
 
 // pluginKey is the process-table key for one Plugin incarnation.

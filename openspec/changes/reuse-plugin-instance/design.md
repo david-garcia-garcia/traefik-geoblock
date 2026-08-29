@@ -1,6 +1,6 @@
 ## Context
 
-See proposal.md — Why. Root `New` mutates `Config` via `geoblock.Prepare`, opens a DatabaseProvider, then reuses one Plugin on `reclaim.Default`. Wrappers live under `bin:` / `mmdb:`. `pkg/geoblock` constructs and serves; it does not call `reclaim.Open`. `ServeHTTP` is a value receiver and always uses `p.next`. Wrapper lifecycle tests call `geoblock.New`. Instance tests call root `New`.
+See proposal.md — Why. Root `New` normalizes `Config` via `geoblock.Prepare`, reuses one Plugin on `reclaim.Default`, then `ForRoute`s this next. Wrappers live under `bin:` / `mmdb:`. `pkg/geoblock` constructs, opens the provider, and serves; it does not call `reclaim.Open`. `ServeHTTP` is a value receiver and always uses `p.next`. Wrapper lifecycle tests call `geoblock.New`. Instance tests call root `New`.
 
 ## Goals / Non-Goals
 
@@ -25,13 +25,13 @@ See proposal.md — Why. Root `New` mutates `Config` via `geoblock.Prepare`, ope
 2. **Key is `plugin:` + name + `:` + hex hash of Config after New’s existing mutate steps.**
    Whole `Config` via `encoding/json` + FNV-64a (same algorithm as wrapper `configHash`). `encoding/json` sorts map keys, so the hash is stable. Name is the Traefik middleware name, not hashed into the body so logs stay readable.
 
-3. **Store `*geoblock.Plugin` with `next` nil. Each root `New` calls `ForRoute(next, db)`.**
+3. **Store `*geoblock.Plugin` with `next` and `db` unset. Each root `New` calls `ForRoute(ctx, next, cfg)`.**
    Alternative: a new `routeHandler` type — rejected; tests still type-assert `*geoblock.Plugin`.
    Alternative: mutate `next` on the stored Plugin — rejected; two routers would share one next.
-   Instance reclaim stays in the Yaegi root. `pkg/geoblock` is construct + ServeHTTP only.
+   Instance reclaim stays in the Yaegi root. Opening the provider is `ForRoute` in `pkg/geoblock`.
 
-4. **Always `geoblock.OpenDatabase` before `reclaim.Open`.**
-   First put order stays wrapper-then-plugin when tests call root `New`. The copy’s `db` is this `New`’s provider so lookups use wrappers bound to this context.
+4. **`ForRoute` opens the DatabaseProvider with this `New` ctx.**
+   The instance manager does not call OpenDatabase. Wrapper bind still happens on every `New`, including reuse.
 
 5. **Plugin dispose is empty.**
    The incarnation has no keep-current loop. After grace the table drops it; maps and IP helpers become collectable when no copy remains. Wrappers dispose on their own keys.

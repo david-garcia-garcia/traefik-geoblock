@@ -8,12 +8,12 @@ _Avoid_: treating each returned `*Plugin` as a distinct core (it is a shallow co
 
 ## Overview
 
-Root `New` builds the Plugin once per name+config and reuses it for later routers and same-config reloads. Each `New` still returns a `*geoblock.Plugin` whose `next` is that router’s chain and whose provider was opened with that `New` context.
+Root `New` builds the Plugin once per name+config and reuses it for later routers and same-config reloads. Each `New` still returns a `*geoblock.Plugin` whose `next` is that router’s chain. Wrapper bind is `ForRoute`, not the instance table.
 
 ## How to use
 
 - Do not construct maps, regexes, IP helpers, or ban HTML outside `geoblock.NewCore`. That create runs once per incarnation.
-- Always open the DatabaseProvider with this `New` context before `reclaim.Open`, so wrappers bind even on reuse.
+- Do not open the DatabaseProvider in the Yaegi root. `ForRoute` opens it with this `New` context so wrappers bind even on reuse.
 - Key prefix is `plugin:`. Same process table as `bin:` / `mmdb:` (`std_go_reclaim.md`).
 - Dispose is empty. After grace the table drops the incarnation.
 - Tests: `dbwrappers.Reset` / `ResetWith` from the root package. Assert `SameCore` and per-`New` `Next`. Filter reclaim logs with the `plugin:` prefix.
@@ -21,21 +21,20 @@ Root `New` builds the Plugin once per name+config and reuses it for later router
 ## Pattern snippet
 
 ```go
-if err := geoblock.Prepare(cfg, name, logger); err != nil {
+if err := geoblock.Prepare(cfg, name); err != nil {
 	return nil, err
 }
-db, err := geoblock.OpenDatabase(ctx, cfg, bootstrapLogger)
 v, err := reclaim.Open(ctx, pluginKey(name, cfg), func() (any, error) {
-	return geoblock.NewCore(name, cfg, db, logger)
+	return geoblock.NewCore(name, cfg)
 }, func(any) {})
-return v.(*geoblock.Plugin).ForRoute(next, db), nil
+return v.(*geoblock.Plugin).ForRoute(ctx, next, cfg)
 ```
 
 ## Key files
 
 - `plugin.go` — `New`, `bindPlugin`, `pluginKey`
 - `plugin_instance_test.go` — share, miss, reclaim, grace
-- `pkg/geoblock` — Prepare, OpenDatabase, NewCore, ForRoute
+- `pkg/geoblock` — Prepare, NewCore, ForRoute
 - `pkg/reclaim` — process table
 
 ## Gotchas

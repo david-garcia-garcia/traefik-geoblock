@@ -5,7 +5,7 @@ Traefik calls plugin `New` once per router (and again on every applied reload). 
 ## What Changes
 
 - `New` stores one `Plugin` (next unset) on the process reclaim table, keyed by middleware name plus a hash of the normalized `Config`.
-- A later `New` with the same name and config shallow-copies that Plugin, sets this router’s `next`, and still opens the DatabaseProvider so wrappers bind this `New` context.
+- A later `New` with the same name and config shallow-copies that Plugin and `ForRoute`s this `next`. `ForRoute` opens the DatabaseProvider so wrappers bind this `New` context.
 - `New` still returns `*Plugin`. No new handler type.
 - Plugin dispose is empty. After grace the table drops the incarnation.
 - Table `Open` dispose-vs-lifetime-context is **not** this change.
