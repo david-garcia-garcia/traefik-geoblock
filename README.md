@@ -214,7 +214,7 @@ The plugin looks up IPs with one of three providers (`databaseProvider`):
 | --- | --- | --- |
 | IP2Location (default) | `ip2location` or empty | `seeds/IP2LOCATION-LITE-DB1.IPV6.BIN` (country). ASN is a separate BIN and is **not** bundled. |
 | IPinfo | `ipinfo` | `seeds/ipinfo_lite.mmdb` (bundled seed, country + ASN). Core/Plus are operator URLs or seed paths. |
-| MaxMind | `maxmind` | `seeds/GeoIP2-Country-Test.mmdb` (official **dummy** Country fixture, not a live GeoLite file). Operator-supplied GeoLite2/GeoIP2 Country or City MMDBs use nested `country.iso_code`. |
+| MaxMind | `maxmind` | Bundled seed is `seeds/GeoIP2-Country-Test.mmdb` (official **dummy** Country fixture, not a live GeoLite file). Empty `maxmind_source` binds reserved `default_geolite`, which GETs an unofficial Country MMDB (see below). Official GeoLite still needs a MaxMind account. Operator-supplied GeoLite2/GeoIP2 Country or City MMDBs use nested `country.iso_code`. |
 
 Only the selected provider’s files are opened. Unused vendor paths are ignored.
 
@@ -224,7 +224,10 @@ Only the selected provider’s files are opened. Unused vendor paths are ignored
 
 How auto-update works:
 
-- Add named entries under `databaseSources` (`url`, `databaseType`, `archive`, optional `headers` and `path`). Keys are operator-chosen. A token may live in the URL query (`?token=`). `path` is the operator seed **file** (use a full path). It is not the bundled `seeds/` copy. Set `databaseType` to `bin` or `mmdb`. Set `archive` to `none`, `zip`, or `tar.gz`. Empty `archive` is inferred from the URL path (`.zip`, `.tar.gz`/`.tgz`, `.mmdb`, `.bin`). Official IP2Location token and MaxMind permalink URLs have no path extension — set `archive` on those entries. Examples (bind the key with the matching pointer below):
+- The plugin always inserts reserved catalog keys unless you already defined them:
+  - `default_ip2location` — free IP2Location country LITE ZIP (`databaseType: bin`, `archive: zip`). Empty `ip2location_source_geo` binds this row. There is no default ASN row (ASN LITE needs a token).
+  - `default_geolite` — unofficial [P3TERX GeoLite.mmdb](https://github.com/P3TERX/GeoLite.mmdb/tree/download) Country file (`databaseType: mmdb`, `archive: none`). Empty `maxmind_source` binds this row. This is **not** an official MaxMind download. Official GeoLite requires an account and `accountId:licenseKey` (permalink example below). This plugin does not embed a live GeoLite file; until a dated download exists it opens the official dummy Country seed. No default City or ASN row. If you set `databaseSources.default_ip2location` or `databaseSources.default_geolite` yourself, that row is kept.
+- Add named entries under `databaseSources` (`url`, `databaseType`, `archive`, optional `headers` and `path`). Keys are operator-chosen except `default_ip2location` and `default_geolite`. A token may live in the URL query (`?token=`). `path` is the operator seed **file** (use a full path). It is not the bundled `seeds/` copy. Set `databaseType` to `bin` or `mmdb`. A pointer whose `databaseType` does not match the provider (IP2Location → `bin`; IPinfo / MaxMind → `mmdb`) fails plugin creation. A pointer to a missing key logs a warning and falls back (IP2Location geo → `default_ip2location`; MaxMind → `default_geolite`; IPinfo → bundled seed; ASN → no ASN). Set `archive` to `none`, `zip`, or `tar.gz`. Empty `archive` is inferred from the URL path (`.zip`, `.tar.gz`/`.tgz`, `.mmdb`, `.bin`). Official IP2Location token and MaxMind permalink URLs have no path extension — set `archive` on those entries. Examples (bind the key with the matching pointer below):
 
   ```yaml
   databaseSources:
@@ -256,7 +259,7 @@ How auto-update works:
         Authorization: "Basic YOUR_BASE64_ACCOUNTID_LICENSEKEY"
   ```
 
-- Point the selected provider at a `databaseSources` key: `ip2location_source_geo`, `ip2location_source_asn`, `ipinfo_source`, or `maxmind_source`. A named seed requires that pointer. Empty pointer = bundled default / env only; no GET. Only the selected `databaseProvider` reads its pointers; the others are ignored.
+- Point the selected provider at a `databaseSources` key: `ip2location_source_geo`, `ip2location_source_asn`, `ipinfo_source`, or `maxmind_source`. A named seed requires that pointer. Empty `ip2location_source_geo` binds `default_ip2location`. Empty `maxmind_source` binds `default_geolite`. Empty IPinfo pointers use the bundled seed. Only the selected `databaseProvider` reads its pointers; the others are ignored.
 
   ```yaml
   # IP2Location (default). Bind geo (and optional ASN) to keys from databaseSources above.
@@ -267,7 +270,7 @@ How auto-update works:
   # MaxMind: set databaseProvider: maxmind and bind maxmind_source.
   # maxmind_source: geolite
   ```
-- Set `databaseAutoUpdateDir` (required when a bound entry has a URL). This **must** be durable storage: a persistent volume that survives container restarts **and** replacement. Do not use `/tmp`, the container writable layer, or any path that is wiped on recreate. Dated files live here; if the directory is empty after a restart the plugin falls back to seed/`path` and will download again.
+- Set `databaseAutoUpdateDir` when a bound entry has a URL. Prefer durable storage: a persistent volume that survives container restarts **and** replacement. If the dir is empty, the plugin WARNs and writes dated files under the process temp dir (`traefik-geoblock`). That path is wiped on container replace. Do not rely on `/tmp` in production. If the directory is empty after a restart the plugin falls back to seed/`path` and will download again.
 
   ```yaml
   databaseAutoUpdateDir: "/data/geoblock"
@@ -544,11 +547,14 @@ http:
           #-------------------------------
           # Database downloads (all providers)
           #-------------------------------
-          # Named catalog. Keys are operator-chosen. Each value is
-          # url + databaseType (bin|mmdb) + archive (none|zip|tar.gz) + optional headers.
+          # Named catalog. Keys are operator-chosen except reserved
+          # default_ip2location and default_geolite (inserted when missing).
           # Bind with ip2location_source_geo / ip2location_source_asn /
-          # ipinfo_source / maxmind_source. Empty pointer = seed/path only.
-          # databaseAutoUpdateDir is required when a bound entry has a url.
+          # ipinfo_source / maxmind_source.
+          # Empty ip2location_source_geo binds default_ip2location.
+          # Empty maxmind_source binds default_geolite (unofficial Country GET).
+          # Empty ipinfo_source = bundled seed.
+          # Empty databaseAutoUpdateDir + bound URL WARNs and uses a temp dir.
           # Dated files: YYYYMMDD_<catalogKey>.BIN or .mmdb.
           databaseAutoUpdateDir: "/data/geoblock"
           databaseSources:
@@ -575,7 +581,8 @@ http:
           # TRAEFIK_PLUGIN_GEOBLOCK_PATH. A named path requires the matching pointer.
           # databaseSources.litezip.path: "/data/geo/IP2LOCATION-LITE-DB1.IPV6.BIN"
           # ASN: set ip2location_source_asn and a full path on that catalog row.
-          # IPinfo / MaxMind: empty path + empty pointer opens seeds/*.mmdb via the env.
+          # IPinfo: empty path + empty pointer opens seeds/*.mmdb via the env.
+          # MaxMind: empty maxmind_source binds default_geolite; dummy seed until GET.
 
           #-------------------------------
           # Request header settings

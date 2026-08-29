@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -29,6 +30,12 @@ const (
 	DatabaseProviderIP2Location = "ip2location"
 	DatabaseProviderIPinfo      = "ipinfo"
 	DatabaseProviderMaxMind     = "maxmind"
+
+	// DefaultIP2LocationCatalogKey is the reserved catalog name for the free geo LITE ZIP.
+	DefaultIP2LocationCatalogKey = "default_ip2location"
+	// DefaultGeoliteCatalogKey is the reserved catalog name for the unofficial Country MMDB GET.
+	DefaultGeoliteCatalogKey = "default_geolite"
+	defaultAutoUpdateDirName = "traefik-geoblock"
 )
 
 // Log status constants for observability headers
@@ -70,12 +77,14 @@ type Config struct {
 	// Database provider. Empty defaults to ip2location. Implemented: ip2location, ipinfo, maxmind.
 	DatabaseProvider string `json:"databaseProvider,omitempty" mapstructure:"databaseProvider"`
 
-	// DatabaseSources is the catalog of database files (seed path and/or URL). Keys are operator-chosen.
+	// DatabaseSources is the catalog of database files (seed path and/or URL).
+	// Operator keys plus reserved default_ip2location and default_geolite.
 	DatabaseSources map[string]DatabaseSource `json:"databaseSources,omitempty" mapstructure:"databaseSources"`
-	// DatabaseAutoUpdateDir is the shared dir for dated files. Required when a bound entry has a URL.
+	// DatabaseAutoUpdateDir is the shared dir for dated files. Empty with a bound URL uses a temp dir.
 	DatabaseAutoUpdateDir string `json:"databaseAutoUpdateDir,omitempty" mapstructure:"databaseAutoUpdateDir"`
 
-	// Catalog pointers. Empty = bundled default / env. Unused pointers for another provider are ignored.
+	// Catalog pointers. Empty IP2Location geo binds default_ip2location.
+	// Empty MaxMind binds default_geolite. Unused pointers are ignored.
 	Ip2locationSourceGeo string `json:"ip2location_source_geo,omitempty" mapstructure:"ip2location_source_geo"`
 	Ip2locationSourceAsn string `json:"ip2location_source_asn,omitempty" mapstructure:"ip2location_source_asn"`
 	IpinfoSource         string `json:"ipinfo_source,omitempty" mapstructure:"ipinfo_source"`
@@ -227,9 +236,15 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 	requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich, logger)
 
+	ensureDefaultIP2LocationCatalog(cfg)
+	ensureDefaultGeoliteCatalog(cfg)
+	applyMissingPointerFallbacks(cfg, logger)
+	bindEmptyIP2LocationGeo(cfg)
+	bindEmptyMaxmindSource(cfg)
 	if err := validateDatabaseSources(cfg); err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
+	applyTempAutoUpdateDir(cfg, logger)
 
 	// Bootstrap logger: the provider/factory is shared between plugin instances.
 	db, err := openDatabaseProvider(ctx, cfg, bootstrapLogger)
@@ -376,6 +391,118 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// ensureDefaultIP2LocationCatalog inserts the reserved free LITE row unless the operator already set that key.
+func ensureDefaultIP2LocationCatalog(cfg *Config) {
+	if cfg.DatabaseSources == nil {
+		cfg.DatabaseSources = make(map[string]DatabaseSource)
+	}
+	if _, ok := cfg.DatabaseSources[DefaultIP2LocationCatalogKey]; ok {
+		return
+	}
+	cfg.DatabaseSources[DefaultIP2LocationCatalogKey] = DatabaseSource{
+		URL:          ip2location.DefaultLiteURL,
+		DatabaseType: dbsource.TypeBIN,
+		Archive:      dbsource.ArchiveZIP,
+	}
+}
+
+// ensureDefaultGeoliteCatalog inserts the reserved Country MMDB row unless the operator already set that key.
+func ensureDefaultGeoliteCatalog(cfg *Config) {
+	if cfg.DatabaseSources == nil {
+		cfg.DatabaseSources = make(map[string]DatabaseSource)
+	}
+	if _, ok := cfg.DatabaseSources[DefaultGeoliteCatalogKey]; ok {
+		return
+	}
+	cfg.DatabaseSources[DefaultGeoliteCatalogKey] = DatabaseSource{
+		URL:          maxmind.DefaultGeoliteURL,
+		DatabaseType: dbsource.TypeMMDB,
+		Archive:      dbsource.ArchiveNone,
+	}
+}
+
+// applyMissingPointerFallbacks clears a bound pointer that is not a catalog key and WARNs.
+func applyMissingPointerFallbacks(cfg *Config, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	switch providerName(cfg) {
+	case DatabaseProviderIP2Location:
+		cfg.Ip2locationSourceGeo = fallbackPointer(cfg, "ip2location_source_geo", cfg.Ip2locationSourceGeo, logger)
+		cfg.Ip2locationSourceAsn = fallbackPointer(cfg, "ip2location_source_asn", cfg.Ip2locationSourceAsn, logger)
+	case DatabaseProviderIPinfo:
+		cfg.IpinfoSource = fallbackPointer(cfg, "ipinfo_source", cfg.IpinfoSource, logger)
+	case DatabaseProviderMaxMind:
+		cfg.MaxmindSource = fallbackPointer(cfg, "maxmind_source", cfg.MaxmindSource, logger)
+	}
+}
+
+// fallbackPointer returns key when it names a catalog row, otherwise "" after a WARN.
+func fallbackPointer(cfg *Config, field, key string, logger *slog.Logger) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	if cfg.DatabaseSources != nil {
+		if _, ok := cfg.DatabaseSources[key]; ok {
+			return key
+		}
+	}
+	logger.Warn("source pointer is not a key in databaseSources; using default", "pointer", field, "key", key)
+	return ""
+}
+
+// bindEmptyIP2LocationGeo sets an empty IP2Location geo pointer to the reserved catalog key.
+func bindEmptyIP2LocationGeo(cfg *Config) {
+	if providerName(cfg) != DatabaseProviderIP2Location {
+		return
+	}
+	if strings.TrimSpace(cfg.Ip2locationSourceGeo) == "" {
+		cfg.Ip2locationSourceGeo = DefaultIP2LocationCatalogKey
+	}
+}
+
+// bindEmptyMaxmindSource sets an empty MaxMind pointer to the reserved catalog key.
+func bindEmptyMaxmindSource(cfg *Config) {
+	if providerName(cfg) != DatabaseProviderMaxMind {
+		return
+	}
+	if strings.TrimSpace(cfg.MaxmindSource) == "" {
+		cfg.MaxmindSource = DefaultGeoliteCatalogKey
+	}
+}
+
+// applyTempAutoUpdateDir sets a process temp dir when a bound URL has no operator dir.
+func applyTempAutoUpdateDir(cfg *Config, logger *slog.Logger) {
+	if strings.TrimSpace(cfg.DatabaseAutoUpdateDir) != "" {
+		return
+	}
+	if !boundURLNeedsDir(cfg) {
+		return
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	dir := filepath.Join(os.TempDir(), defaultAutoUpdateDirName)
+	logger.Warn("databaseAutoUpdateDir is empty; using temp dir", "dir", dir)
+	cfg.DatabaseAutoUpdateDir = dir
+}
+
+// boundURLNeedsDir reports whether a selected-provider pointer names a catalog row with a URL.
+func boundURLNeedsDir(cfg *Config) bool {
+	for _, key := range boundSourceKeys(cfg) {
+		key = strings.TrimSpace(key)
+		if key == "" || cfg.DatabaseSources == nil {
+			continue
+		}
+		entry, ok := cfg.DatabaseSources[key]
+		if ok && strings.TrimSpace(entry.URL) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func validateDatabaseSources(cfg *Config) error {
 	for name, entry := range cfg.DatabaseSources {
 		c := dbsource.Config{
@@ -388,24 +515,42 @@ func validateDatabaseSources(cfg *Config) error {
 			return fmt.Errorf("databaseSources.%s: %w", name, err)
 		}
 	}
-	dir := strings.TrimSpace(cfg.DatabaseAutoUpdateDir)
+	return checkBoundPointerTypes(cfg)
+}
+
+// checkBoundPointerTypes fails when a bound catalog row's databaseType does not match the provider.
+func checkBoundPointerTypes(cfg *Config) error {
+	want := providerDatabaseType(cfg)
+	if want == "" {
+		return nil
+	}
 	for _, key := range boundSourceKeys(cfg) {
 		key = strings.TrimSpace(key)
 		if key == "" {
 			continue
 		}
-		if cfg.DatabaseSources == nil {
-			return fmt.Errorf("source pointer %q is not a key in databaseSources", key)
-		}
 		entry, ok := cfg.DatabaseSources[key]
 		if !ok {
-			return fmt.Errorf("source pointer %q is not a key in databaseSources", key)
+			continue
 		}
-		if strings.TrimSpace(entry.URL) != "" && dir == "" {
-			return fmt.Errorf("databaseAutoUpdateDir must be set when a source url is bound")
+		got := strings.ToLower(strings.TrimSpace(entry.DatabaseType))
+		if got != "" && got != want {
+			return fmt.Errorf("source pointer %q has databaseType %q; %s requires %s", key, got, providerName(cfg), want)
 		}
 	}
 	return nil
+}
+
+// providerDatabaseType is the catalog databaseType the selected provider can open.
+func providerDatabaseType(cfg *Config) string {
+	switch providerName(cfg) {
+	case DatabaseProviderIP2Location:
+		return dbsource.TypeBIN
+	case DatabaseProviderIPinfo, DatabaseProviderMaxMind:
+		return dbsource.TypeMMDB
+	default:
+		return ""
+	}
 }
 
 // openDatabaseProvider constructs the geo DatabaseProvider selected by Config.

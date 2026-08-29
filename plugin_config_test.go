@@ -12,6 +12,8 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 func TestNew(t *testing.T) {
@@ -125,6 +127,10 @@ func TestNew(t *testing.T) {
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			// Path-only reserved row so New does not GET the unofficial Country URL.
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultGeoliteCatalogKey: {Path: maxmindFilePath, DatabaseType: "mmdb"},
+			},
 		}, pluginName)
 		if err != nil {
 			t.Errorf("expected no error with databaseProvider maxmind, but got: %v", err)
@@ -171,8 +177,8 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("IPinfoURLWithoutDirFails", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+	t.Run("IPinfoURLWithoutDirUsesTemp", func(t *testing.T) {
+		cfg := &Config{
 			Enabled:          true,
 			DatabaseProvider: DatabaseProviderIPinfo,
 			IpinfoSource:     "lite",
@@ -182,12 +188,16 @@ func TestNew(t *testing.T) {
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
-		}, pluginName)
-		if err == nil {
-			t.Fatal("expected New to fail when a download URL is set without a dir")
 		}
-		if plugin != nil {
-			t.Error("expected plugin to be nil")
+		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		if err != nil {
+			t.Fatalf("empty dir should WARN and use temp: %v", err)
+		}
+		if plugin == nil {
+			t.Fatal("expected plugin")
+		}
+		if !strings.Contains(cfg.DatabaseAutoUpdateDir, defaultAutoUpdateDirName) {
+			t.Errorf("temp dir: got %q", cfg.DatabaseAutoUpdateDir)
 		}
 	})
 
@@ -212,7 +222,8 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled: true,
 			DatabaseSources: map[string]DatabaseSource{
-				"city": {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none"},
+				"city":                       {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none"},
+				DefaultIP2LocationCatalogKey: {Path: dbFilePath, DatabaseType: "bin"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -227,7 +238,7 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("MissingPointerKeyFails", func(t *testing.T) {
+	t.Run("MissingPointerKeyWarnsAndStarts", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseProvider:     DatabaseProviderIPinfo,
@@ -237,8 +248,113 @@ func TestNew(t *testing.T) {
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}, pluginName)
+		if err != nil {
+			t.Fatalf("missing catalog key should WARN and start: %v", err)
+		}
+		if plugin == nil {
+			t.Fatal("expected plugin")
+		}
+	})
+
+	t.Run("DefaultCatalogInserted", func(t *testing.T) {
+		cfg := &Config{DatabaseSources: map[string]DatabaseSource{}}
+		ensureDefaultIP2LocationCatalog(cfg)
+		bindEmptyIP2LocationGeo(cfg)
+		row, ok := cfg.DatabaseSources[DefaultIP2LocationCatalogKey]
+		if !ok {
+			t.Fatal("expected default_ip2location catalog row")
+		}
+		if row.URL != ip2location.DefaultLiteURL {
+			t.Errorf("default URL: got %q", row.URL)
+		}
+		if row.DatabaseType != "bin" || row.Archive != "zip" {
+			t.Errorf("default type/archive: got %q %q", row.DatabaseType, row.Archive)
+		}
+		if cfg.Ip2locationSourceGeo != DefaultIP2LocationCatalogKey {
+			t.Errorf("geo pointer: got %q", cfg.Ip2locationSourceGeo)
+		}
+	})
+
+	t.Run("OperatorDefaultCatalogKept", func(t *testing.T) {
+		custom := "https://example.com/custom.BIN.ZIP"
+		cfg := &Config{
+			Enabled:              true,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultIP2LocationCatalogKey: {URL: custom, DatabaseType: "bin", Archive: "zip", Path: dbFilePath},
+			},
+		}
+		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if plugin == nil {
+			t.Fatal("expected plugin")
+		}
+		if got := cfg.DatabaseSources[DefaultIP2LocationCatalogKey].URL; got != custom {
+			t.Errorf("operator row replaced: got %q", got)
+		}
+	})
+
+	t.Run("DefaultGeoliteCatalogInserted", func(t *testing.T) {
+		cfg := &Config{DatabaseProvider: DatabaseProviderMaxMind, DatabaseSources: map[string]DatabaseSource{}}
+		ensureDefaultGeoliteCatalog(cfg)
+		bindEmptyMaxmindSource(cfg)
+		row, ok := cfg.DatabaseSources[DefaultGeoliteCatalogKey]
+		if !ok {
+			t.Fatal("expected default_geolite catalog row")
+		}
+		if row.URL != maxmind.DefaultGeoliteURL {
+			t.Errorf("default URL: got %q", row.URL)
+		}
+		if row.DatabaseType != "mmdb" || row.Archive != "none" {
+			t.Errorf("default type/archive: got %q %q", row.DatabaseType, row.Archive)
+		}
+		if cfg.MaxmindSource != DefaultGeoliteCatalogKey {
+			t.Errorf("maxmind pointer: got %q", cfg.MaxmindSource)
+		}
+	})
+
+	t.Run("OperatorDefaultGeoliteKept", func(t *testing.T) {
+		custom := "https://example.com/custom.mmdb"
+		cfg := &Config{
+			Enabled:              true,
+			DatabaseProvider:     DatabaseProviderMaxMind,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultGeoliteCatalogKey: {URL: custom, DatabaseType: "mmdb", Archive: "none", Path: maxmindFilePath},
+			},
+		}
+		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if plugin == nil {
+			t.Fatal("expected plugin")
+		}
+		if got := cfg.DatabaseSources[DefaultGeoliteCatalogKey].URL; got != custom {
+			t.Errorf("operator row replaced: got %q", got)
+		}
+	})
+
+	t.Run("PointerTypeMismatchFails", func(t *testing.T) {
+		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+			Enabled:               true,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			DatabaseAutoUpdateDir: t.TempDir(),
+			DatabaseSources: map[string]DatabaseSource{
+				"lite": {URL: "https://example.com/geo.mmdb", DatabaseType: "mmdb", Archive: "none"},
+			},
+			Ip2locationSourceGeo: "lite",
+		}, pluginName)
 		if err == nil {
-			t.Fatal("expected New to fail when the pointer names a missing catalog key")
+			t.Fatal("expected New to fail when IP2Location is pointed at mmdb")
 		}
 		if plugin != nil {
 			t.Error("expected plugin to be nil")
@@ -307,9 +423,11 @@ func TestNew(t *testing.T) {
 
 	t.Run("GeoNamedKeyIsOrdinary", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled: true,
+			Enabled:              true,
+			Ip2locationSourceGeo: "geo",
 			DatabaseSources: map[string]DatabaseSource{
-				"geo": {URL: "https://example.com/db.ZIP", DatabaseType: "bin", Archive: "zip"},
+				// Path only: a URL would GET into t.TempDir() and fail Linux cleanup.
+				"geo": {Path: dbFilePath, DatabaseType: "bin"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
