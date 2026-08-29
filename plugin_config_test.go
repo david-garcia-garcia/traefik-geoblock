@@ -426,7 +426,8 @@ func TestNew(t *testing.T) {
 			Enabled:              true,
 			Ip2locationSourceGeo: "geo",
 			DatabaseSources: map[string]DatabaseSource{
-				"geo": {Path: dbFilePath, URL: "https://example.com/db.ZIP", DatabaseType: "bin", Archive: "zip"},
+				// Path only: a URL would GET into t.TempDir() and fail Linux cleanup.
+				"geo": {Path: dbFilePath, DatabaseType: "bin"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
