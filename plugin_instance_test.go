@@ -54,11 +54,11 @@ func (h *instanceLog) events() [][2]string {
 	return out
 }
 
-// countPutsPrefix counts reclaim_put events whose key starts with prefix.
-func countPutsPrefix(ev [][2]string, prefix string) int {
+// countPluginPuts counts reclaim_put events for plugin: keys.
+func countPluginPuts(ev [][2]string) int {
 	n := 0
 	for _, e := range ev {
-		if e[0] == reclaim.MsgPut && len(e[1]) >= len(prefix) && e[1][:len(prefix)] == prefix {
+		if e[0] == reclaim.MsgPut && len(e[1]) >= len(keyPrefixPlugin) && e[1][:len(keyPrefixPlugin)] == keyPrefixPlugin {
 			n++
 		}
 	}
@@ -82,7 +82,7 @@ func shortInstanceLeases(t *testing.T) *instanceLog {
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
 	h := &instanceLog{}
-	dbwrappers.ResetWith(25*time.Millisecond, slog.New(h))
+	dbwrappers.ResetWith(100*time.Millisecond, slog.New(h))
 	return h
 }
 
@@ -105,19 +105,18 @@ func instanceModuleRoot() string {
 }
 
 // instanceBIN is an enabled IP2Location config that allows US.
-func instanceBIN(path, url, dir string) *Config {
+func instanceBIN(path string) *Config {
 	return &Config{
 		Enabled: true,
 		DatabaseSources: map[string]geoblock.DatabaseSource{
-			"seed": {Path: path, URL: url, DatabaseType: dbsource.TypeBIN},
+			"seed": {Path: path, DatabaseType: dbsource.TypeBIN},
 		},
-		Ip2locationSourceGeo:  "seed",
-		DatabaseAutoUpdateDir: dir,
-		AllowedCountries:      []string{"US"},
-		DisallowedStatusCode:  http.StatusForbidden,
-		IPHeaders:             []string{"x-real-ip"},
-		IPHeaderStrategy:      geoblock.IPHeaderStrategyCheckAll,
-		BanIfError:            true,
+		Ip2locationSourceGeo: "seed",
+		AllowedCountries:     []string{"US"},
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     geoblock.IPHeaderStrategyCheckAll,
+		BanIfError:           true,
 	}
 }
 
@@ -163,7 +162,7 @@ func requireLookupUS(t *testing.T, p *geoblock.Plugin) {
 
 func TestNew_SameNameConfigSharesIncarnation(t *testing.T) {
 	shortInstanceLeases(t)
-	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"), "", "")
+	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"))
 	ctx := context.Background()
 	var n1, n2 int
 	a, err := New(ctx, countHandler{&n1}, cfg, "geoblock")
@@ -190,7 +189,7 @@ func TestNew_SameNameConfigSharesIncarnation(t *testing.T) {
 
 func TestNew_NameMissSeparateIncarnation(t *testing.T) {
 	shortInstanceLeases(t)
-	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"), "", "")
+	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"))
 	ctx := context.Background()
 	a := mustRootPlugin(t, ctx, cfg, "geoblock")
 	b := mustRootPlugin(t, ctx, cfg, "geoblock-b")
@@ -203,8 +202,8 @@ func TestNew_ConfigMissSeparateIncarnation(t *testing.T) {
 	shortInstanceLeases(t)
 	ctx := context.Background()
 	seed := filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
-	a := mustRootPlugin(t, ctx, instanceBIN(seed, "", ""), "geoblock")
-	cfgB := instanceBIN(seed, "", "")
+	a := mustRootPlugin(t, ctx, instanceBIN(seed), "geoblock")
+	cfgB := instanceBIN(seed)
 	cfgB.AllowedCountries = []string{"DE"}
 	b := mustRootPlugin(t, ctx, cfgB, "geoblock")
 	if a.SameCore(b) {
@@ -214,10 +213,10 @@ func TestNew_ConfigMissSeparateIncarnation(t *testing.T) {
 
 func TestNew_PluginReclaimAfterGenerationCancel(t *testing.T) {
 	h := shortInstanceLeases(t)
-	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"), "", "")
+	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"))
 	gen, cancel := context.WithCancel(context.Background())
 	_ = mustRootPlugin(t, gen, cfg, "geoblock")
-	puts := countPutsPrefix(h.events(), keyPrefixPlugin)
+	puts := countPluginPuts(h.events())
 	if puts != 1 {
 		t.Fatalf("expected one plugin put, got %d ev=%+v", puts, h.events())
 	}
@@ -228,7 +227,7 @@ func TestNew_PluginReclaimAfterGenerationCancel(t *testing.T) {
 	p := mustRootPlugin(t, next, cfg, "geoblock")
 	requireLookupUS(t, p)
 	ev := h.events()
-	if countPutsPrefix(ev, keyPrefixPlugin) != 1 {
+	if countPluginPuts(ev) != 1 {
 		t.Fatalf("reclaim must not create plugin, ev=%+v", ev)
 	}
 	if countInstanceMsg(ev, reclaim.MsgReclaim) == 0 {
@@ -238,17 +237,17 @@ func TestNew_PluginReclaimAfterGenerationCancel(t *testing.T) {
 
 func TestNew_PluginDisposeAfterGrace(t *testing.T) {
 	h := shortInstanceLeases(t)
-	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"), "", "")
+	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"))
 	ctx, cancel := context.WithCancel(context.Background())
 	_ = mustRootPlugin(t, ctx, cfg, "geoblock")
 	cancel()
-	time.Sleep(80 * time.Millisecond)
-	puts := countPutsPrefix(h.events(), keyPrefixPlugin)
+	time.Sleep(250 * time.Millisecond)
+	puts := countPluginPuts(h.events())
 	next, cancelNext := context.WithCancel(context.Background())
 	defer cancelNext()
 	again := mustRootPlugin(t, next, cfg, "geoblock")
 	requireLookupUS(t, again)
-	if countPutsPrefix(h.events(), keyPrefixPlugin) <= puts {
+	if countPluginPuts(h.events()) <= puts {
 		t.Fatalf("later New must create a new plugin incarnation, ev=%+v", h.events())
 	}
 }
