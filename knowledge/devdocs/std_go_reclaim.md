@@ -11,7 +11,7 @@ The process-wide table (`reclaim.Default`, `reclaim.Open`). One incarnation per 
 _Avoid_: one `NewTable` per caller when they should share; unprefixed keys that can collide
 
 **Open**:
-Create-once for a key, then bind a holder context. Later `Open` does not run create.
+Create-once for a key, pass the incarnation lifetime into `create`, then bind a holder context. Later `Open` does not run create.
 _Avoid_: Put vs Bind as two public calls
 
 **Grace**:
