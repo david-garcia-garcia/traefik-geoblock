@@ -222,8 +222,8 @@ func TestNew(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
 			Enabled: true,
 			DatabaseSources: map[string]DatabaseSource{
-				"city":                           {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none"},
-				DefaultIP2LocationCatalogKey:     {Path: dbFilePath, DatabaseType: "bin"},
+				"city":                       {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none"},
+				DefaultIP2LocationCatalogKey: {Path: dbFilePath, DatabaseType: "bin"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -343,10 +343,10 @@ func TestNew(t *testing.T) {
 
 	t.Run("PointerTypeMismatchFails", func(t *testing.T) {
 		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
-			Enabled:              true,
-			DisallowedStatusCode: http.StatusForbidden,
-			IPHeaders:            []string{"x-real-ip"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			Enabled:               true,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DatabaseSources: map[string]DatabaseSource{
 				"lite": {URL: "https://example.com/geo.mmdb", DatabaseType: "mmdb", Archive: "none"},
