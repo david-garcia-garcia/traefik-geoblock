@@ -2,13 +2,16 @@ package traefik_geoblock
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +23,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
 //go:generate go run ./tools/dbdownload/main.go -o ./seeds/IP2LOCATION-LITE-DB1.IPV6.BIN
@@ -185,7 +189,7 @@ type Plugin struct {
 	requestHeaderEnrich   map[string]string // header name -> metadata key
 }
 
-// New creates a new plugin instance.
+// New returns a handler for this router. Same middleware name and normalized config reuse one Plugin.
 func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http.Handler, error) {
 	if next == nil {
 		return nil, fmt.Errorf("%s: no next handler provided", name)
@@ -203,13 +207,9 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 
 	if !cfg.Enabled {
 		bootstrapLogger.Warn("plugin disabled")
-		return &Plugin{
-			next:    next,
-			name:    name,
-			db:      nil,
-			enabled: false,
-			logger:  logger,
-		}, nil
+		return bindPlugin(ctx, next, name, cfg, nil, func() (*Plugin, error) {
+			return &Plugin{name: name, enabled: false, logger: logger}, nil
+		})
 	}
 
 	if http.StatusText(cfg.DisallowedStatusCode) == "" {
@@ -246,12 +246,62 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 	applyTempAutoUpdateDir(cfg, logger)
 
-	// Bootstrap logger: the provider/factory is shared between plugin instances.
+	if cfg.BanHtmlFilePath != "" {
+		cfg.BanHtmlFilePath, err = fileutils.Default.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
+		if err != nil {
+			return nil, fmt.Errorf("%s: failed to find ban HTML file: %w", name, err)
+		}
+	}
+
+	// Bind wrappers to this New ctx even when the Plugin incarnation is reused.
 	db, err := openDatabaseProvider(ctx, cfg, bootstrapLogger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to get database provider: %w", name, err)
 	}
 
+	return bindPlugin(ctx, next, name, cfg, db, func() (*Plugin, error) {
+		return newPluginCore(name, cfg, db, logger, requestHeaderEnrich)
+	})
+}
+
+const keyPrefixPlugin = "plugin:"
+
+// bindPlugin stores or reclaims the Plugin for name+config, then returns a copy with this next and provider.
+func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config, db dbprovider.Provider, create func() (*Plugin, error)) (http.Handler, error) {
+	v, err := reclaim.Open(ctx, pluginKey(name, cfg), func() (any, error) {
+		return create()
+	}, func(any) {})
+	if err != nil {
+		return nil, err
+	}
+	core, ok := v.(*Plugin)
+	if !ok {
+		return nil, fmt.Errorf("%s: reclaim: want *Plugin, got %T", name, v)
+	}
+	out := *core
+	out.next = next
+	out.db = db
+	return &out, nil
+}
+
+// pluginKey is the process-table key for one Plugin incarnation.
+func pluginKey(name string, cfg *Config) string {
+	return keyPrefixPlugin + name + ":" + pluginConfigHash(cfg)
+}
+
+// pluginConfigHash is JSON+FNV of cfg. encoding/json sorts map keys.
+func pluginConfigHash(cfg *Config) string {
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Sprintf("%v", cfg)
+	}
+	h := fnv.New64a()
+	_, _ = h.Write(b)
+	return strconv.FormatUint(h.Sum64(), 16)
+}
+
+// newPluginCore builds the shared Plugin fields (no next). Called once per name+config incarnation.
+func newPluginCore(name string, cfg *Config, db dbprovider.Provider, logger *slog.Logger, requestHeaderEnrich map[string]string) (*Plugin, error) {
 	allowedIPHelper, err := iplookup.NewIpLookupFileMonitor(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading allowed IP blocks: %w", name, err)
@@ -263,22 +313,14 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	}
 
 	var banHtmlContent string
-
 	if cfg.BanHtmlFilePath != "" {
-		var err error
-		cfg.BanHtmlFilePath, err = fileutils.Default.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
-		if err != nil {
-			return nil, fmt.Errorf("%s: failed to find ban HTML file: %w", name, err)
-		}
 		content, err := os.ReadFile(cfg.BanHtmlFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("%s: failed to load ban HTML file %s: %w", name, cfg.BanHtmlFilePath, err)
-		} else {
-			banHtmlContent = string(content)
 		}
+		banHtmlContent = string(content)
 	}
 
-	// Convert slices to maps for O(1) lookup
 	allowedCountries := make(map[string]struct{}, len(cfg.AllowedCountries))
 	for _, c := range cfg.AllowedCountries {
 		allowedCountries[c] = struct{}{}
@@ -289,7 +331,6 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		blockedCountries[c] = struct{}{}
 	}
 
-	// Convert ignore verbs to map for O(1) lookup, normalize to uppercase
 	ignoreVerbs := make(map[string]struct{}, len(cfg.IgnoreVerbs))
 	for _, verb := range cfg.IgnoreVerbs {
 		ignoreVerbs[strings.ToUpper(verb)] = struct{}{}
@@ -310,8 +351,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		logger.Debug("compiled excludedPathsRegex", "pattern", cfg.ExcludedPathsRegex)
 	}
 
-	plugin := &Plugin{
-		next:                  next,
+	return &Plugin{
 		name:                  name,
 		db:                    db,
 		enabled:               cfg.Enabled,
@@ -333,9 +373,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 		logger:                logger,
 		logStatusDetailHeader: cfg.LogStatusDetailHeader,
 		requestHeaderEnrich:   requestHeaderEnrich,
-	}
-
-	return plugin, nil
+	}, nil
 }
 
 const mmdbSourceMinAge = dbsource.DefaultMinAge

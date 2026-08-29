@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -48,6 +49,26 @@ func (h *lifecycleLog) events() [][2]string {
 		out = append(out, [2]string{r.Message, key})
 	}
 	return out
+}
+
+func countPutsExceptPrefix(ev [][2]string, prefix string) int {
+	n := 0
+	for _, e := range ev {
+		if e[0] == reclaim.MsgPut && (prefix == "" || len(e[1]) < len(prefix) || e[1][:len(prefix)] != prefix) {
+			n++
+		}
+	}
+	return n
+}
+
+func countPutsPrefix(ev [][2]string, prefix string) int {
+	n := 0
+	for _, e := range ev {
+		if e[0] == reclaim.MsgPut && len(e[1]) >= len(prefix) && e[1][:len(prefix)] == prefix {
+			n++
+		}
+	}
+	return n
 }
 
 func countMsg(ev [][2]string, msg string) int {
@@ -320,7 +341,7 @@ func TestNew_IPinfoSameHashReclaimAfterGenerationCancel(t *testing.T) {
 	cfg := lifecycleIPinfo(ipinfoFilePath, tickerURL(t), t.TempDir())
 	gen, cancel := context.WithCancel(context.Background())
 	_ = mustPlugin(t, gen, cfg)
-	puts := countMsg(h.events(), reclaim.MsgPut)
+	puts := countPutsExceptPrefix(h.events(), keyPrefixPlugin)
 	if puts != 1 {
 		t.Fatalf("expected one MMDB put, got %d ev=%+v", puts, h.events())
 	}
@@ -333,10 +354,118 @@ func TestNew_IPinfoSameHashReclaimAfterGenerationCancel(t *testing.T) {
 	time.Sleep(80 * time.Millisecond)
 	requireLookupUS(t, p)
 	ev := h.events()
-	if countMsg(ev, reclaim.MsgPut) != 1 {
+	if countPutsExceptPrefix(ev, keyPrefixPlugin) != 1 {
 		t.Fatalf("second keep-current must not create, ev=%+v", ev)
 	}
 	if countMsg(ev, reclaim.MsgReclaim) == 0 || countMsg(ev, reclaim.MsgDispose) != 0 {
 		t.Fatalf("expected reclaim and no dispose, ev=%+v", ev)
+	}
+}
+
+type countHandler struct{ n *int }
+
+func (c countHandler) ServeHTTP(http.ResponseWriter, *http.Request) { *c.n++ }
+
+func usPassRequest() *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Real-IP", "8.8.8.8")
+	return req
+}
+
+func TestNew_SameNameConfigSharesIncarnation(t *testing.T) {
+	shortLeases(t)
+	cfg := lifecycleBIN(dbFilePath, "", "")
+	ctx := context.Background()
+	var n1, n2 int
+	a, err := New(ctx, countHandler{&n1}, cfg, pluginName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := New(ctx, countHandler{&n2}, cfg, pluginName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa, pb := a.(*Plugin), b.(*Plugin)
+	if pa.allowedIPBlocks != pb.allowedIPBlocks {
+		t.Fatal("expected shared IP helper")
+	}
+	if reflect.ValueOf(pa.allowedCountries).Pointer() != reflect.ValueOf(pb.allowedCountries).Pointer() {
+		t.Fatal("expected shared country map")
+	}
+	if pa.next == pb.next {
+		t.Fatal("next must be per New")
+	}
+	a.ServeHTTP(httptest.NewRecorder(), usPassRequest())
+	b.ServeHTTP(httptest.NewRecorder(), usPassRequest())
+	if n1 != 1 || n2 != 1 {
+		t.Fatalf("next hits n1=%d n2=%d", n1, n2)
+	}
+}
+
+func TestNew_NameMissSeparateIncarnation(t *testing.T) {
+	shortLeases(t)
+	cfg := lifecycleBIN(dbFilePath, "", "")
+	ctx := context.Background()
+	a := mustPlugin(t, ctx, cfg)
+	h, err := New(ctx, &noopHandler{}, cfg, pluginName+"-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := h.(*Plugin)
+	if a.allowedIPBlocks == b.allowedIPBlocks {
+		t.Fatal("different names must not share incarnation")
+	}
+}
+
+func TestNew_ConfigMissSeparateIncarnation(t *testing.T) {
+	shortLeases(t)
+	ctx := context.Background()
+	a := mustPlugin(t, ctx, lifecycleBIN(dbFilePath, "", ""))
+	cfgB := lifecycleBIN(dbFilePath, "", "")
+	cfgB.AllowedCountries = []string{"DE"}
+	b := mustPlugin(t, ctx, cfgB)
+	if reflect.ValueOf(a.allowedCountries).Pointer() == reflect.ValueOf(b.allowedCountries).Pointer() {
+		t.Fatal("different config must not share incarnation")
+	}
+}
+
+func TestNew_PluginReclaimAfterGenerationCancel(t *testing.T) {
+	h := shortLeases(t)
+	cfg := lifecycleBIN(dbFilePath, "", "")
+	gen, cancel := context.WithCancel(context.Background())
+	_ = mustPlugin(t, gen, cfg)
+	puts := countPutsPrefix(h.events(), keyPrefixPlugin)
+	if puts != 1 {
+		t.Fatalf("expected one plugin put, got %d ev=%+v", puts, h.events())
+	}
+	cancel()
+	time.Sleep(15 * time.Millisecond)
+	next, cancelNext := context.WithCancel(context.Background())
+	defer cancelNext()
+	p := mustPlugin(t, next, cfg)
+	requireLookupUS(t, p)
+	ev := h.events()
+	if countPutsPrefix(ev, keyPrefixPlugin) != 1 {
+		t.Fatalf("reclaim must not create plugin, ev=%+v", ev)
+	}
+	if countMsg(ev, reclaim.MsgReclaim) == 0 {
+		t.Fatalf("expected reclaim, ev=%+v", ev)
+	}
+}
+
+func TestNew_PluginDisposeAfterGrace(t *testing.T) {
+	h := shortLeases(t)
+	cfg := lifecycleBIN(dbFilePath, "", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	_ = mustPlugin(t, ctx, cfg)
+	cancel()
+	time.Sleep(80 * time.Millisecond)
+	puts := countPutsPrefix(h.events(), keyPrefixPlugin)
+	next, cancelNext := context.WithCancel(context.Background())
+	defer cancelNext()
+	again := mustPlugin(t, next, cfg)
+	requireLookupUS(t, again)
+	if countPutsPrefix(h.events(), keyPrefixPlugin) <= puts {
+		t.Fatalf("later New must create a new plugin incarnation, ev=%+v", h.events())
 	}
 }
