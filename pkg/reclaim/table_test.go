@@ -77,7 +77,7 @@ func hasSubseq(got [][2]string, want [][2]string) bool {
 	return i == len(want)
 }
 
-// TestTable_OpenCancelDispose checks that cancel plus grace runs dispose once and logs the full sequence.
+// TestTable_OpenCancelDispose checks that cancel plus grace cancels the lifetime once and logs the full sequence.
 func TestTable_OpenCancelDispose(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(20*time.Millisecond, slog.New(h))
@@ -145,7 +145,7 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	}
 }
 
-// TestTable_SecondCreateDisposeIgnored checks that a later Open does not replace the first dispose.
+// TestTable_SecondCreateDisposeIgnored checks that a later Open does not run create or replace the lifetime.
 func TestTable_SecondCreateDisposeIgnored(t *testing.T) {
 	tab := NewTable(20*time.Millisecond, slog.New(&recHandler{}))
 	var created, ended atomic.Int32
@@ -183,7 +183,7 @@ func TestTable_SecondCreateDisposeIgnored(t *testing.T) {
 	}
 }
 
-// TestTable_TwoOpensOneDispose checks that one live holder blocks dispose until the last ctx is Done.
+// TestTable_TwoOpensOneDispose checks that one live holder blocks lifetime cancel until the last ctx is Done.
 func TestTable_TwoOpensOneDispose(t *testing.T) {
 	tab := NewTable(20*time.Millisecond, slog.New(&recHandler{}))
 	var ended atomic.Bool
@@ -237,7 +237,7 @@ func TestTable_StdlibImports(t *testing.T) {
 	}
 }
 
-// TestTable_HashChangeProof checks that disposing key A does not dispose a live key B.
+// TestTable_HashChangeProof checks that canceling key A’s lifetime does not cancel a live key B.
 func TestTable_HashChangeProof(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(20*time.Millisecond, slog.New(h))
@@ -294,7 +294,7 @@ func TestTable_HashChangeProof(t *testing.T) {
 			foundB = true
 		}
 		if e[0] == MsgDispose && e[1] == "B" {
-			t.Fatal("B must not dispose")
+			t.Fatal("B must not cancel")
 		}
 	}
 	if !foundB {

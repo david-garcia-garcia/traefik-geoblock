@@ -23,6 +23,7 @@ func Default() *Table {
 }
 
 // Open is Default().Open: create-once for key on the process table and bind ctx.
+// create receives a lifetime context that is canceled when this incarnation ends.
 func Open(ctx context.Context, key string, create func(life context.Context) (any, error)) (any, error) {
 	return Default().Open(ctx, key, create)
 }
