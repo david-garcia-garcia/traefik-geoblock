@@ -40,16 +40,22 @@ Creating the plugin SHALL open the DatabaseProvider named by `databaseProvider`.
 - **THEN** plugin creation fails
 
 ### Requirement: IP2Location settings are vendor-prefixed
-IP2Location download pointers SHALL live on Traefik Config as `ip2location_source_geo` and `ip2location_source_asn`. The plugin MUST pass those fields to the IP2Location provider only. File location SHALL be the catalog `path` and dated files as specified in `core_geoblock_database_url-download`. Config SHALL NOT expose `ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, or unprefixed `databaseFilePath`.
+IP2Location download pointers SHALL live on Traefik Config as `ip2location_source_geo` and `ip2location_source_asn`. The plugin MUST pass those fields to the IP2Location provider only. File location SHALL be the catalog `path` and dated files as specified in `core_geoblock_database_url-download`. Empty `ip2location_source_geo` SHALL bind the reserved catalog key `default_ip2location`. Config SHALL NOT expose `ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, or unprefixed `databaseFilePath`.
 
 #### Scenario: Pointer reaches IP2Location only
 - **WHEN** `databaseProvider` is `ip2location` and `ip2location_source_geo` names a catalog entry whose `path` is an existing BIN
 - **THEN** plugin creation opens that file as the geo database
 - **AND** unused IPinfo and MaxMind pointers are ignored
 
-#### Scenario: Empty geo pointer uses bundled default
-- **WHEN** `databaseProvider` is `ip2location` and `ip2location_source_geo` is empty and the default geo BIN exists
-- **THEN** plugin creation opens that bundled geo database
+#### Scenario: Empty geo pointer uses default catalog
+- **WHEN** `databaseProvider` is `ip2location` and `ip2location_source_geo` is empty
+- **THEN** plugin creation binds `default_ip2location`
+- **AND** opens that source (dated file, catalog path, or bundled geo BIN)
+
+#### Scenario: Empty MaxMind pointer uses default geolite catalog
+- **WHEN** `databaseProvider` is `maxmind` and `maxmind_source` is empty
+- **THEN** plugin creation binds `default_geolite`
+- **AND** opens that source (dated file, catalog path, or bundled dummy Country MMDB)
 
 ### Requirement: Provider implementations are isolated
 Vendor Lookup SHALL live in that vendor’s provider package. Open and hot-swap SHALL live in one shared format-wrapper package (`pkg/dbwrappers`), not copied into each vendor package. HTTP GET, archive unpack, file-date read, lock, ticker, dated write, and file-location Resolve SHALL stay one shared source component (`pkg/dbsource`). A later vendor MUST be addable by implementing DatabaseProvider, adding a `databaseProvider` branch, pointing at a catalog entry, and using the BIN or MMDB format wrapper. The plugin MUST NOT type-assert a format wrapper to read provider state.
