@@ -17,7 +17,7 @@ See proposal.md. Catalog, pointers, and `validateDatabaseSources` live in `plugi
 
 1. **Inject in `New`, not only `CreateConfig`.** Traefik overlays the operator map onto `CreateConfig`. A post-overlay insert keeps `default_ip2location` unless the operator already set that key.
 
-2. **Reuse `liteDownloadURL`.** The free LITE ZIP is already `pkg/ip2location` `liteDownloadURL`. Do not invent a second URL constant.
+2. **One LITE URL constant.** `pkg/ip2location` `DefaultLiteURL` in `names.go`. The old `liteDownloadURL` in `autoupdate.go` is gone from this tree.
 
 3. **Temp dir is `filepath.Join(os.TempDir(), "traefik-geoblock")`.** A stable subdirectory survives plugin reload in the same process. README already warns that `/tmp` is not durable across container replace.
 
