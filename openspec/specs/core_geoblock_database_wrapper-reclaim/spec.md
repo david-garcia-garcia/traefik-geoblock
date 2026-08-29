@@ -5,7 +5,7 @@ Binds each format-wrapper singleton (one open BIN or MMDB file and its keep-curr
 ## Requirements
 
 ### Requirement: Wrapper open receives the New context
-Opening a BIN or MMDB wrapper SHALL take the context passed to plugin `New`. The plugin MUST pass that context through the provider constructor into the wrapper open. The wrapper MUST open that hash on the process `reclaim` table (`any`, caller asserts `*BIN` / `*MMDB`) with a dispose that stops the keep-current loop and closes the open file. BIN and MMDB keys SHALL be prefixed so they do not collide.
+Opening a BIN or MMDB wrapper SHALL take the context passed to plugin `New`. The plugin MUST pass that context through the provider constructor into the wrapper open. The wrapper MUST open that hash on the process `reclaim` table (`any`, caller asserts `*BIN` / `*MMDB`) with a create that watches the incarnation lifetime and, when that lifetime is canceled, stops the keep-current loop and closes the open file. BIN and MMDB keys SHALL be prefixed so they do not collide.
 
 #### Scenario: New context reaches the wrapper
 - **WHEN** plugin `New` is invoked with a context
@@ -21,7 +21,7 @@ Two opens with the same wrapper configuration SHALL share one file and one keep-
 - **AND** a second keep-current loop is not started
 
 ### Requirement: Unreclaimed hash is disposed after grace
-When no live `New` context remains for a wrapper configuration and grace elapses without a same-hash open, the wrapper SHALL stop its keep-current loop, close its file, and leave the singleton map. A later open with that configuration SHALL create a new wrapper. Closing a DatabaseProvider MUST still not dispose a wrapper that other instances (or a pending reclaim) still need.
+When no live `New` context remains for a wrapper configuration and grace elapses without a same-hash open, the wrapper SHALL stop its keep-current loop, close its file, and leave the singleton map. A later open with that configuration SHALL create a new wrapper. Closing a DatabaseProvider MUST still not end a wrapper that other instances (or a pending reclaim) still need.
 
 #### Scenario: Config hash no longer used
 - **WHEN** the last plugin instance using configuration hash H is gone (its `New` context is Done)
