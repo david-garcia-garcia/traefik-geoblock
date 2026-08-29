@@ -18,7 +18,7 @@ const (
 	MsgDispose = "reclaim_dispose"
 )
 
-// Table is keyed lease+storage. Values are any; the caller type-asserts.
+// Table stores one value per key and keeps it while any bound context is live or grace has not elapsed.
 type Table struct {
 	mu     sync.Mutex
 	grace  time.Duration
@@ -26,6 +26,7 @@ type Table struct {
 	items  map[string]*slot
 }
 
+// slot is one incarnation: the value, its dispose, and the holders that still need it.
 type slot struct {
 	value      any
 	dispose    func()
@@ -34,7 +35,7 @@ type slot struct {
 	graceTimer *time.Timer
 }
 
-// NewTable returns a table. grace <= 0 uses DefaultGrace. A nil logger uses slog.Default.
+// NewTable builds an empty table. Non-positive grace becomes DefaultGrace; a nil logger becomes slog.Default.
 func NewTable(grace time.Duration, logger *slog.Logger) *Table {
 	if grace <= 0 {
 		grace = DefaultGrace
@@ -49,7 +50,7 @@ func NewTable(grace time.Duration, logger *slog.Logger) *Table {
 	}
 }
 
-// Open returns the value for key, creating it once, and binds ctx as a holder.
+// Open returns the stored value for key, creating it once, and tracks ctx until it is Done.
 func (t *Table) Open(ctx context.Context, key string, create func() (any, error), dispose func(any)) (any, error) {
 	if t == nil {
 		return nil, fmt.Errorf("reclaim: open %q: nil table", key)
@@ -57,6 +58,8 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 	if ctx == nil {
 		ctx = context.Background()
 	}
+
+	// Reuse a live or in-grace incarnation.
 	t.mu.Lock()
 	if e, ok := t.items[key]; ok {
 		id := t.bindLocked(key, e)
@@ -67,12 +70,14 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 	}
 	t.mu.Unlock()
 
+	// Create outside the lock so two first Opens can race.
 	v, err := create()
 	if err != nil {
 		return nil, err
 	}
 
 	t.mu.Lock()
+	// Another Open won: keep the stored value and drop this extra create.
 	if e, ok := t.items[key]; ok {
 		id := t.bindLocked(key, e)
 		exist := e.value
@@ -83,6 +88,8 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 		go t.watch(key, id, ctx)
 		return exist, nil
 	}
+
+	// First put for this key.
 	e := &slot{
 		value:   v,
 		holders: map[uint64]struct{}{},
@@ -100,6 +107,7 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 	return v, nil
 }
 
+// bindLocked attaches a holder and cancels grace if this Open reclaimed the key. Caller holds t.mu.
 func (t *Table) bindLocked(key string, e *slot) uint64 {
 	reclaimed := false
 	if e.graceTimer != nil {
@@ -116,11 +124,13 @@ func (t *Table) bindLocked(key string, e *slot) uint64 {
 	return e.nextID
 }
 
+// watch waits until ctx is Done, then drops that holder.
 func (t *Table) watch(key string, id uint64, ctx context.Context) {
 	<-ctx.Done()
 	t.drop(key, id)
 }
 
+// drop removes one holder and starts grace when none remain.
 func (t *Table) drop(key string, id uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -136,6 +146,7 @@ func (t *Table) drop(key string, id uint64) {
 	e.graceTimer = time.AfterFunc(t.grace, func() { t.fire(key) })
 }
 
+// fire disposes the incarnation if it is still orphaned when grace ends.
 func (t *Table) fire(key string) {
 	t.mu.Lock()
 	e, ok := t.items[key]
@@ -152,7 +163,7 @@ func (t *Table) fire(key string) {
 	t.logger.Info(MsgDispose, "key", key)
 }
 
-// Reset disposes every incarnation. Tests only.
+// Reset stops grace timers and disposes every incarnation. Tests only.
 func (t *Table) Reset() {
 	if t == nil {
 		return

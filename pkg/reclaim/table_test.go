@@ -11,17 +11,21 @@ import (
 	"time"
 )
 
+// box is a disposable stand-in stored on the table in tests.
 type box struct {
 	n int
 }
 
+// recHandler records slog lines so tests can assert reclaim msg + key order.
 type recHandler struct {
 	mu   sync.Mutex
 	recs []slog.Record
 }
 
+// Enabled keeps every level so debug reclaim lines are captured.
 func (h *recHandler) Enabled(context.Context, slog.Level) bool { return true }
 
+// Handle stores a clone of the record.
 func (h *recHandler) Handle(_ context.Context, r slog.Record) error {
 	h.mu.Lock()
 	h.recs = append(h.recs, r.Clone())
@@ -29,9 +33,13 @@ func (h *recHandler) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
+// WithAttrs returns the same handler; tests do not use slog attributes on the handler itself.
 func (h *recHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *recHandler) WithGroup(string) slog.Handler      { return h }
 
+// WithGroup returns the same handler; tests do not use slog groups.
+func (h *recHandler) WithGroup(string) slog.Handler { return h }
+
+// events is msg + key for each recorded line, in order.
 func (h *recHandler) events() [][2]string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -49,6 +57,7 @@ func (h *recHandler) events() [][2]string {
 	return out
 }
 
+// hasSubseq reports whether want appears in order inside got (other lines may sit between).
 func hasSubseq(got [][2]string, want [][2]string) bool {
 	i := 0
 	for _, g := range got {
@@ -59,14 +68,18 @@ func hasSubseq(got [][2]string, want [][2]string) bool {
 	return i == len(want)
 }
 
+// TestTable_OpenCancelDispose checks that cancel plus grace runs dispose once and logs the full sequence.
 func TestTable_OpenCancelDispose(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(20*time.Millisecond, slog.New(h))
 	disposed := false
 	ctx, cancel := context.WithCancel(context.Background())
+
 	if _, err := tab.Open(ctx, "a", func() (any, error) { return &box{1}, nil }, func(any) { disposed = true }); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
+
+	// Last holder gone; wait past grace.
 	cancel()
 	time.Sleep(80 * time.Millisecond)
 	if !disposed {
@@ -82,6 +95,7 @@ func TestTable_OpenCancelDispose(t *testing.T) {
 	}
 }
 
+// TestTable_OpenDuringGraceReclaims checks that Open before grace keeps the incarnation.
 func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(80*time.Millisecond, slog.New(h))
@@ -90,6 +104,8 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	if _, err := tab.Open(ctx1, "a", func() (any, error) { return &box{1}, nil }, func(any) { disposed = true }); err != nil {
 		t.Fatalf("Open 1: %v", err)
 	}
+
+	// Orphan, then rebind while grace is still running.
 	cancel1()
 	time.Sleep(15 * time.Millisecond)
 	ctx2, cancel2 := context.WithCancel(context.Background())
@@ -97,6 +113,7 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	if _, err := tab.Open(ctx2, "a", func() (any, error) { return &box{2}, nil }, func(any) { disposed = true }); err != nil {
 		t.Fatalf("Open 2: %v", err)
 	}
+
 	time.Sleep(120 * time.Millisecond)
 	if disposed {
 		t.Fatal("reclaim must not dispose")
@@ -111,6 +128,7 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	}
 }
 
+// TestTable_SecondCreateDisposeIgnored checks that a later Open does not replace the first dispose.
 func TestTable_SecondCreateDisposeIgnored(t *testing.T) {
 	tab := NewTable(20*time.Millisecond, slog.New(&recHandler{}))
 	first, second := false, false
@@ -122,6 +140,7 @@ func TestTable_SecondCreateDisposeIgnored(t *testing.T) {
 	if _, err := tab.Open(ctx2, "a", func() (any, error) { return &box{2}, nil }, func(any) { second = true }); err != nil {
 		t.Fatalf("Open 2: %v", err)
 	}
+
 	cancel1()
 	cancel2()
 	time.Sleep(80 * time.Millisecond)
@@ -133,6 +152,7 @@ func TestTable_SecondCreateDisposeIgnored(t *testing.T) {
 	}
 }
 
+// TestTable_TwoOpensOneDispose checks that one live holder blocks dispose until the last ctx is Done.
 func TestTable_TwoOpensOneDispose(t *testing.T) {
 	tab := NewTable(20*time.Millisecond, slog.New(&recHandler{}))
 	disposed := false
@@ -144,11 +164,13 @@ func TestTable_TwoOpensOneDispose(t *testing.T) {
 	if _, err := tab.Open(ctx2, "a", func() (any, error) { return &box{2}, nil }, func(any) { disposed = true }); err != nil {
 		t.Fatalf("Open 2: %v", err)
 	}
+
 	cancel1()
 	time.Sleep(80 * time.Millisecond)
 	if disposed {
 		t.Fatal("one live open must keep the incarnation")
 	}
+
 	cancel2()
 	time.Sleep(80 * time.Millisecond)
 	if !disposed {
@@ -156,6 +178,7 @@ func TestTable_TwoOpensOneDispose(t *testing.T) {
 	}
 }
 
+// TestTable_DefaultGrace checks that a non-positive grace becomes DefaultGrace.
 func TestTable_DefaultGrace(t *testing.T) {
 	tab := NewTable(0, slog.Default())
 	if tab.grace != DefaultGrace {
@@ -163,6 +186,7 @@ func TestTable_DefaultGrace(t *testing.T) {
 	}
 }
 
+// TestTable_StdlibImports checks that table.go imports only the standard library.
 func TestTable_StdlibImports(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "table.go", nil, parser.ImportsOnly)
@@ -177,11 +201,13 @@ func TestTable_StdlibImports(t *testing.T) {
 	}
 }
 
+// TestTable_HashChangeProof checks that disposing key A does not dispose a live key B.
 func TestTable_HashChangeProof(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(20*time.Millisecond, slog.New(h))
 	var disposed []string
 	var mu sync.Mutex
+
 	ctxA, cancelA := context.WithCancel(context.Background())
 	if _, err := tab.Open(ctxA, "A", func() (any, error) { return &box{1}, nil }, func(any) {
 		mu.Lock()
@@ -190,6 +216,8 @@ func TestTable_HashChangeProof(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Open A: %v", err)
 	}
+
+	// A orphans; B is a new incarnation on the same table.
 	cancelA()
 	ctxB, cancelB := context.WithCancel(context.Background())
 	defer cancelB()
@@ -200,6 +228,7 @@ func TestTable_HashChangeProof(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Open B: %v", err)
 	}
+
 	time.Sleep(80 * time.Millisecond)
 	mu.Lock()
 	got := append([]string(nil), disposed...)
@@ -214,6 +243,7 @@ func TestTable_HashChangeProof(t *testing.T) {
 	}) {
 		t.Fatalf("events: %+v", h.events())
 	}
+
 	foundB := false
 	for _, e := range h.events() {
 		if e[0] == MsgPut && e[1] == "B" {
@@ -228,6 +258,7 @@ func TestTable_HashChangeProof(t *testing.T) {
 	}
 }
 
+// TestDefault_OpenSharesIncarnation checks that package Open and Default().Open are the same table.
 func TestDefault_OpenSharesIncarnation(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)

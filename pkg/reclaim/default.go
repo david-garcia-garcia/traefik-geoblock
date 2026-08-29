@@ -12,7 +12,7 @@ var (
 	defaultTable *Table
 )
 
-// Default is the process-wide table. Callers in any package share it.
+// Default returns the process-wide table, creating it on first use.
 func Default() *Table {
 	defaultMu.Lock()
 	defer defaultMu.Unlock()
@@ -22,17 +22,17 @@ func Default() *Table {
 	return defaultTable
 }
 
-// Open binds ctx on Default for key.
+// Open is Default().Open: create-once for key on the process table and bind ctx.
 func Open(ctx context.Context, key string, create func() (any, error), dispose func(any)) (any, error) {
 	return Default().Open(ctx, key, create, dispose)
 }
 
-// Reset disposes Default and replaces it. Tests only.
+// Reset tears down the process table and installs a fresh one with product grace. Tests only.
 func Reset() {
 	ResetWith(DefaultGrace, slog.Default())
 }
 
-// ResetWith is Reset with a grace and logger. Tests only.
+// ResetWith replaces the process table after disposing the current one. Tests only.
 func ResetWith(grace time.Duration, logger *slog.Logger) {
 	defaultMu.Lock()
 	defer defaultMu.Unlock()
