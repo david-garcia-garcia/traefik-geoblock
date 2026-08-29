@@ -7,9 +7,18 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// endedOnLife sets done when life is canceled.
+func endedOnLife(life context.Context, done *atomic.Bool) {
+	go func() {
+		<-life.Done()
+		done.Store(true)
+	}()
+}
 
 // box is a disposable stand-in stored on the table in tests.
 type box struct {
@@ -72,18 +81,21 @@ func hasSubseq(got [][2]string, want [][2]string) bool {
 func TestTable_OpenCancelDispose(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(20*time.Millisecond, slog.New(h))
-	disposed := false
+	var ended atomic.Bool
 	ctx, cancel := context.WithCancel(context.Background())
 
-	if _, err := tab.Open(ctx, "a", func() (any, error) { return &box{1}, nil }, func(any) { disposed = true }); err != nil {
+	if _, err := tab.Open(ctx, "a", func(life context.Context) (any, error) {
+		endedOnLife(life, &ended)
+		return &box{1}, nil
+	}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 
 	// Last holder gone; wait past grace.
 	cancel()
 	time.Sleep(80 * time.Millisecond)
-	if !disposed {
-		t.Fatal("expected dispose after grace")
+	if !ended.Load() {
+		t.Fatal("expected lifetime cancel after grace")
 	}
 	if !hasSubseq(h.events(), [][2]string{
 		{MsgPut, "a"},
@@ -99,9 +111,12 @@ func TestTable_OpenCancelDispose(t *testing.T) {
 func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(80*time.Millisecond, slog.New(h))
-	disposed := false
+	var ended atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx1, "a", func() (any, error) { return &box{1}, nil }, func(any) { disposed = true }); err != nil {
+	if _, err := tab.Open(ctx1, "a", func(life context.Context) (any, error) {
+		endedOnLife(life, &ended)
+		return &box{1}, nil
+	}); err != nil {
 		t.Fatalf("Open 1: %v", err)
 	}
 
@@ -110,13 +125,15 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	time.Sleep(15 * time.Millisecond)
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	if _, err := tab.Open(ctx2, "a", func() (any, error) { return &box{2}, nil }, func(any) { disposed = true }); err != nil {
+	if _, err := tab.Open(ctx2, "a", func(life context.Context) (any, error) {
+		return &box{2}, nil
+	}); err != nil {
 		t.Fatalf("Open 2: %v", err)
 	}
 
 	time.Sleep(120 * time.Millisecond)
-	if disposed {
-		t.Fatal("reclaim must not dispose")
+	if ended.Load() {
+		t.Fatal("reclaim must not cancel the lifetime")
 	}
 	if !hasSubseq(h.events(), [][2]string{
 		{MsgPut, "a"},
@@ -131,50 +148,69 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 // TestTable_SecondCreateDisposeIgnored checks that a later Open does not replace the first dispose.
 func TestTable_SecondCreateDisposeIgnored(t *testing.T) {
 	tab := NewTable(20*time.Millisecond, slog.New(&recHandler{}))
-	first, second := false, false
+	var created, ended atomic.Int32
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx1, "a", func() (any, error) { return &box{1}, nil }, func(any) { first = true }); err != nil {
+	if _, err := tab.Open(ctx1, "a", func(life context.Context) (any, error) {
+		created.Add(1)
+		go func() {
+			<-life.Done()
+			ended.Add(1)
+		}()
+		return &box{1}, nil
+	}); err != nil {
 		t.Fatalf("Open 1: %v", err)
 	}
-	if _, err := tab.Open(ctx2, "a", func() (any, error) { return &box{2}, nil }, func(any) { second = true }); err != nil {
+	if _, err := tab.Open(ctx2, "a", func(life context.Context) (any, error) {
+		created.Add(1)
+		go func() {
+			<-life.Done()
+			ended.Add(1)
+		}()
+		return &box{2}, nil
+	}); err != nil {
 		t.Fatalf("Open 2: %v", err)
 	}
 
 	cancel1()
 	cancel2()
 	time.Sleep(80 * time.Millisecond)
-	if !first {
-		t.Fatal("expected first dispose")
+	if created.Load() != 1 {
+		t.Fatalf("second Open must not run create, created=%d", created.Load())
 	}
-	if second {
-		t.Fatal("second Open must not replace dispose")
+	if ended.Load() != 1 {
+		t.Fatalf("expected one lifetime cancel, ended=%d", ended.Load())
 	}
 }
 
 // TestTable_TwoOpensOneDispose checks that one live holder blocks dispose until the last ctx is Done.
 func TestTable_TwoOpensOneDispose(t *testing.T) {
 	tab := NewTable(20*time.Millisecond, slog.New(&recHandler{}))
-	disposed := false
+	var ended atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx1, "a", func() (any, error) { return &box{1}, nil }, func(any) { disposed = true }); err != nil {
+	if _, err := tab.Open(ctx1, "a", func(life context.Context) (any, error) {
+		endedOnLife(life, &ended)
+		return &box{1}, nil
+	}); err != nil {
 		t.Fatalf("Open 1: %v", err)
 	}
-	if _, err := tab.Open(ctx2, "a", func() (any, error) { return &box{2}, nil }, func(any) { disposed = true }); err != nil {
+	if _, err := tab.Open(ctx2, "a", func(context.Context) (any, error) {
+		return &box{2}, nil
+	}); err != nil {
 		t.Fatalf("Open 2: %v", err)
 	}
 
 	cancel1()
 	time.Sleep(80 * time.Millisecond)
-	if disposed {
+	if ended.Load() {
 		t.Fatal("one live open must keep the incarnation")
 	}
 
 	cancel2()
 	time.Sleep(80 * time.Millisecond)
-	if !disposed {
-		t.Fatal("expected dispose after last holder")
+	if !ended.Load() {
+		t.Fatal("expected lifetime cancel after last holder")
 	}
 }
 
@@ -205,14 +241,18 @@ func TestTable_StdlibImports(t *testing.T) {
 func TestTable_HashChangeProof(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(20*time.Millisecond, slog.New(h))
-	var disposed []string
+	var ended []string
 	var mu sync.Mutex
 
 	ctxA, cancelA := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctxA, "A", func() (any, error) { return &box{1}, nil }, func(any) {
-		mu.Lock()
-		disposed = append(disposed, "A")
-		mu.Unlock()
+	if _, err := tab.Open(ctxA, "A", func(life context.Context) (any, error) {
+		go func() {
+			<-life.Done()
+			mu.Lock()
+			ended = append(ended, "A")
+			mu.Unlock()
+		}()
+		return &box{1}, nil
 	}); err != nil {
 		t.Fatalf("Open A: %v", err)
 	}
@@ -221,20 +261,24 @@ func TestTable_HashChangeProof(t *testing.T) {
 	cancelA()
 	ctxB, cancelB := context.WithCancel(context.Background())
 	defer cancelB()
-	if _, err := tab.Open(ctxB, "B", func() (any, error) { return &box{2}, nil }, func(any) {
-		mu.Lock()
-		disposed = append(disposed, "B")
-		mu.Unlock()
+	if _, err := tab.Open(ctxB, "B", func(life context.Context) (any, error) {
+		go func() {
+			<-life.Done()
+			mu.Lock()
+			ended = append(ended, "B")
+			mu.Unlock()
+		}()
+		return &box{2}, nil
 	}); err != nil {
 		t.Fatalf("Open B: %v", err)
 	}
 
 	time.Sleep(80 * time.Millisecond)
 	mu.Lock()
-	got := append([]string(nil), disposed...)
+	got := append([]string(nil), ended...)
 	mu.Unlock()
 	if len(got) != 1 || got[0] != "A" {
-		t.Fatalf("disposed: %v", got)
+		t.Fatalf("ended: %v", got)
 	}
 	if !hasSubseq(h.events(), [][2]string{
 		{MsgPut, "A"},
@@ -263,11 +307,11 @@ func TestDefault_OpenSharesIncarnation(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
 	ctx := context.Background()
-	a, err := Open(ctx, "k", func() (any, error) { return &box{7}, nil }, nil)
+	a, err := Open(ctx, "k", func(context.Context) (any, error) { return &box{7}, nil })
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	b, err := Default().Open(ctx, "k", func() (any, error) { return &box{8}, nil }, nil)
+	b, err := Default().Open(ctx, "k", func(context.Context) (any, error) { return &box{8}, nil })
 	if err != nil {
 		t.Fatalf("Default.Open: %v", err)
 	}

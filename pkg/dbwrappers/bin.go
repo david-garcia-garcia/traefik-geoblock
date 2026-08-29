@@ -52,12 +52,17 @@ func binKey(cfg BINConfig) string {
 // OpenBIN returns the singleton BIN for cfg and binds ctx on the process table.
 func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	key := binKey(cfg)
-	v, err := reclaim.Open(ctx, key, func() (any, error) {
-		return newBIN(cfg, logger)
-	}, func(v any) {
-		if w, ok := v.(*BIN); ok {
-			w.close()
+	v, err := reclaim.Open(ctx, key, func(life context.Context) (any, error) {
+		w, err := newBIN(cfg, logger)
+		if err != nil {
+			return nil, err
 		}
+		// Stop the updater and close the file when this incarnation ends.
+		go func() {
+			<-life.Done()
+			w.close()
+		}()
+		return w, nil
 	})
 	if err != nil {
 		return nil, err

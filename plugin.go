@@ -41,9 +41,9 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 
 // bindPlugin stores or reclaims the Plugin for name+config, then attaches this route.
 func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config) (http.Handler, error) {
-	v, err := reclaim.Open(ctx, pluginKey(name, cfg), func() (any, error) {
+	v, err := reclaim.Open(ctx, pluginKey(name, cfg), func(context.Context) (any, error) {
 		return geoblock.NewCore(name, cfg)
-	}, func(any) {})
+	})
 	if err != nil {
 		return nil, err
 	}

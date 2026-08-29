@@ -17,7 +17,7 @@ _Avoid_: treating vendor as the share axis
 ## How to use
 
 - Open through `OpenBIN` or `OpenMMDB` with the plugin `New` context. Same config hash shares one file and one Updater. The wrapper logger is scoped with `key` equal to the catalog map key.
-- Those opens go through `reclaim.Open` (`std_go_reclaim.md`) with `bin:` / `mmdb:` keys. Unreclaimed hash disposes after grace. The caller asserts `*BIN` / `*MMDB`.
+- Those opens go through `reclaim.Open` (`std_go_reclaim.md`) with `bin:` / `mmdb:` keys. Create watches the incarnation lifetime and calls `close` when it is canceled. Unreclaimed hash ends after grace. The caller asserts `*BIN` / `*MMDB`.
 - IP2Location holds two BIN wrappers (geo + ASN). IPinfo and MaxMind each hold one MMDB wrapper.
 - `provider.Close` must not close the shared wrapper.
 - Tests call `dbwrappers.Reset`. Short-grace plugin tests call `ResetWith`.

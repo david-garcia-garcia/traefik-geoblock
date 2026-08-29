@@ -26,10 +26,10 @@ type Table struct {
 	items  map[string]*slot
 }
 
-// slot is one incarnation: the value, its dispose, and the holders that still need it.
+// slot is one incarnation: the value, the cancel for its lifetime, and the holders that still need it.
 type slot struct {
 	value      any
-	dispose    func()
+	cancel     context.CancelFunc
 	holders    map[uint64]struct{}
 	nextID     uint64
 	graceTimer *time.Timer
@@ -51,7 +51,8 @@ func NewTable(grace time.Duration, logger *slog.Logger) *Table {
 }
 
 // Open returns the stored value for key, creating it once, and tracks ctx until it is Done.
-func (t *Table) Open(ctx context.Context, key string, create func() (any, error), dispose func(any)) (any, error) {
+// create receives a lifetime context that is canceled when this incarnation ends.
+func (t *Table) Open(ctx context.Context, key string, create func(life context.Context) (any, error)) (any, error) {
 	if t == nil {
 		return nil, fmt.Errorf("reclaim: open %q: nil table", key)
 	}
@@ -71,20 +72,20 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 	t.mu.Unlock()
 
 	// Create outside the lock so two first Opens can race.
-	v, err := create()
+	life, cancel := context.WithCancel(context.Background())
+	v, err := create(life)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
 	t.mu.Lock()
-	// Another Open won: keep the stored value and drop this extra create.
+	// Another Open won: keep the stored value and cancel this extra create.
 	if e, ok := t.items[key]; ok {
 		id := t.bindLocked(key, e)
 		exist := e.value
 		t.mu.Unlock()
-		if dispose != nil {
-			dispose(v)
-		}
+		cancel()
 		go t.watch(key, id, ctx)
 		return exist, nil
 	}
@@ -92,12 +93,8 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 	// First put for this key.
 	e := &slot{
 		value:   v,
+		cancel:  cancel,
 		holders: map[uint64]struct{}{},
-	}
-	if dispose != nil {
-		held := v
-		d := dispose
-		e.dispose = func() { d(held) }
 	}
 	t.items[key] = e
 	t.logger.Info(MsgPut, "key", key)
@@ -146,7 +143,7 @@ func (t *Table) drop(key string, id uint64) {
 	e.graceTimer = time.AfterFunc(t.grace, func() { t.fire(key) })
 }
 
-// fire disposes the incarnation if it is still orphaned when grace ends.
+// fire cancels the incarnation lifetime if it is still orphaned when grace ends.
 func (t *Table) fire(key string) {
 	t.mu.Lock()
 	e, ok := t.items[key]
@@ -154,16 +151,16 @@ func (t *Table) fire(key string) {
 		t.mu.Unlock()
 		return
 	}
-	disp := e.dispose
+	cancel := e.cancel
 	delete(t.items, key)
 	t.mu.Unlock()
-	if disp != nil {
-		disp()
+	if cancel != nil {
+		cancel()
 	}
 	t.logger.Info(MsgDispose, "key", key)
 }
 
-// Reset stops grace timers and disposes every incarnation. Tests only.
+// Reset stops grace timers and cancels every incarnation lifetime. Tests only.
 func (t *Table) Reset() {
 	if t == nil {
 		return
@@ -176,8 +173,8 @@ func (t *Table) Reset() {
 		if e.graceTimer != nil {
 			e.graceTimer.Stop()
 		}
-		if e.dispose != nil {
-			e.dispose()
+		if e.cancel != nil {
+			e.cancel()
 		}
 	}
 }

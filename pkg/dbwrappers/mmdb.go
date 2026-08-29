@@ -46,12 +46,17 @@ func mmdbKey(cfg MMDBConfig) string {
 // OpenMMDB returns the singleton MMDB for cfg and binds ctx on the process table.
 func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	key := mmdbKey(cfg)
-	v, err := reclaim.Open(ctx, key, func() (any, error) {
-		return newMMDB(cfg, logger)
-	}, func(v any) {
-		if w, ok := v.(*MMDB); ok {
-			w.close()
+	v, err := reclaim.Open(ctx, key, func(life context.Context) (any, error) {
+		w, err := newMMDB(cfg, logger)
+		if err != nil {
+			return nil, err
 		}
+		// Stop the updater and close the file when this incarnation ends.
+		go func() {
+			<-life.Done()
+			w.close()
+		}()
+		return w, nil
 	})
 	if err != nil {
 		return nil, err
