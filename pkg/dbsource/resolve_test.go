@@ -1,8 +1,11 @@
 package dbsource
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,6 +76,32 @@ func TestResolve_MissingPathUsesEnvBundled(t *testing.T) {
 	}
 	if filepath.Base(got) != "ipinfo_lite.mmdb" {
 		t.Errorf("missing catalog path should fall through to bundled, got %q", got)
+	}
+}
+
+// TestResolve_MissingPathWarns records WARN when catalog Path is set but the file is gone.
+func TestResolve_MissingPathWarns(t *testing.T) {
+	pluginRoot := filepath.Join(filepath.Dir(repoFile(t, "ipinfo_lite.mmdb")), "..")
+	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", pluginRoot)
+	missing := filepath.Join(t.TempDir(), "not-here.mmdb")
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	got, err := Resolve(Config{
+		Path:            missing,
+		DefaultFileName: "ipinfo_lite.mmdb",
+	}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(got) != "ipinfo_lite.mmdb" {
+		t.Errorf("missing catalog path should fall through to bundled, got %q", got)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "seed was specified but not found") {
+		t.Errorf("WARN missing, log: %s", out)
+	}
+	if !strings.Contains(out, filepath.Base(missing)) {
+		t.Errorf("WARN path attr missing, log: %s", out)
 	}
 }
 

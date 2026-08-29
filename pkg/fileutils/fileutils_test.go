@@ -266,6 +266,21 @@ func TestFileUtils_Search(t *testing.T) {
 		}
 	})
 
+	t.Run("env path is a file not a directory", func(t *testing.T) {
+		envFile := filepath.Join(t.TempDir(), "not-a-dir")
+		if err := os.WriteFile(envFile, []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(PluginPathEnv, envFile)
+		_, err := fu.Search("", "default.txt", logger)
+		if err == nil {
+			t.Fatal("expected error when plugin-root env is a file")
+		}
+		if !strings.Contains(err.Error(), "is not a directory") {
+			t.Errorf("got %v", err)
+		}
+	})
+
 	t.Run("environment variable fallback", func(t *testing.T) {
 		// Create a test directory for the environment variable
 		envDir := t.TempDir()
