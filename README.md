@@ -224,7 +224,8 @@ Only the selected provider’s files are opened. Unused vendor paths are ignored
 
 How auto-update works:
 
-- Add named entries under `databaseSources` (`url`, `databaseType`, `archive`, optional `headers` and `path`). Keys are operator-chosen. A token may live in the URL query (`?token=`). `path` is the operator seed **file** (use a full path). It is not the bundled `seeds/` copy. Set `databaseType` to `bin` or `mmdb`. Set `archive` to `none`, `zip`, or `tar.gz`. Empty `archive` is inferred from the URL path (`.zip`, `.tar.gz`/`.tgz`, `.mmdb`, `.bin`). Official IP2Location token and MaxMind permalink URLs have no path extension — set `archive` on those entries. Examples (bind the key with the matching pointer below):
+- The plugin always inserts a reserved catalog key `default_ip2location` (free IP2Location country LITE ZIP, `databaseType: bin`, `archive: zip`) unless you already defined that key. Empty `ip2location_source_geo` binds this row so the free LITE file can download. There is no default ASN row (ASN LITE needs a token). If you set `databaseSources.default_ip2location` yourself, that row is kept.
+- Add named entries under `databaseSources` (`url`, `databaseType`, `archive`, optional `headers` and `path`). Keys are operator-chosen except `default_ip2location`. A token may live in the URL query (`?token=`). `path` is the operator seed **file** (use a full path). It is not the bundled `seeds/` copy. Set `databaseType` to `bin` or `mmdb`. A pointer whose `databaseType` does not match the provider (IP2Location → `bin`; IPinfo / MaxMind → `mmdb`) fails plugin creation. A pointer to a missing key logs a warning and falls back (IP2Location geo → `default_ip2location` / bundled seed; IPinfo / MaxMind → bundled seed; ASN → no ASN). Set `archive` to `none`, `zip`, or `tar.gz`. Empty `archive` is inferred from the URL path (`.zip`, `.tar.gz`/`.tgz`, `.mmdb`, `.bin`). Official IP2Location token and MaxMind permalink URLs have no path extension — set `archive` on those entries. Examples (bind the key with the matching pointer below):
 
   ```yaml
   databaseSources:
@@ -256,7 +257,7 @@ How auto-update works:
         Authorization: "Basic YOUR_BASE64_ACCOUNTID_LICENSEKEY"
   ```
 
-- Point the selected provider at a `databaseSources` key: `ip2location_source_geo`, `ip2location_source_asn`, `ipinfo_source`, or `maxmind_source`. A named seed requires that pointer. Empty pointer = bundled default / env only; no GET. Only the selected `databaseProvider` reads its pointers; the others are ignored.
+- Point the selected provider at a `databaseSources` key: `ip2location_source_geo`, `ip2location_source_asn`, `ipinfo_source`, or `maxmind_source`. A named seed requires that pointer. Empty `ip2location_source_geo` binds `default_ip2location`. Empty IPinfo / MaxMind pointers use the bundled seed. Only the selected `databaseProvider` reads its pointers; the others are ignored.
 
   ```yaml
   # IP2Location (default). Bind geo (and optional ASN) to keys from databaseSources above.
@@ -267,7 +268,7 @@ How auto-update works:
   # MaxMind: set databaseProvider: maxmind and bind maxmind_source.
   # maxmind_source: geolite
   ```
-- Set `databaseAutoUpdateDir` (required when a bound entry has a URL). This **must** be durable storage: a persistent volume that survives container restarts **and** replacement. Do not use `/tmp`, the container writable layer, or any path that is wiped on recreate. Dated files live here; if the directory is empty after a restart the plugin falls back to seed/`path` and will download again.
+- Set `databaseAutoUpdateDir` when a bound entry has a URL. Prefer durable storage: a persistent volume that survives container restarts **and** replacement. If the dir is empty, the plugin WARNs and writes dated files under the process temp dir (`traefik-geoblock`). That path is wiped on container replace. Do not rely on `/tmp` in production. If the directory is empty after a restart the plugin falls back to seed/`path` and will download again.
 
   ```yaml
   databaseAutoUpdateDir: "/data/geoblock"
