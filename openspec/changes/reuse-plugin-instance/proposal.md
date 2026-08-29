@@ -1,0 +1,29 @@
+## Why
+
+Traefik calls plugin `New` once per router (and again on every applied reload). This plugin has one config, so N routers build N `Plugin` values. The BIN/MMDB file is already shared. The leftover cost is constructing the Plugin itself (maps, regexes, IP helpers, logger, provider object) every time.
+
+## What Changes
+
+- `New` stores one `Plugin` (next unset) on the process reclaim table, keyed by middleware name plus a hash of the normalized `Config`.
+- A later `New` with the same name and config shallow-copies that Plugin, sets this router’s `next`, and still opens the DatabaseProvider so wrappers bind this `New` context.
+- `New` still returns `*Plugin`. No new handler type.
+- Plugin dispose is empty. After grace the table drops the incarnation.
+- Table `Open` dispose-vs-lifetime-context is **not** this change.
+
+## Capabilities
+
+### New Capabilities
+
+- `core_geoblock_plugin_instance-reclaim`: one Plugin incarnation per name+config hash; bind `New` ctx; reclaim across reload; unreclaimed drop after grace.
+
+### Modified Capabilities
+
+None.
+
+## Impact
+
+- `plugin.go` `New` / `Plugin`
+- Process `reclaim` table (`plugin:` key prefix)
+- Tests: two `New` share Plugin fields; different `next`; name/config miss; reclaim / grace
+- Existing wrapper lifecycle tests still bind wrappers on every `New`
+- Usage: new packet for Plugin instance reclaim
