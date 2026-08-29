@@ -1,6 +1,7 @@
 package ipinfo
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,7 +38,7 @@ func TestLookup_PublicAndPrivate(t *testing.T) {
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
 
-	p, err := New(DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}, testLogger())
+	p, err := New(context.Background(), DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}, testLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestNew_EmptyPathFindsBundled(t *testing.T) {
 
 	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", filepath.Dir(testMMDB(t)))
 
-	p, err := New(DatabaseConfig{}, testLogger())
+	p, err := New(context.Background(), DatabaseConfig{}, testLogger())
 	if err != nil {
 		t.Fatalf("New with empty path: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestNew_EmptyMapUsesSeed(t *testing.T) {
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
 
-	p, err := New(DatabaseConfig{
+	p, err := New(context.Background(), DatabaseConfig{
 		Source:                dbsource.Config{Path: testMMDB(t)},
 		DatabaseAutoUpdateDir: t.TempDir(),
 	}, testLogger())
@@ -136,11 +137,11 @@ func TestNew_Singleton(t *testing.T) {
 	t.Cleanup(dbwrappers.Reset)
 
 	cfg := DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}
-	a, err := New(cfg, testLogger())
+	a, err := New(context.Background(), cfg, testLogger())
 	if err != nil {
 		t.Fatalf("New a: %v", err)
 	}
-	b, err := New(cfg, testLogger())
+	b, err := New(context.Background(), cfg, testLogger())
 	if err != nil {
 		t.Fatalf("New b: %v", err)
 	}
@@ -186,7 +187,7 @@ func TestDownloadThroughComponent_HTTP(t *testing.T) {
 
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
-	p, err := New(DatabaseConfig{
+	p, err := New(context.Background(), DatabaseConfig{
 		DatabaseAutoUpdateDir: dir,
 		Source: dbsource.Config{
 			Key:          "lite",

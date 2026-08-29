@@ -1,17 +1,18 @@
 package dbwrappers
 
-// Reset closes every singleton wrapper. Tests only.
+import (
+	"log/slog"
+	"time"
+
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
+)
+
+// Reset disposes every singleton wrapper. Tests only.
 func Reset() {
-	binLock.Reset(func() {
-		for key, w := range binByKey {
-			w.close()
-			delete(binByKey, key)
-		}
-	})
-	mmdbLock.Reset(func() {
-		for key, w := range mmdbByKey {
-			w.close()
-			delete(mmdbByKey, key)
-		}
-	})
+	reclaim.Reset()
+}
+
+// ResetWith is Reset with a grace and logger. Tests only.
+func ResetWith(grace time.Duration, logger *slog.Logger) {
+	reclaim.ResetWith(grace, logger)
 }

@@ -3,6 +3,7 @@ package ip2location
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,7 @@ func TestNew_LookupWithoutASNFile(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(DatabaseConfig{Source: dbsource.Config{Path: testDBFile}}, logger)
+	p, err := New(context.Background(), DatabaseConfig{Source: dbsource.Config{Path: testDBFile}}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -56,7 +57,7 @@ func TestNew_LookupDB8(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(DatabaseConfig{Source: dbsource.Config{Path: db8}}, logger)
+	p, err := New(context.Background(), DatabaseConfig{Source: dbsource.Config{Path: db8}}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestNew_LookupWithASNFile(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(DatabaseConfig{
+	p, err := New(context.Background(), DatabaseConfig{
 		Source:    dbsource.Config{Path: testDBFile},
 		AsnSource: dbsource.Config{Path: asnPath},
 	}, logger)
@@ -185,11 +186,11 @@ func TestNew_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 	t.Cleanup(dbwrappers.Reset)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := DatabaseConfig{Source: dbsource.Config{Path: testDBFile}}
-	a, err := New(cfg, logger)
+	a, err := New(context.Background(), cfg, logger)
 	if err != nil {
 		t.Fatalf("first New: %v", err)
 	}
-	b, err := New(cfg, logger)
+	b, err := New(context.Background(), cfg, logger)
 	if err != nil {
 		t.Fatalf("second New: %v", err)
 	}
@@ -249,7 +250,7 @@ func TestNew_DownloadThroughComponent(t *testing.T) {
 		t.Errorf("dated name: %s", path)
 	}
 
-	p, err := New(DatabaseConfig{
+	p, err := New(context.Background(), DatabaseConfig{
 		DatabaseAutoUpdateDir: dir,
 		Source: dbsource.Config{
 			Key:          "litezip",

@@ -48,7 +48,9 @@ The `ctx` passed into plugin `New` is the `CreateRouters` cancel context. The ne
 
 That cancel behavior is present on this pin. A later comment on the same issue said v2.11.7 did not cancel; that is comment-rank and was not re-checked in this clone. Follow this pin for what current master does.
 
-Extracts: [.sources/builder.go.md](.sources/builder.go.md), [.sources/providers.go.md](.sources/providers.go.md), [.sources/routerfactory.go.md](.sources/routerfactory.go.md), [.sources/issue-10547.md](.sources/issue-10547.md)
+Measured on this product’s compose image `traefik:v3.7.11` (2026-08-28). Probe in plugin `New` logged `ctx` as `*context.valueCtx`, `Err` nil, no deadline, `Cause` nil. A goroutine blocked on `ctx.Done()`. Adding then removing an unrelated Docker router (plugin YAML unchanged) produced: both `geoblock` and `geoblock2` `ctx.Done` with `Err`/`Cause` `context canceled`, then a new `New` each (~1 ms later). Same order on the second reload. This `ctx` is the router-generation teardown signal, not the HTTP request context (`ServeHTTP` uses `req.Context()`). It is not `Close`/`Stop`. A naive `Stop` of a process-wide singleton on this cancel races the next `New` that reuses the same singleton.
+
+Extracts: [.sources/builder.go.md](.sources/builder.go.md), [.sources/providers.go.md](.sources/providers.go.md), [.sources/routerfactory.go.md](.sources/routerfactory.go.md), [.sources/issue-10547.md](.sources/issue-10547.md), [.sources/compose-v3.7.11-lifecycle-probe.md](.sources/compose-v3.7.11-lifecycle-probe.md)
 
 ## Goroutines started in New leak unless they watch ctx
 
@@ -76,6 +78,7 @@ Extracts: [.sources/middlewarewasm.go.md](.sources/middlewarewasm.go.md), [.sour
 | Provider plugins have `Stop()`; middleware plugins do not | traefik@83c3499f:providers.go | source |
 | Host does not Close middleware on config change (WASM comment) | traefik@83c3499f:middlewarewasm.go | source |
 | Yaegi `New` ctx is `Done()` on new dynamic config, before next `New` | traefik#10547 (juliens) | vendor |
+| Same cancel-then-New on `traefik:v3.7.11`; `Err` is `context canceled`; no deadline; plugin YAML need not change | compose probe 2026-08-28 | ticket |
 | Goroutines that ignore ctx leak across reload | derived from routerfactory cancel + no Close | inference |
 
 No official-vs-source conflict. Official docs omit teardown; source and staff fill it. Follow source for this pin.

@@ -3,8 +3,8 @@ package dbprovider
 import "sync"
 
 // InstanceLock serializes create-once for a caller-owned map.
-// The map must stay in the caller's package: Yaegi panics on a type-assert
-// of a value stored as any in this package (Traefik plugin load).
+// Yaegi v0.16.1 panics on *reclaim.Table[*T] named in another package.
+// The process table is non-generic any; callers assert (pkg/reclaim).
 type InstanceLock struct {
 	mu sync.RWMutex
 }

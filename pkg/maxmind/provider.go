@@ -1,6 +1,7 @@
 package maxmind
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
@@ -48,8 +49,8 @@ type provider struct {
 }
 
 // New opens the MaxMind DatabaseProvider (thin facade over the MMDB wrapper).
-func New(config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
-	db, err := dbwrappers.OpenMMDB(dbwrappers.MMDBConfig{
+func New(ctx context.Context, config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
+	db, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
 		Dir:             config.DatabaseAutoUpdateDir,
 		Source:          config.Source,
 		DefaultFileName: DefaultSeedFileName,

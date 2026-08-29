@@ -1,6 +1,7 @@
 package dbwrappers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -14,8 +15,8 @@ import (
 
 	"github.com/oschwald/maxminddb-golang"
 
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
 // MMDBConfig is one MMDB file to resolve, open, and keep current.
@@ -36,34 +37,30 @@ type MMDB struct {
 	updater *dbsource.Updater
 }
 
-var (
-	mmdbLock  = dbprovider.NewInstanceLock()
-	mmdbByKey = map[string]*MMDB{}
-)
+const keyPrefixMMDB = "mmdb:"
 
-// OpenMMDB returns the singleton MMDB for cfg.
-func OpenMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
-	key := configHash(cfg)
-	var out *MMDB
-	err := mmdbLock.LoadOrStore(func() bool {
-		w, ok := mmdbByKey[key]
-		if ok {
-			out = w
+func mmdbKey(cfg MMDBConfig) string {
+	return keyPrefixMMDB + configHash(cfg)
+}
+
+// OpenMMDB returns the singleton MMDB for cfg and binds ctx on the process table.
+func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
+	key := mmdbKey(cfg)
+	v, err := reclaim.Open(ctx, key, func() (any, error) {
+		return newMMDB(cfg, logger)
+	}, func(v any) {
+		if w, ok := v.(*MMDB); ok {
+			w.close()
 		}
-		return ok
-	}, func() error {
-		w, err := newMMDB(cfg, logger)
-		if err != nil {
-			return err
-		}
-		mmdbByKey[key] = w
-		out = w
-		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	w, ok := v.(*MMDB)
+	if !ok {
+		return nil, fmt.Errorf("reclaim: %s: want *MMDB, got %T", key, v)
+	}
+	return w, nil
 }
 
 func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {

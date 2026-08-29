@@ -1,6 +1,7 @@
 package dbwrappers
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
 // DefaultBINMinAge is how long a dated BIN stays current before GET.
@@ -41,34 +43,30 @@ type BIN struct {
 	updater            *dbsource.Updater
 }
 
-var (
-	binLock  = dbprovider.NewInstanceLock()
-	binByKey = map[string]*BIN{}
-)
+const keyPrefixBIN = "bin:"
 
-// OpenBIN returns the singleton BIN for cfg.
-func OpenBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
-	key := configHash(cfg)
-	var out *BIN
-	err := binLock.LoadOrStore(func() bool {
-		w, ok := binByKey[key]
-		if ok {
-			out = w
+func binKey(cfg BINConfig) string {
+	return keyPrefixBIN + configHash(cfg)
+}
+
+// OpenBIN returns the singleton BIN for cfg and binds ctx on the process table.
+func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, error) {
+	key := binKey(cfg)
+	v, err := reclaim.Open(ctx, key, func() (any, error) {
+		return newBIN(cfg, logger)
+	}, func(v any) {
+		if w, ok := v.(*BIN); ok {
+			w.close()
 		}
-		return ok
-	}, func() error {
-		w, err := newBIN(cfg, logger)
-		if err != nil {
-			return err
-		}
-		binByKey[key] = w
-		out = w
-		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	w, ok := v.(*BIN)
+	if !ok {
+		return nil, fmt.Errorf("reclaim: %s: want *BIN, got %T", key, v)
+	}
+	return w, nil
 }
 
 func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
