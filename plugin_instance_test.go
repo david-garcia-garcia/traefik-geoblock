@@ -17,13 +17,15 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
+// instanceLog captures reclaim slog records for instance-reuse tests.
 type instanceLog struct {
 	mu   sync.Mutex
 	recs []slog.Record
 }
 
-func (h *instanceLog) Enabled(context.Context, slog.Level) bool { return true }
+func (h *instanceLog) Enabled(context.Context, slog.Level) bool { return true } // always capture
 
+// Handle stores a clone of each record.
 func (h *instanceLog) Handle(_ context.Context, r slog.Record) error {
 	h.mu.Lock()
 	h.recs = append(h.recs, r.Clone())
@@ -31,9 +33,10 @@ func (h *instanceLog) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
-func (h *instanceLog) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *instanceLog) WithGroup(string) slog.Handler      { return h }
+func (h *instanceLog) WithAttrs([]slog.Attr) slog.Handler { return h } // same sink
+func (h *instanceLog) WithGroup(string) slog.Handler      { return h } // same sink
 
+// events is each record’s message plus its key attr.
 func (h *instanceLog) events() [][2]string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -51,6 +54,7 @@ func (h *instanceLog) events() [][2]string {
 	return out
 }
 
+// countPutsPrefix counts reclaim_put events whose key starts with prefix.
 func countPutsPrefix(ev [][2]string, prefix string) int {
 	n := 0
 	for _, e := range ev {
@@ -61,6 +65,7 @@ func countPutsPrefix(ev [][2]string, prefix string) int {
 	return n
 }
 
+// countInstanceMsg counts events with the given reclaim message.
 func countInstanceMsg(ev [][2]string, msg string) int {
 	n := 0
 	for _, e := range ev {
@@ -71,6 +76,7 @@ func countInstanceMsg(ev [][2]string, msg string) int {
 	return n
 }
 
+// shortInstanceLeases resets the process table to a 25ms grace and captures logs.
 func shortInstanceLeases(t *testing.T) *instanceLog {
 	t.Helper()
 	dbwrappers.Reset()
@@ -80,6 +86,7 @@ func shortInstanceLeases(t *testing.T) *instanceLog {
 	return h
 }
 
+// instanceModuleRoot walks parents until go.mod so seed paths work from any test cwd.
 func instanceModuleRoot() string {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -97,6 +104,7 @@ func instanceModuleRoot() string {
 	}
 }
 
+// instanceBIN is an enabled IP2Location config that allows US.
 func instanceBIN(path, url, dir string) *Config {
 	return &Config{
 		Enabled: true,
@@ -113,6 +121,7 @@ func instanceBIN(path, url, dir string) *Config {
 	}
 }
 
+// mustRootPlugin calls root New and type-asserts *geoblock.Plugin.
 func mustRootPlugin(t *testing.T, ctx context.Context, cfg *Config, name string) *geoblock.Plugin {
 	t.Helper()
 	h, err := New(ctx, noopNext{}, cfg, name)
@@ -126,20 +135,24 @@ func mustRootPlugin(t *testing.T, ctx context.Context, cfg *Config, name string)
 	return p
 }
 
+// noopNext is a next handler that does nothing.
 type noopNext struct{}
 
 func (noopNext) ServeHTTP(http.ResponseWriter, *http.Request) {}
 
+// countHandler increments n on each ServeHTTP.
 type countHandler struct{ n *int }
 
 func (c countHandler) ServeHTTP(http.ResponseWriter, *http.Request) { *c.n++ }
 
+// usPassRequest is a GET with X-Real-IP 8.8.8.8 (US in the LITE seed).
 func usPassRequest() *http.Request {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Real-IP", "8.8.8.8")
 	return req
 }
 
+// requireLookupUS fails unless Lookup(8.8.8.8) returns country US.
 func requireLookupUS(t *testing.T, p *geoblock.Plugin) {
 	t.Helper()
 	rec, err := p.Lookup("8.8.8.8")
