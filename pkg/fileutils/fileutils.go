@@ -92,23 +92,28 @@ func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *s
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// Configured path already names a file.
 	if basePathOrFile != "" && fu.ExistsAndIsFile(basePathOrFile) {
 		return basePathOrFile, nil
 	}
+	// No basename: cannot join seeds/ or plugin-root candidates.
 	if defaultFile == "" {
 		return "", fmt.Errorf("fileutils: defaultFile must be provided when performing a search")
 	}
 
 	envPath := os.Getenv(PluginPathEnv)
+	// Env unset: operator must point at the plugin root.
 	if envPath == "" {
 		logger.Error(PluginPathEnv + " must be set to the plugin root")
 		return "", fmt.Errorf("%s must be set to the plugin root", PluginPathEnv)
 	}
+	// Env set but not a directory: wrong plugin-root value.
 	if !fu.ExistsAndIsDir(envPath) {
 		logger.Error(PluginPathEnv+" is not a directory; it is probably not the plugin root", "path", envPath)
 		return "", fmt.Errorf("%s is not a directory: %s", PluginPathEnv, envPath)
 	}
 
+	// Exact joins only: seeds/<name>, then <name> at the plugin root.
 	seedsPath := filepath.Join(envPath, "seeds", defaultFile)
 	rootPath := filepath.Join(envPath, defaultFile)
 	if fu.ExistsAndIsFile(seedsPath) {

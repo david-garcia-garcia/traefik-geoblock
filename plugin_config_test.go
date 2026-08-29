@@ -16,6 +16,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
+// pluginRootDir is the module cwd so New tests can set PluginPathEnv to the plugin root.
 func pluginRootDir(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()

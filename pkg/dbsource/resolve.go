@@ -15,18 +15,22 @@ func Resolve(cfg Config, logger *slog.Logger) (string, error) {
 	if err := Normalize(&cfg); err != nil {
 		return "", err
 	}
+	// Newest dated catalog file wins.
 	if latest, err := Latest(cfg.Dir, cfg.Key, cfg.DatabaseType); err == nil && latest != "" {
 		return latest, nil
 	}
+	// Operator seed path, or WARN and continue when it is missing.
 	if cfg.Path != "" {
 		if fileutils.Exists(cfg.Path) {
 			return cfg.Path, nil
 		}
 		logger.Warn("seed was specified but not found", "path", cfg.Path)
 	}
+	// No bundled default (ASN): wait for auto-update.
 	if cfg.DefaultFileName == "" {
 		return "", nil
 	}
+	// Plugin-root exact paths via Search.
 	found, err := fileutils.Default.Search("", cfg.DefaultFileName, logger)
 	if err != nil {
 		return "", err
