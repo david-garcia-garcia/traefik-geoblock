@@ -46,5 +46,5 @@ u, err := dbsource.Start(cfg, logger, onUpdate)
 ## Key files
 
 - `pkg/dbsource` — Config, Resolve, Update, unpack, Updater
-- `plugin.go` — `databaseSources`, pointers, `catalogSource`
+- `pkg/geoblock/plugin.go` — `databaseSources`, pointers, `catalogSource`
 - `pkg/dbutils` — HTTP GET, `DatedKeyGlob`, `DownloadHint`

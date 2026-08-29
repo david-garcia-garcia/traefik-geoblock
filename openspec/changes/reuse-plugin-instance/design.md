@@ -1,6 +1,6 @@
 ## Context
 
-See proposal.md — Why. `New` already mutates `Config` (defaults, pointer fallbacks, empty-source binds, temp auto-update dir) then opens a DatabaseProvider and builds a `Plugin`. Wrappers live on `reclaim.Default` under `bin:` / `mmdb:`. `ServeHTTP` is a value receiver and always uses `p.next`. Lifecycle tests type-assert `*Plugin` and watch wrapper reclaim logs.
+See proposal.md — Why. Root `New` mutates `Config` via `geoblock.Prepare`, opens a DatabaseProvider, then reuses one Plugin on `reclaim.Default`. Wrappers live under `bin:` / `mmdb:`. `pkg/geoblock` constructs and serves; it does not call `reclaim.Open`. `ServeHTTP` is a value receiver and always uses `p.next`. Wrapper lifecycle tests call `geoblock.New`. Instance tests call root `New`.
 
 ## Goals / Non-Goals
 
@@ -25,12 +25,13 @@ See proposal.md — Why. `New` already mutates `Config` (defaults, pointer fallb
 2. **Key is `plugin:` + name + `:` + hex hash of Config after New’s existing mutate steps.**
    Whole `Config` via `encoding/json` + FNV-64a (same algorithm as wrapper `configHash`). `encoding/json` sorts map keys, so the hash is stable. Name is the Traefik middleware name, not hashed into the body so logs stay readable.
 
-3. **Store `*Plugin` with `next` nil. Each `New` shallow-copies, then sets `next` and this call’s provider.**
-   Alternative: a new `routeHandler` type — rejected; `mustPlugin` and many tests assert `*Plugin`.
+3. **Store `*geoblock.Plugin` with `next` nil. Each root `New` calls `ForRoute(next, db)`.**
+   Alternative: a new `routeHandler` type — rejected; tests still type-assert `*geoblock.Plugin`.
    Alternative: mutate `next` on the stored Plugin — rejected; two routers would share one next.
+   Instance reclaim stays in the Yaegi root. `pkg/geoblock` is construct + ServeHTTP only.
 
-4. **Always `openDatabaseProvider` before `reclaim.Open`.**
-   First put order stays wrapper-then-plugin, so existing lifecycle tests that take `putKeys[0]` still see a wrapper key. The copy’s `db` is this `New`’s provider so lookups use wrappers bound to this context.
+4. **Always `geoblock.OpenDatabase` before `reclaim.Open`.**
+   First put order stays wrapper-then-plugin when tests call root `New`. The copy’s `db` is this `New`’s provider so lookups use wrappers bound to this context.
 
 5. **Plugin dispose is empty.**
    The incarnation has no keep-current loop. After grace the table drops it; maps and IP helpers become collectable when no copy remains. Wrappers dispose on their own keys.

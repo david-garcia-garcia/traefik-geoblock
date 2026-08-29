@@ -28,7 +28,7 @@ _Avoid_: dispose on `ctx.Done` with no wait
 - Watch stable `msg` + `key`. Info: `reclaim_put`, `reclaim_dispose`. Debug: `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`.
 - `ctx` is the host teardown context (Traefik `New` ctx), not `req.Context()`.
 - `dispose` stops background work and closes the value. The table runs it once per incarnation.
-- Prefix keys when more than one type shares Default (`bin:` / `mmdb:`).
+- Prefix keys when more than one type shares Default (`bin:` / `mmdb:` / `plugin:`).
 
 ## Pattern snippet
 

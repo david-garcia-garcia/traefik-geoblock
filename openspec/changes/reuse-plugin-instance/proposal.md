@@ -22,8 +22,8 @@ None.
 
 ## Impact
 
-- `plugin.go` `New` / `Plugin`
+- Root `plugin.go` `New` (reclaim). `pkg/geoblock` Prepare / NewCore / ServeHTTP
 - Process `reclaim` table (`plugin:` key prefix)
-- Tests: two `New` share Plugin fields; different `next`; name/config miss; reclaim / grace
-- Existing wrapper lifecycle tests still bind wrappers on every `New`
-- Usage: new packet for Plugin instance reclaim
+- Tests: root `plugin_instance_test.go` (share, next, miss, reclaim / grace). Wrapper lifecycle stays in `pkg/geoblock`
+- Existing wrapper lifecycle tests still bind wrappers on every `geoblock.New`
+- Usage: packets for Plugin packages and instance reclaim

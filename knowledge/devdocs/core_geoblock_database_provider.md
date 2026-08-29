@@ -4,7 +4,7 @@
 
 **DatabaseProvider**:
 The interface the plugin uses to open a geo database, look up metadata, and run auto-update.
-_Avoid_: calling an IP2Location SDK type from `plugin.go`.
+_Avoid_: calling an IP2Location SDK type from `pkg/geoblock`.
 
 **Record**:
 Country, region, city, ISP, domain, and ASN for one IP. Country is used for allow/block. Other fields may be empty.
@@ -43,4 +43,4 @@ req.Header.Set("X-Geo-Country", rec.Field("country"))
 - `pkg/ip2location` — geo Lookup plus optional ASN
 - `pkg/ipinfo` — IPinfo Lite/Core/Plus field mapping
 - `pkg/maxmind` — GeoIP2 / GeoLite2 field mapping
-- `plugin.go` — `requestHeaderEnrich`, `applyGeoHeaders`
+- `pkg/geoblock/plugin.go` — `requestHeaderEnrich`, `applyGeoHeaders`
