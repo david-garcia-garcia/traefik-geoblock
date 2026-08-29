@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Downloads are a named catalog
-Traefik Config SHALL expose `databaseSources` as a map of operator-chosen name to `{ url, headers, databaseType, archive, path }`. `headers` is an optional map of HTTP header name to value. `path` is an optional existing file used as the seed when no dated catalog file exists. It is an operator file path (typically absolute), not a basename and not a directory to walk. The URL MAY include query parameters (including a download token). Catalog keys `geo` and `asn` are ordinary names. The key `default_ip2location` is reserved: plugin creation SHALL insert that row when the operator did not define it. The inserted row SHALL use the official free IP2Location geo LITE ZIP (`https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP`), `databaseType` `bin`, and `archive` `zip`. It SHALL NOT include an ASN source. If the operator already defined `default_ip2location`, the plugin MUST keep that row. `CreateConfig` SHALL initialize the map.
+Traefik Config SHALL expose `databaseSources` as a map of operator-chosen name to `{ url, headers, databaseType, archive, path }`. `headers` is an optional map of HTTP header name to value. `path` is an optional existing file used as the seed when no dated catalog file exists. It is an operator file path (typically absolute), not a basename and not a directory to walk. The URL MAY include query parameters (including a download token). Catalog keys `geo` and `asn` are ordinary names. The key `default_ip2location` is reserved: plugin creation SHALL insert that row when the operator did not define it. The inserted row SHALL use the official free IP2Location geo LITE ZIP (`https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP`), `databaseType` `bin`, and `archive` `zip`. It SHALL NOT include an ASN source. The key `default_geolite` is reserved: plugin creation SHALL insert that row when the operator did not define it. The inserted row SHALL use the unofficial P3TERX Country MMDB (`https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb`), `databaseType` `mmdb`, and `archive` `none`. It SHALL NOT include City or ASN. The plugin MUST NOT commit a live GeoLite file. If the operator already defined `default_ip2location` or `default_geolite`, the plugin MUST keep that row. `CreateConfig` SHALL initialize the map.
 
 #### Scenario: Geo-named catalog key is an ordinary name
 - **WHEN** `databaseSources` contains a key `geo`
@@ -26,8 +26,17 @@ Traefik Config SHALL expose `databaseSources` as a map of operator-chosen name t
 - **THEN** plugin creation keeps that row
 - **AND** does not replace its URL or type
 
+#### Scenario: Default geolite catalog row is inserted
+- **WHEN** plugin creation runs and `databaseSources` has no `default_geolite` key
+- **THEN** the catalog contains `default_geolite` with the unofficial P3TERX Country MMDB URL, `databaseType` `mmdb`, and `archive` `none`
+
+#### Scenario: Operator default geolite catalog row is kept
+- **WHEN** the operator set `databaseSources.default_geolite` to a custom row
+- **THEN** plugin creation keeps that row
+- **AND** does not replace its URL or type
+
 ### Requirement: Providers bind with pointers
-The plugin SHALL expose `ip2location_source_geo`, `ip2location_source_asn`, `ipinfo_source`, and `maxmind_source` as optional catalog key names. Empty `ip2location_source_geo` SHALL bind `default_ip2location`. A non-empty pointer that is not a key in `databaseSources` SHALL log a WARN naming the pointer and key, SHALL NOT fail plugin creation, and SHALL be treated as empty (IP2Location geo → `default_ip2location`; IPinfo or MaxMind → bundled seed; IP2Location ASN → no ASN). Pointers that do not apply to the selected `databaseProvider` SHALL be ignored. A named catalog `path` SHALL be used only when a pointer names that entry. An invalid `databaseProvider` SHALL fail plugin creation.
+The plugin SHALL expose `ip2location_source_geo`, `ip2location_source_asn`, `ipinfo_source`, and `maxmind_source` as optional catalog key names. Empty `ip2location_source_geo` SHALL bind `default_ip2location`. Empty `maxmind_source` SHALL bind `default_geolite`. A non-empty pointer that is not a key in `databaseSources` SHALL log a WARN naming the pointer and key, SHALL NOT fail plugin creation, and SHALL be treated as empty (IP2Location geo → `default_ip2location`; MaxMind → `default_geolite`; IPinfo → bundled seed; IP2Location ASN → no ASN). Pointers that do not apply to the selected `databaseProvider` SHALL be ignored. A named catalog `path` SHALL be used only when a pointer names that entry. An invalid `databaseProvider` SHALL fail plugin creation.
 
 #### Scenario: Missing catalog key warns and falls back
 - **WHEN** `databaseProvider` is `ipinfo` and `ipinfo_source` is `lite` and `databaseSources` has no `lite` key
@@ -39,6 +48,11 @@ The plugin SHALL expose `ip2location_source_geo`, `ip2location_source_asn`, `ipi
 - **WHEN** `databaseProvider` is `ip2location` and `ip2location_source_geo` is empty
 - **THEN** plugin creation binds `default_ip2location`
 - **AND** that entry is eligible for download as the geo file
+
+#### Scenario: Empty MaxMind pointer binds the default geolite catalog
+- **WHEN** `databaseProvider` is `maxmind` and `maxmind_source` is empty
+- **THEN** plugin creation binds `default_geolite`
+- **AND** that entry is eligible for download as the Country file
 
 #### Scenario: Empty pointer keeps the default seed
 - **WHEN** all source pointers are empty and a bundled default database file exists

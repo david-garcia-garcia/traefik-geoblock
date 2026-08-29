@@ -7,7 +7,7 @@ The file-location and keep-current owner (`pkg/dbsource`): Resolve, GET, unpack,
 _Avoid_: download, slot, dbdownload, dbmanager
 
 **Catalog**:
-Named map `databaseSources` of seed path and/or URL. Operator-chosen keys plus reserved `default_ip2location`.
+Named map `databaseSources` of seed path and/or URL. Operator-chosen keys plus reserved `default_ip2location` and `default_geolite`.
 _Avoid_: reserved `geo`/`asn` keys, `databaseDownloads`
 
 **Pointer**:
@@ -25,8 +25,8 @@ GEO and ASN are two independent wrapper + source pairs. The provider holds the w
 ## How to use
 
 - Put seed `path` and/or `url` on a catalog entry. Bind with `ip2location_source_geo`, `ip2location_source_asn`, `ipinfo_source`, or `maxmind_source`.
-- `New` inserts reserved `default_ip2location` (free IP2Location geo LITE ZIP, `bin`/`zip`) unless the operator already set that key. Empty `ip2location_source_geo` binds that key. Keep an operator-defined `default_ip2location` row.
-- A pointer to a missing key WARNs and is treated as empty (IP2Location geo → `default_ip2location`; IPinfo/MaxMind → bundled seed; ASN → no ASN). Unknown `databaseType`/`archive` fails `New`. A bound pointer whose `databaseType` does not match the provider (`bin` vs `mmdb`) fails `New`. A bound URL with empty `databaseAutoUpdateDir` WARNs and uses `os.TempDir()`/`traefik-geoblock`. Unused pointers for another provider are ignored.
+- `New` inserts reserved `default_ip2location` (free IP2Location geo LITE ZIP, `bin`/`zip`) and `default_geolite` (unofficial P3TERX Country MMDB, `mmdb`/`none`) unless the operator already set that key. Empty `ip2location_source_geo` binds `default_ip2location`. Empty `maxmind_source` binds `default_geolite`. Keep an operator-defined reserved row. Do not commit a live GeoLite file; Resolve still opens the official dummy Country seed until a dated file exists.
+- A pointer to a missing key WARNs and is treated as empty (IP2Location geo → `default_ip2location`; MaxMind → `default_geolite`; IPinfo → bundled seed; ASN → no ASN). Unknown `databaseType`/`archive` fails `New`. A bound pointer whose `databaseType` does not match the provider (`bin` vs `mmdb`) fails `New`. A bound URL with empty `databaseAutoUpdateDir` WARNs and uses `os.TempDir()`/`traefik-geoblock`. Unused pointers for another provider are ignored.
 - Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path), else the vendor default filename under `seeds/`. There is no `*_databaseFilePath`.
 - `Start` returns a nil Updater when the URL is empty.
 

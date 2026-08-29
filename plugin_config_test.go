@@ -13,6 +13,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 func TestNew(t *testing.T) {
@@ -126,6 +127,10 @@ func TestNew(t *testing.T) {
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			// Path-only reserved row so New does not GET the unofficial Country URL.
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultGeoliteCatalogKey: {Path: maxmindFilePath, DatabaseType: "mmdb"},
+			},
 		}, pluginName)
 		if err != nil {
 			t.Errorf("expected no error with databaseProvider maxmind, but got: %v", err)
@@ -289,6 +294,49 @@ func TestNew(t *testing.T) {
 			t.Fatal("expected plugin")
 		}
 		if got := cfg.DatabaseSources[DefaultIP2LocationCatalogKey].URL; got != custom {
+			t.Errorf("operator row replaced: got %q", got)
+		}
+	})
+
+	t.Run("DefaultGeoliteCatalogInserted", func(t *testing.T) {
+		cfg := &Config{DatabaseProvider: DatabaseProviderMaxMind, DatabaseSources: map[string]DatabaseSource{}}
+		ensureDefaultGeoliteCatalog(cfg)
+		bindEmptyMaxmindSource(cfg)
+		row, ok := cfg.DatabaseSources[DefaultGeoliteCatalogKey]
+		if !ok {
+			t.Fatal("expected default_geolite catalog row")
+		}
+		if row.URL != maxmind.DefaultGeoliteURL {
+			t.Errorf("default URL: got %q", row.URL)
+		}
+		if row.DatabaseType != "mmdb" || row.Archive != "none" {
+			t.Errorf("default type/archive: got %q %q", row.DatabaseType, row.Archive)
+		}
+		if cfg.MaxmindSource != DefaultGeoliteCatalogKey {
+			t.Errorf("maxmind pointer: got %q", cfg.MaxmindSource)
+		}
+	})
+
+	t.Run("OperatorDefaultGeoliteKept", func(t *testing.T) {
+		custom := "https://example.com/custom.mmdb"
+		cfg := &Config{
+			Enabled:              true,
+			DatabaseProvider:     DatabaseProviderMaxMind,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultGeoliteCatalogKey: {URL: custom, DatabaseType: "mmdb", Archive: "none", Path: maxmindFilePath},
+			},
+		}
+		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if plugin == nil {
+			t.Fatal("expected plugin")
+		}
+		if got := cfg.DatabaseSources[DefaultGeoliteCatalogKey].URL; got != custom {
 			t.Errorf("operator row replaced: got %q", got)
 		}
 	})

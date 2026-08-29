@@ -144,7 +144,9 @@ Extracts: [.sources/databases-client-apis.md](.sources/databases-client-apis.md)
 
 Issue [#52](https://github.com/david-garcia-garcia/traefik-geoblock/issues/52) says the reporter already downloads MaxMind with their own container and API key, and edits in [P3TERX/GeoLite.mmdb](https://github.com/P3TERX/GeoLite.mmdb) as a way to skip the API key.
 
-That link is **ticket / comment rank**. It is **not** an official MaxMind download. Official GeoLite requires an account and license key. Redistributing live GeoLite files without holding recipients to the EULA (including 30-day destroy) conflicts with official EULA §6.1 / §6.3. Do not use that repo as a download source in product docs or CI.
+That link is **not** an official MaxMind download. Official GeoLite requires an account and license key. Redistributing live GeoLite files without holding recipients to the EULA (including 30-day destroy) conflicts with official EULA §6.1 / §6.3. This plugin does **not** commit a live GeoLite MMDB.
+
+Human 2026-08-29: reserved catalog `default_geolite` MAY GET the Country file from that repo. Verified GET (follow redirects): `https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb` → `raw.githubusercontent.com` … `200` `application/octet-stream` Content-Length `8619527`. City/ASN files on the same branch are not the default. Official permalink + Basic Auth remains the operator example for licensed GeoLite.
 
 Extract: [.sources/issue-52.md](.sources/issue-52.md)
 

@@ -33,7 +33,9 @@ const (
 
 	// DefaultIP2LocationCatalogKey is the reserved catalog name for the free geo LITE ZIP.
 	DefaultIP2LocationCatalogKey = "default_ip2location"
-	defaultAutoUpdateDirName     = "traefik-geoblock"
+	// DefaultGeoliteCatalogKey is the reserved catalog name for the unofficial Country MMDB GET.
+	DefaultGeoliteCatalogKey = "default_geolite"
+	defaultAutoUpdateDirName = "traefik-geoblock"
 )
 
 // Log status constants for observability headers
@@ -76,12 +78,13 @@ type Config struct {
 	DatabaseProvider string `json:"databaseProvider,omitempty" mapstructure:"databaseProvider"`
 
 	// DatabaseSources is the catalog of database files (seed path and/or URL).
-	// Operator keys plus reserved default_ip2location.
+	// Operator keys plus reserved default_ip2location and default_geolite.
 	DatabaseSources map[string]DatabaseSource `json:"databaseSources,omitempty" mapstructure:"databaseSources"`
 	// DatabaseAutoUpdateDir is the shared dir for dated files. Empty with a bound URL uses a temp dir.
 	DatabaseAutoUpdateDir string `json:"databaseAutoUpdateDir,omitempty" mapstructure:"databaseAutoUpdateDir"`
 
-	// Catalog pointers. Empty IP2Location geo binds default_ip2location. Unused pointers are ignored.
+	// Catalog pointers. Empty IP2Location geo binds default_ip2location.
+	// Empty MaxMind binds default_geolite. Unused pointers are ignored.
 	Ip2locationSourceGeo string `json:"ip2location_source_geo,omitempty" mapstructure:"ip2location_source_geo"`
 	Ip2locationSourceAsn string `json:"ip2location_source_asn,omitempty" mapstructure:"ip2location_source_asn"`
 	IpinfoSource         string `json:"ipinfo_source,omitempty" mapstructure:"ipinfo_source"`
@@ -234,8 +237,10 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich, logger)
 
 	ensureDefaultIP2LocationCatalog(cfg)
+	ensureDefaultGeoliteCatalog(cfg)
 	applyMissingPointerFallbacks(cfg, logger)
 	bindEmptyIP2LocationGeo(cfg)
+	bindEmptyMaxmindSource(cfg)
 	if err := validateDatabaseSources(cfg); err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
@@ -401,6 +406,21 @@ func ensureDefaultIP2LocationCatalog(cfg *Config) {
 	}
 }
 
+// ensureDefaultGeoliteCatalog inserts the reserved Country MMDB row unless the operator already set that key.
+func ensureDefaultGeoliteCatalog(cfg *Config) {
+	if cfg.DatabaseSources == nil {
+		cfg.DatabaseSources = make(map[string]DatabaseSource)
+	}
+	if _, ok := cfg.DatabaseSources[DefaultGeoliteCatalogKey]; ok {
+		return
+	}
+	cfg.DatabaseSources[DefaultGeoliteCatalogKey] = DatabaseSource{
+		URL:          maxmind.DefaultGeoliteURL,
+		DatabaseType: dbsource.TypeMMDB,
+		Archive:      dbsource.ArchiveNone,
+	}
+}
+
 // applyMissingPointerFallbacks clears a bound pointer that is not a catalog key and WARNs.
 func applyMissingPointerFallbacks(cfg *Config, logger *slog.Logger) {
 	if logger == nil {
@@ -439,6 +459,16 @@ func bindEmptyIP2LocationGeo(cfg *Config) {
 	}
 	if strings.TrimSpace(cfg.Ip2locationSourceGeo) == "" {
 		cfg.Ip2locationSourceGeo = DefaultIP2LocationCatalogKey
+	}
+}
+
+// bindEmptyMaxmindSource sets an empty MaxMind pointer to the reserved catalog key.
+func bindEmptyMaxmindSource(cfg *Config) {
+	if providerName(cfg) != DatabaseProviderMaxMind {
+		return
+	}
+	if strings.TrimSpace(cfg.MaxmindSource) == "" {
+		cfg.MaxmindSource = DefaultGeoliteCatalogKey
 	}
 }
 

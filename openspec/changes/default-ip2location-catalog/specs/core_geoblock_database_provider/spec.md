@@ -12,3 +12,8 @@ IP2Location download pointers SHALL live on Traefik Config as `ip2location_sourc
 - **WHEN** `databaseProvider` is `ip2location` and `ip2location_source_geo` is empty
 - **THEN** plugin creation binds `default_ip2location`
 - **AND** opens that source (dated file, catalog path, or bundled geo BIN)
+
+#### Scenario: Empty MaxMind pointer uses default geolite catalog
+- **WHEN** `databaseProvider` is `maxmind` and `maxmind_source` is empty
+- **THEN** plugin creation binds `default_geolite`
+- **AND** opens that source (dated file, catalog path, or bundled dummy Country MMDB)
