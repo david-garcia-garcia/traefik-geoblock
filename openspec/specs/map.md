@@ -9,6 +9,7 @@ Allowlist of root + domain: `openspec/specs/domains.md`.
 
 - database
 - observability
+- plugin
 
 ## std
 

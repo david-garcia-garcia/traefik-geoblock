@@ -5,6 +5,11 @@ priority: normal
 local: core_geoblock_plugin_packages.md
 description: How the Traefik Yaegi plugin keeps entrypoints at module root and helpers under pkg/.
 
+## Plugin instance
+priority: normal
+local: core_geoblock_plugin_instance.md
+description: How New reuses one Plugin per middleware name and config hash.
+
 ## Database provider
 priority: normal
 local: core_geoblock_database_provider.md

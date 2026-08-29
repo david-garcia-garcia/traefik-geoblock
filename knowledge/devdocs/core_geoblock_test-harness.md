@@ -4,7 +4,7 @@
 
 **Package test**:
 A `*_test.go` file in the same Go package as the code it covers.
-_Avoid_: a parallel `tests/` tree; putting `New` / `ServeHTTP` cases under `pkg/`.
+_Avoid_: a parallel `tests/` tree; putting instance-reclaim cases in `pkg/geoblock`.
 
 **Throughput gate**:
 A `TestThroughput_*` that fails if ops/s drop below the floor. Skipped with `-short`.
@@ -20,7 +20,8 @@ Unit and bench tests live next to the owner package. Traefik behavior is proven 
 
 ## How to use
 
-- Change `plugin.go` policy or config → add or extend a package test in the matching `plugin_*_test.go` (config, policy, ipheaders, filters, observe). Shared fixtures stay in `plugin_test.go`.
+- Change `pkg/geoblock` policy or config → add or extend a package test in `pkg/geoblock/plugin_*_test.go` (config, policy, ipheaders, filters, observe). Shared fixtures stay in `pkg/geoblock/plugin_test.go`.
+- Change instance reclaim (name+config key, grace) → add or extend `plugin_instance_test.go` at module root. That file calls root `New`, not `geoblock.New`.
 - Change a helper in `pkg/<name>` → add or extend `pkg/<name>/*_test.go`.
 - Change lookup or `ServeHTTP` cost → run `go test -bench=BenchmarkPlugin -benchmem`. MaxMind benches (`BenchmarkPlugin_*MaxMind`) use dummy IP `81.2.69.142`, not 8.8.8.8. Keep `TestThroughput_*` floors conservative; raise them only after CI samples.
 - Change Traefik-visible behavior (headers, labels, blocking) → add a `whoami-*` service in `docker-compose.yml` with a unique `PathPrefix` and matching plugin labels, then a Pester `Context` / `It` in `scripts/integration-tests.Tests.ps1`.
@@ -47,13 +48,15 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 ## Key files
 
-- `plugin_test.go` — shared fixtures (`noopHandler`, BIN helpers)
-- `plugin_config_test.go` — `New`, deprecated aliases, auto-update
-- `plugin_policy_test.go` — country / IP / private allow-deny
-- `plugin_ipheaders_test.go` — IP extraction and `ipHeaderStrategy`
-- `plugin_filters_test.go` — ignore verbs, include/exclude path regex, bypass headers
-- `plugin_observe_test.go` — `logStatusDetailHeader` and `requestHeaderEnrich`
-- `perf_test.go` — throughput gates and `BenchmarkPlugin_*`
+- `plugin.go` — Yaegi entrypoints and instance reclaim
+- `plugin_instance_test.go` — root `New` share / miss / reclaim / grace
+- `pkg/geoblock/plugin_test.go` — shared fixtures (`noopHandler`, BIN helpers)
+- `pkg/geoblock/plugin_config_test.go` — `New`, deprecated aliases, auto-update
+- `pkg/geoblock/plugin_policy_test.go` — country / IP / private allow-deny
+- `pkg/geoblock/plugin_ipheaders_test.go` — IP extraction and `ipHeaderStrategy`
+- `pkg/geoblock/plugin_filters_test.go` — ignore verbs, include/exclude path regex, bypass headers
+- `pkg/geoblock/plugin_observe_test.go` — `logStatusDetailHeader` and `requestHeaderEnrich`
+- `pkg/geoblock/perf_test.go` — throughput gates and `BenchmarkPlugin_*`
 - `pkg/*/*_test.go` — helper package tests
 - `docker-compose.yml` — Traefik + whoami routes
 - `scripts/integration-tests.Tests.ps1` — Pester cases

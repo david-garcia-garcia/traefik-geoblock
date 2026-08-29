@@ -1,19 +1,37 @@
-package traefik_geoblock
+package geoblock
 
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 )
 
-const (
+func moduleRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "."
+		}
+		dir = parent
+	}
+}
+
+var (
 	pluginName      = "geoblock"
-	dbFilePath      = "./seeds/IP2LOCATION-LITE-DB1.IPV6.BIN"
-	db8FilePath     = "./testdata/IP2LOCATION-DB8.BIN"
-	ipinfoFilePath  = "./seeds/ipinfo_lite.mmdb"
-	maxmindFilePath = "./seeds/GeoIP2-Country-Test.mmdb"
+	dbFilePath      = filepath.Join(moduleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
+	db8FilePath     = filepath.Join(moduleRoot(), "testdata", "IP2LOCATION-DB8.BIN")
+	ipinfoFilePath  = filepath.Join(moduleRoot(), "seeds", "ipinfo_lite.mmdb")
+	maxmindFilePath = filepath.Join(moduleRoot(), "seeds", "GeoIP2-Country-Test.mmdb")
 )
 
 func seedCatalog(path string) map[string]DatabaseSource {
@@ -52,8 +70,8 @@ func requireASN(tb testing.TB) string {
 		}
 	}
 	for _, candidate := range []string{
-		"./IP2LOCATION-LITE-ASN.IPV6.BIN",
-		"./testdata/IP2LOCATION-LITE-ASN.IPV6.BIN",
+		filepath.Join(moduleRoot(), "IP2LOCATION-LITE-ASN.IPV6.BIN"),
+		filepath.Join(moduleRoot(), "testdata", "IP2LOCATION-LITE-ASN.IPV6.BIN"),
 		`D:\IP2LOCATION-LITE-ASN.IPV6.BIN`,
 	} {
 		if _, err := os.Stat(candidate); err == nil {

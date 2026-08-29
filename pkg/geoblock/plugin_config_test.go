@@ -1,4 +1,4 @@
-package traefik_geoblock
+package geoblock
 
 import (
 	"context"
@@ -16,14 +16,14 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
-// pluginRootDir is the module cwd so New tests can set PluginPathEnv to the plugin root.
+// pluginRootDir is the module root so New tests can set PluginPathEnv for seed lookup.
 func pluginRootDir(t *testing.T) string {
 	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
+	root := moduleRoot()
+	if root == "." {
+		t.Fatal("go.mod not found")
 	}
-	return wd
+	return root
 }
 
 func TestNew(t *testing.T) {

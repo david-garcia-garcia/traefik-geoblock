@@ -1,10 +1,11 @@
-package traefik_geoblock
+package geoblock
 
 import (
 	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -100,7 +101,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			Ip2locationSourceGeo: "seed",
 			AllowedCountries:     []string{"DE"},
 			DisallowedStatusCode: http.StatusForbidden,
-			BanHtmlFilePath:      "geoblockban.html",
+			BanHtmlFilePath:      filepath.Join(moduleRoot(), "geoblockban.html"),
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
@@ -135,7 +136,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			AllowedCountries:     []string{},
 			AllowPrivate:         false,
 			DisallowedStatusCode: http.StatusForbidden,
-			BanHtmlFilePath:      "geoblockban.html",
+			BanHtmlFilePath:      filepath.Join(moduleRoot(), "geoblockban.html"),
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
