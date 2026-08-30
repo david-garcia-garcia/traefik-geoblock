@@ -17,7 +17,7 @@ When `mode` is `enrich` or `enrichandblock`, the plugin SHALL open every `databa
 - **THEN** plugin creation fails
 
 ### Requirement: Enabled rows name a column map
-An enabled row MUST set `fields` or `fieldsPreconfigured`, not both. Empty both SHALL fail plugin creation. `fieldsPreconfigured` SHALL be a named preset whose format matches the row `databaseType`. Unknown preset names or a format mismatch SHALL fail plugin creation. After validate, the plugin SHALL expand the preset into `fields` and SHALL clear `fieldsPreconfigured` so a later Prepare is not both-set.
+An enabled row MUST set `fields` or `fieldsPreconfigured`, not both. Empty both SHALL fail plugin creation. The failure error MUST state that the plugin does not start and that this middleware is not applied. `fieldsPreconfigured` SHALL be a named preset whose format matches the row `databaseType`. Unknown preset names or a format mismatch SHALL fail plugin creation. After validate, the plugin SHALL expand the preset into `fields` and SHALL clear `fieldsPreconfigured` so a later Prepare is not both-set.
 
 #### Scenario: Unknown preset fails
 - **WHEN** an enabled row sets `fieldsPreconfigured` to `not-a-preset`
@@ -30,6 +30,12 @@ An enabled row MUST set `fields` or `fieldsPreconfigured`, not both. Empty both 
 #### Scenario: Both maps fail
 - **WHEN** an enabled row sets `fields` and `fieldsPreconfigured`
 - **THEN** plugin creation fails
+
+#### Scenario: Empty both maps names the implication
+- **WHEN** an enabled row sets neither `fields` nor `fieldsPreconfigured`
+- **THEN** plugin creation fails
+- **AND** the error text includes `plugin does not start`
+- **AND** the error text includes `this middleware is not applied`
 
 ### Requirement: Field values name a Record key and MMDB scalar type
 `fields` SHALL map on-disk path to a Field: Record key plus MMDB scalar type. A YAML value MAY be the Record key string (type `string`) or `{ key, type }` with `type` `string` or `uint32`. Empty `type` SHALL be `string`. Unknown Record keys or unknown types SHALL fail plugin creation. Type SHALL NOT be inferred from the Record key. The `maxmind_asn` preset SHALL set `autonomous_system_number` to type `uint32`. IPinfo `asn` SHALL stay type `string`. BIN Lookup SHALL ignore type (columns are strings).
