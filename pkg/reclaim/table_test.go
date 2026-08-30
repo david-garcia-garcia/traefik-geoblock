@@ -124,14 +124,14 @@ func waitUntil(t *testing.T, cond func() bool) {
 	t.Fatal("timeout waiting for condition")
 }
 
-// mustSlot returns the mapped slot or fails.
-func mustSlot(t *testing.T, tab *Table, key string) *slot {
+// mustSlotA returns the mapped slot for key a or fails.
+func mustSlotA(t *testing.T, tab *Table) *slot {
 	t.Helper()
 	tab.mu.Lock()
 	defer tab.mu.Unlock()
-	e := tab.items[key]
+	e := tab.items["a"]
 	if e == nil {
-		t.Fatalf("missing slot %s", key)
+		t.Fatal("missing slot a")
 	}
 	return e
 }
@@ -417,7 +417,7 @@ func TestTable_OpenNilContextPanics(t *testing.T) {
 			t.Fatal("expected panic")
 		}
 	}()
-	_, _ = tab.Open(nil, "a", func() (any, error) { return &box{n: 1}, nil })
+	_, _ = tab.Open(nil, "a", func() (any, error) { return &box{n: 1}, nil }) //nolint:staticcheck // Open must panic on nil
 }
 
 // TestTable_OpenBackgroundDoesNotPanic checks that Background is accepted (Yaegi Done is often nil).
@@ -652,7 +652,7 @@ func TestTable_StaleFireAfterReclaimNoops(t *testing.T) {
 	}
 	cancel1()
 	waitKeyMsg(t, h, MsgOrphan, "a")
-	e := mustSlot(t, tab, "a")
+	e := mustSlotA(t, tab)
 	gen := e.graceGen
 
 	ctx2, cancel2 := context.WithCancel(context.Background())
@@ -672,7 +672,7 @@ func TestTable_StaleFireAfterReclaimNoops(t *testing.T) {
 	if countKeyMsg(h.events(), MsgDispose, "a") != 0 {
 		t.Fatalf("stale fire must not dispose: %+v", h.events())
 	}
-	if mustSlot(t, tab, "a").value != first {
+	if mustSlotA(t, tab).value != first {
 		t.Fatal("slot replaced")
 	}
 }
@@ -689,7 +689,7 @@ func TestTable_StaleFireWhileHeldNoops(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	e := mustSlot(t, tab, "a")
+	e := mustSlotA(t, tab)
 	tab.fire("a", e, e.graceGen)
 	if ended.Load() {
 		t.Fatal("fire must not run while a holder is live")
@@ -711,7 +711,7 @@ func TestTable_StaleFireAfterResetNoops(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Open 1: %v", err)
 	}
-	old := mustSlot(t, tab, "a")
+	old := mustSlotA(t, tab)
 	oldGen := old.graceGen
 	tab.Reset()
 	waitUntil(t, firstEnded.Load)
