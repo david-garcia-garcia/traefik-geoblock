@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
@@ -192,7 +191,7 @@ func boundSourceKeys(cfg *Config) []string {
 }
 
 // catalogSource builds a dbsource.Config from one catalog key.
-func catalogSource(cfg *Config, key, databaseType string, minAge time.Duration) dbsource.Config {
+func catalogSource(cfg *Config, key, databaseType string) dbsource.Config {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return dbsource.Config{}
@@ -209,7 +208,7 @@ func catalogSource(cfg *Config, key, databaseType string, minAge time.Duration) 
 		DatabaseType: firstNonEmpty(entry.DatabaseType, databaseType),
 		Archive:      entry.Archive,
 		Dir:          strings.TrimSpace(cfg.DatabaseAutoUpdateDir),
-		MinAge:       minAge,
+		MinAge:       dbsource.DefaultMinAge,
 	}
 }
 

@@ -213,18 +213,18 @@ func openDatabaseProvider(ctx context.Context, cfg *Config, logger *slog.Logger)
 	case DatabaseProviderIP2Location:
 		return ip2location.New(ctx, ip2location.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.Ip2locationSourceGeo, dbsource.TypeBIN, ip2location.DownloadMinAge),
-			AsnSource:             catalogSource(cfg, cfg.Ip2locationSourceAsn, dbsource.TypeBIN, ip2location.DownloadMinAge),
+			Source:                catalogSource(cfg, cfg.Ip2locationSourceGeo, dbsource.TypeBIN),
+			AsnSource:             catalogSource(cfg, cfg.Ip2locationSourceAsn, dbsource.TypeBIN),
 		}, logger)
 	case DatabaseProviderIPinfo:
 		return ipinfo.New(ctx, ipinfo.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.IpinfoSource, dbsource.TypeMMDB, ipinfo.DownloadMinAge),
+			Source:                catalogSource(cfg, cfg.IpinfoSource, dbsource.TypeMMDB),
 		}, logger)
 	case DatabaseProviderMaxMind:
 		return maxmind.New(ctx, maxmind.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.MaxmindSource, dbsource.TypeMMDB, maxmind.DownloadMinAge),
+			Source:                catalogSource(cfg, cfg.MaxmindSource, dbsource.TypeMMDB),
 		}, logger)
 	default:
 		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)
