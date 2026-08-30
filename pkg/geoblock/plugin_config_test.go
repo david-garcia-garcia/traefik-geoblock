@@ -136,7 +136,7 @@ func TestNew(t *testing.T) {
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
-				"seed":                       {Path: dbFilePath, DatabaseType: dbsource.TypeBIN, Fields: dbwrappers.FieldMap{"country_short": "not-a-meta"}},
+				"seed":                       {Path: dbFilePath, DatabaseType: dbsource.TypeBIN, Fields: map[string]any{"country_short": "not-a-meta"}},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -153,6 +153,34 @@ func TestNew(t *testing.T) {
 		}
 	})
 
+	t.Run("UnknownFieldTypeFails", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode: ModeEnrichAndBlock,
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
+				"seed": {
+					Path:         dbFilePath,
+					DatabaseType: dbsource.TypeBIN,
+					Fields: map[string]any{
+						"country_short": map[string]any{"key": dbprovider.MetaCountry, "type": "float64"},
+					},
+				},
+			},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err == nil {
+			t.Fatal("expected error about unknown field type")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil")
+		}
+		if !strings.Contains(err.Error(), "field type") {
+			t.Errorf("expected field type error, got: %v", err)
+		}
+	})
+
 	t.Run("FieldsAndPresetTogetherFails", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode: ModeEnrichAndBlock,
@@ -161,7 +189,7 @@ func TestNew(t *testing.T) {
 				"seed": {
 					Path:                dbFilePath,
 					DatabaseType:        dbsource.TypeBIN,
-					Fields:              dbwrappers.FieldMap{"country_short": dbprovider.MetaCountry},
+					Fields:              map[string]any{"country_short": dbprovider.MetaCountry},
 					FieldsPreconfigured: dbwrappers.PresetIP2LocationLite,
 				},
 			},

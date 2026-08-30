@@ -84,7 +84,7 @@ func TestIPinfo_FieldsCountryOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	rec, err := mmdb.LookupRecord("8.8.8.8", FieldMap{"country_code": dbprovider.MetaCountry})
+	rec, err := mmdb.LookupRecord("8.8.8.8", FieldMap{"country_code": {Key: dbprovider.MetaCountry}})
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}

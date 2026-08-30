@@ -20,12 +20,12 @@ func mustFields(t *testing.T, name string) FieldMap {
 
 func TestPreset_KnownAndUnknown(t *testing.T) {
 	format, fields, ok := Preset(PresetIPinfoLite)
-	if !ok || format != dbsource.TypeMMDB || fields["country_code"] != dbprovider.MetaCountry {
+	if !ok || format != dbsource.TypeMMDB || fields["country_code"].Key != dbprovider.MetaCountry {
 		t.Fatalf("ipinfo_lite: format=%q fields=%v ok=%v", format, fields, ok)
 	}
-	fields["country_code"] = "mutated"
+	fields["country_code"] = Field{Key: "mutated"}
 	_, again, _ := Preset(PresetIPinfoLite)
-	if again["country_code"] != dbprovider.MetaCountry {
+	if again["country_code"].Key != dbprovider.MetaCountry {
 		t.Error("Preset must clone")
 	}
 	if _, _, ok := Preset("not-a-preset"); ok {
@@ -85,5 +85,34 @@ func TestWalkPathAndStringifyMMDB(t *testing.T) {
 	}
 	if got := stringifyMMDB(dbprovider.MetaAsn, uint32(15169)); got != "AS15169" {
 		t.Errorf("asn prefix: %q", got)
+	}
+}
+
+func TestParseField_StringAndObject(t *testing.T) {
+	plain, err := ParseField(dbprovider.MetaCountry)
+	if err != nil || plain.Key != dbprovider.MetaCountry || plain.Type != FieldTypeString {
+		t.Fatalf("string: %+v err=%v", plain, err)
+	}
+	typed, err := ParseField(map[string]any{fieldYAMLKey: dbprovider.MetaAsn, fieldYAMLType: FieldTypeUint32})
+	if err != nil || typed.Key != dbprovider.MetaAsn || typed.Type != FieldTypeUint32 {
+		t.Fatalf("object: %+v err=%v", typed, err)
+	}
+	if _, err := ParseField(map[string]any{fieldYAMLKey: dbprovider.MetaCity, fieldYAMLType: "float64"}); err == nil {
+		t.Fatal("unknown type must fail")
+	}
+}
+
+func TestPreset_MaxMindASN_Uint32(t *testing.T) {
+	fields := mustFields(t, PresetMaxMindASN)
+	asn := fields["autonomous_system_number"]
+	if asn.Key != dbprovider.MetaAsn || asn.Type != FieldTypeUint32 {
+		t.Fatalf("autonomous_system_number: %+v", asn)
+	}
+	if fields["autonomous_system_organization"].Type != "" && fields["autonomous_system_organization"].Type != FieldTypeString {
+		t.Fatalf("org should default string: %+v", fields["autonomous_system_organization"])
+	}
+	ipinfo := mustFields(t, PresetIPinfoLite)
+	if ipinfo["asn"].Type != "" && ipinfo["asn"].Type != FieldTypeString {
+		t.Fatalf("IPinfo asn is a string column: %+v", ipinfo["asn"])
 	}
 }

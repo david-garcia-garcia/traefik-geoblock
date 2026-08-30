@@ -28,21 +28,21 @@ func registerPresets() {
 
 func ip2locMap(city, isp, domain, asn bool) FieldMap {
 	m := FieldMap{
-		"country_short": dbprovider.MetaCountry,
-		"country_long":  dbprovider.MetaCountryName,
+		"country_short": {Key: dbprovider.MetaCountry},
+		"country_long":  {Key: dbprovider.MetaCountryName},
 	}
 	if city {
-		m["region"] = dbprovider.MetaRegion
-		m["city"] = dbprovider.MetaCity
+		m["region"] = Field{Key: dbprovider.MetaRegion}
+		m["city"] = Field{Key: dbprovider.MetaCity}
 	}
 	if isp {
-		m["isp"] = dbprovider.MetaIsp
+		m["isp"] = Field{Key: dbprovider.MetaIsp}
 	}
 	if domain {
-		m["domain"] = dbprovider.MetaDomain
+		m["domain"] = Field{Key: dbprovider.MetaDomain}
 	}
 	if asn {
-		m["asn"] = dbprovider.MetaAsn
+		m["asn"] = Field{Key: dbprovider.MetaAsn}
 	}
 	return m
 }
@@ -89,22 +89,22 @@ func registerIP2Location() {
 	}
 	register(PresetIP2Location, dbsource.TypeBIN, ip2locMap(true, true, true, false))
 	register(PresetIP2LocationLite, dbsource.TypeBIN, ip2locMap(false, false, false, false))
-	register(PresetIP2LocationASN, dbsource.TypeBIN, FieldMap{"asn": dbprovider.MetaAsn})
+	register(PresetIP2LocationASN, dbsource.TypeBIN, FieldMap{"asn": {Key: dbprovider.MetaAsn}})
 }
 
 func registerIPinfo() {
 	lite := FieldMap{
-		"country_code":   dbprovider.MetaCountry,
-		"country":        dbprovider.MetaCountryName,
-		"continent":      dbprovider.MetaContinent,
-		"continent_code": dbprovider.MetaContinentCode,
-		"as_name":        dbprovider.MetaIsp,
-		"as_domain":      dbprovider.MetaDomain,
-		"asn":            dbprovider.MetaAsn,
+		"country_code":   {Key: dbprovider.MetaCountry},
+		"country":        {Key: dbprovider.MetaCountryName},
+		"continent":      {Key: dbprovider.MetaContinent},
+		"continent_code": {Key: dbprovider.MetaContinentCode},
+		"as_name":        {Key: dbprovider.MetaIsp},
+		"as_domain":      {Key: dbprovider.MetaDomain},
+		"asn":            {Key: dbprovider.MetaAsn},
 	}
 	core := lite.Clone()
-	core["region"] = dbprovider.MetaRegion
-	core["city"] = dbprovider.MetaCity
+	core["region"] = Field{Key: dbprovider.MetaRegion}
+	core["city"] = Field{Key: dbprovider.MetaCity}
 	register(PresetIPinfoLite, dbsource.TypeMMDB, lite)
 	register(PresetIPinfoCore, dbsource.TypeMMDB, core)
 	register(PresetIPinfoPlus, dbsource.TypeMMDB, core.Clone())
@@ -112,17 +112,17 @@ func registerIPinfo() {
 
 func registerMaxMind() {
 	country := FieldMap{
-		"country.iso_code":   dbprovider.MetaCountry,
-		"country.names.en":   dbprovider.MetaCountryName,
-		"continent.names.en": dbprovider.MetaContinent,
-		"continent.code":     dbprovider.MetaContinentCode,
+		"country.iso_code":   {Key: dbprovider.MetaCountry},
+		"country.names.en":   {Key: dbprovider.MetaCountryName},
+		"continent.names.en": {Key: dbprovider.MetaContinent},
+		"continent.code":     {Key: dbprovider.MetaContinentCode},
 	}
 	city := country.Clone()
-	city["subdivisions.0.iso_code"] = dbprovider.MetaRegion
-	city["city.names.en"] = dbprovider.MetaCity
+	city["subdivisions.0.iso_code"] = Field{Key: dbprovider.MetaRegion}
+	city["city.names.en"] = Field{Key: dbprovider.MetaCity}
 	asn := FieldMap{
-		"autonomous_system_number":       dbprovider.MetaAsn,
-		"autonomous_system_organization": dbprovider.MetaIsp,
+		"autonomous_system_number":       {Key: dbprovider.MetaAsn, Type: FieldTypeUint32},
+		"autonomous_system_organization": {Key: dbprovider.MetaIsp},
 	}
 	register(PresetMaxMindCountry, dbsource.TypeMMDB, country)
 	register(PresetMaxMindCity, dbsource.TypeMMDB, city)

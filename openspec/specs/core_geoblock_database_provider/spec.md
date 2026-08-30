@@ -1,6 +1,6 @@
 ## Purpose
 
-Defines the geo-database provider the plugin uses so initialization, country lookup, and auto-update are not tied to one vendor at the plugin boundary. This change implements IP2Location, IPinfo Lite, and MaxMind / GeoLite2.
+Defines the geo-database provider the plugin uses so initialization, country lookup, and auto-update are not tied to one vendor at the plugin boundary. Enabled catalog rows open as BIN or MMDB wrappers and fill one Record.
 
 ## Requirements
 
@@ -21,48 +21,64 @@ When `mode` is `enrich` or `enrichandblock`, the plugin SHALL obtain the country
 - **WHEN** `mode` is `block`
 - **THEN** the plugin does not call source Lookup
 
-### Requirement: Provider is selected through config
-Creating the plugin SHALL open enabled `databaseSources` rows. Config MUST NOT expose `databaseProvider`. Implemented `vendor` values SHALL be `ip2location`, `ip2location-asn`, `ipinfo`, and `maxmind`. An unknown `vendor` on an enabled row SHALL fail plugin creation.
+### Requirement: Provider is selected through the catalog
+Creating the plugin SHALL open enabled `databaseSources` rows. Config MUST NOT expose `databaseProvider` or `vendor`. An enabled row SHALL open as BIN when `databaseType` is `bin` and as MMDB when `databaseType` is `mmdb`. Lookup SHALL call `LookupRecord(ip, fields)` with that row's Field map.
 
 #### Scenario: Default sources
 - **WHEN** the plugin is created with empty `databaseSources` and `mode` is `enrichandblock`
 - **THEN** the open source is `default_ip2location`
 
 #### Scenario: Explicit IPinfo row
-- **WHEN** an enabled catalog row has `vendor` `ipinfo`
-- **THEN** that row is opened with the IPinfo field map
+- **WHEN** an enabled catalog row has `databaseType` `mmdb` and `fieldsPreconfigured` `ipinfo_lite`
+- **THEN** that row is opened through the MMDB wrapper with the IPinfo Lite Field map
 
 #### Scenario: Explicit MaxMind row
-- **WHEN** an enabled catalog row has `vendor` `maxmind`
-- **THEN** that row is opened with the MaxMind field map
+- **WHEN** an enabled catalog row has `databaseType` `mmdb` and `fieldsPreconfigured` `maxmind_country`
+- **THEN** that row is opened through the MMDB wrapper with the MaxMind Country Field map
 
-#### Scenario: Unknown vendor
-- **WHEN** an enabled catalog row has `vendor` `no-such-vendor`
-- **THEN** plugin creation fails
+### Requirement: Field maps live on the format wrapper
+Field maps and named presets SHALL live in `pkg/dbwrappers`. Open and hot-swap SHALL live in `pkg/dbwrappers`. HTTP GET and Resolve SHALL stay in `pkg/dbsource`. Shipped seed filenames and reserved download URLs SHALL live on catalog insert. The tree MUST NOT keep a vendor package or hidden IPinfo/GeoIP2 record types that only wrap Lookup. The plugin MUST NOT type-assert a format wrapper to read source state.
 
-### Requirement: Provider implementations are isolated
-Vendor field maps SHALL live on the format wrapper (`BINSource`, `ASNSource`, `IPinfo`, `GeoIP2`). Open and hot-swap SHALL live in `pkg/dbwrappers`. HTTP GET and Resolve SHALL stay in `pkg/dbsource`. Shipped seed filenames and reserved download URLs SHALL live on catalog insert. A later vendor MUST be addable by adding a wrapper Lookup for a new `vendor` value and a catalog row. The tree MUST NOT keep a vendor package that only wraps Lookup. The plugin MUST NOT type-assert a format wrapper to read source state.
-
-#### Scenario: Implemented vendors
+#### Scenario: Implemented formats
 - **WHEN** this change ships
-- **THEN** IP2Location geo and ASN Lookups exist
-- **AND** the IPinfo Lookup exists
-- **AND** the MaxMind Lookup exists
+- **THEN** BIN `LookupRecord` exists
+- **AND** MMDB `LookupRecord` exists
 
 #### Scenario: Plugin does not use a wrapper type
 - **WHEN** the plugin looks up a public IP
 - **THEN** it calls merged source Lookup only
 - **AND** it does not type-assert a BIN or MMDB wrapper
 
+### Requirement: MMDB Lookup decodes only mapped paths
+`MMDB.LookupRecord` SHALL decode only the Field map paths. Unused MMDB keys SHALL be skipped. Each path SHALL decode as the Field's type (`string` or `uint32`). The wrapper MUST NOT decode the whole row into `map[string]any`.
+
+#### Scenario: Country map skips unused keys
+- **WHEN** the Field map is `maxmind_country` and the file is a GeoIP2 Country MMDB
+- **THEN** Lookup fills country and continent from the mapped paths
+- **AND** unused locale name keys are not materialized
+
+#### Scenario: uint32 ASN path
+- **WHEN** the Field map includes `autonomous_system_number` with type `uint32` and Record key `asn`
+- **THEN** Lookup decodes that path as uint32
+- **AND** the Record ASN is the string form with an `AS` prefix when the number has none
+
+### Requirement: BIN Lookup uses Get_all or Get_asn
+`BIN.LookupRecord` SHALL call `Get_all` when any mapped path is not `asn`. When the map is ASN-only (`asn` → `asn`), Lookup SHALL call `Get_asn` and MUST NOT call `Get_all`. When `Get_all` has no usable ASN and the map names `asn`, Lookup SHALL call `Get_asn`.
+
+#### Scenario: ASN-only map skips Get_all
+- **WHEN** the Field map is `ip2location_asn`
+- **THEN** Lookup calls `Get_asn`
+- **AND** does not call `Get_all`
+
 ### Requirement: Open and hot-swap are per format
-The format-wrapper package SHALL expose one BIN wrapper and one MMDB wrapper. IPinfo and MaxMind SHALL open through the MMDB wrapper. IP2Location geo and ASN SHALL open through the BIN wrapper (one instance per catalog row). The same wrapper configuration SHALL share one open file and one download ticker. Closing the merged Provider MUST NOT close that shared wrapper.
+The format-wrapper package SHALL expose one BIN wrapper and one MMDB wrapper. IPinfo and MaxMind files SHALL open through the MMDB wrapper. IP2Location geo and ASN files SHALL open through the BIN wrapper (one instance per catalog row). The same wrapper configuration SHALL share one open file and one download ticker. Closing the merged Provider MUST NOT close that shared wrapper.
 
 #### Scenario: IPinfo and MaxMind share the MMDB wrapper
-- **WHEN** an enabled row has `vendor` `ipinfo` or `maxmind`
+- **WHEN** an enabled row has `databaseType` `mmdb`
 - **THEN** that file is opened through the shared MMDB wrapper
 
 #### Scenario: IP2Location uses one BIN wrapper per row
-- **WHEN** enabled rows have `vendor` `ip2location` and `ip2location-asn`
+- **WHEN** enabled rows have `databaseType` `bin` with `fieldsPreconfigured` `ip2location_lite` and `ip2location_asn`
 - **THEN** each row is opened through the shared BIN wrapper
 - **AND** merge maps geo fields plus ASN onto one Record
 

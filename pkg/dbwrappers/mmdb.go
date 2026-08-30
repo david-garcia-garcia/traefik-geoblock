@@ -125,16 +125,18 @@ func (w *MMDB) Path() string {
 }
 
 // LookupRecord fills Record from the MMDB using fields (dotted path → Record key).
+// Only those paths are decoded; unused MMDB keys are skipped.
 func (w *MMDB) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error) {
-	var decoded map[string]any
-	if err := w.Lookup(ip, &decoded); err != nil {
+	if len(fields) == 0 {
+		return dbprovider.Record{}, w.Lookup(ip, &struct{}{})
+	}
+	extract := lookupExtract(fields)
+	dest := extract.takeDest()
+	defer extract.putDest(dest)
+	if err := w.Lookup(ip, dest); err != nil {
 		return dbprovider.Record{}, err
 	}
-	var rec dbprovider.Record
-	fields.apply(&rec, func(path string) string {
-		return stringifyMMDB(fields[path], walkPath(decoded, path))
-	})
-	return rec, nil
+	return extract.record(dest), nil
 }
 
 // Lookup decodes ip into dest (raw MMDB tags).

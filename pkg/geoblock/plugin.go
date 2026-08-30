@@ -243,7 +243,7 @@ func openCatalogRow(ctx context.Context, cfg *Config, key string, logger *slog.L
 		if err != nil {
 			return nil, err
 		}
-		fields := entry.Fields
+		fields := entry.bound
 		return dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
 			return bin.LookupRecord(ip, fields)
 		}), nil
@@ -258,7 +258,7 @@ func openCatalogRow(ctx context.Context, cfg *Config, key string, logger *slog.L
 		if err != nil {
 			return nil, err
 		}
-		fields := entry.Fields
+		fields := entry.bound
 		return dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
 			return mmdb.LookupRecord(ip, fields)
 		}), nil

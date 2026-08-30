@@ -121,8 +121,10 @@ type DatabaseSource struct {
 	Path         string            `json:"path,omitempty" mapstructure:"path"`
 	DefaultFile  string            `json:"defaultFile,omitempty" mapstructure:"defaultFile"`
 	Enabled      *bool             `json:"enabled,omitempty" mapstructure:"enabled"`
-	// Fields maps on-disk path → Record key. Do not set with FieldsPreconfigured.
-	Fields dbwrappers.FieldMap `json:"fields,omitempty" mapstructure:"fields"`
+	// Fields maps on-disk path → Record key string, or {key, type}. Do not set with FieldsPreconfigured.
+	Fields map[string]any `json:"fields,omitempty" mapstructure:"fields"`
+	// bound is the resolved FieldMap after Prepare.
+	bound dbwrappers.FieldMap
 	// FieldsPreconfigured is a named vendor map (ip2location_db8, ipinfo_lite, …).
 	FieldsPreconfigured string `json:"fieldsPreconfigured,omitempty" mapstructure:"fieldsPreconfigured"`
 }
@@ -390,7 +392,8 @@ func validateDatabaseSources(cfg *Config) error {
 		}
 		// Expand the preset into Fields. Clear the name so a later Prepare is not both-set.
 		entry.DatabaseType = databaseType
-		entry.Fields = fields
+		entry.bound = fields
+		entry.Fields = fields.CatalogYAML()
 		entry.FieldsPreconfigured = ""
 		cfg.DatabaseSources[key] = entry
 	}
@@ -417,18 +420,22 @@ func resolveSourceFields(entry DatabaseSource, databaseType string) (dbwrappers.
 	if len(entry.Fields) == 0 {
 		return nil, fmt.Errorf("set fields or fieldsPreconfigured")
 	}
-	out := make(dbwrappers.FieldMap, len(entry.Fields))
-	for path, key := range entry.Fields {
+	parsed, err := dbwrappers.ParseFields(entry.Fields)
+	if err != nil {
+		return nil, fmt.Errorf("fields: %w", err)
+	}
+	out := make(dbwrappers.FieldMap, len(parsed))
+	for path, field := range parsed {
 		path = strings.TrimSpace(path)
-		key = strings.ToLower(strings.TrimSpace(key))
+		key := strings.ToLower(strings.TrimSpace(field.Key))
 		if path == "" {
 			return nil, fmt.Errorf("fields has an empty path")
 		}
 		if !dbprovider.KnownMetaKey(key) {
 			return nil, fmt.Errorf("unknown fields value %q for path %q (supported: %s)",
-				key, path, strings.Join(dbprovider.MetaKeys(), ", "))
+				field.Key, path, strings.Join(dbprovider.MetaKeys(), ", "))
 		}
-		out[path] = key
+		out[path] = dbwrappers.Field{Key: key, Type: field.Type}
 	}
 	return out, nil
 }

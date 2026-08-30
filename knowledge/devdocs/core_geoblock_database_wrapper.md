@@ -7,12 +7,12 @@ One open geo database file of one format (BIN or MMDB): resolve, open, hot-swap,
 _Avoid_: Factory, vendor brand, slot
 
 **Format**:
-How the bytes are opened (`bin` / `mmdb`). Column maps are named presets or an operator path → Record key map.
-_Avoid_: treating a file brand as a wrapper type; hidden vendor structs
+How the bytes are opened (`bin` / `mmdb`). Column maps are named presets or an operator path → Field (Record key + MMDB scalar type, default string).
+_Avoid_: treating a file brand as a wrapper type; hidden vendor structs; inferring MMDB type from the Record key
 
 ## Overview
 
-`pkg/dbwrappers` owns BIN and MMDB open/hot-swap and the named presets. `BIN.LookupRecord` and `MMDB.LookupRecord` take a `FieldMap` (path → Record key) and fill a `Record`. The plugin never type-asserts a wrapper. Prepare expands `fieldsPreconfigured` into that map.
+`pkg/dbwrappers` owns BIN and MMDB open/hot-swap and the named presets. `BIN.LookupRecord` and `MMDB.LookupRecord` take a `FieldMap` (path → Field) and fill a `Record`. MMDB decode uses each Field's type (`string` or `uint32`) so unused keys are skipped. The plugin never type-asserts a wrapper. Prepare expands `fieldsPreconfigured` into that map.
 
 ## How to use
 
