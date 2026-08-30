@@ -21,7 +21,7 @@ Traefik Config SHALL expose `mode` as `disabled`, `enrich`, `block`, or `enricha
 - **THEN** that field is not part of Config (Yaegi does not decode it onto the plugin)
 
 ### Requirement: Country header is the write/read bridge
-When `mode` is not `disabled`, `countryHeader` SHALL be a non-empty request header name. Lookup (`enrich` or `enrichandblock`) SHALL write the ISO country or `PRIVATE` to that header. The block stage (`block` or `enrichandblock`) SHALL read that same header for country allow/block. Country rules MUST NOT take the lookup `Record` country directly. Empty `countryHeader` SHALL fail plugin creation. A `requestHeaderEnrich` mapping whose key is `country` and whose header name is not `countryHeader` SHALL fail plugin creation.
+When `mode` is not `disabled`, `countryHeader` SHALL be a request header name. Empty `countryHeader` SHALL default to `X-IPCountry`. Lookup (`enrich` or `enrichandblock`) SHALL write the ISO country or `PRIVATE` to that header. The block stage (`block` or `enrichandblock`) SHALL read that same header for country allow/block. Country rules MUST NOT take the lookup `Record` country directly. A `requestHeaderEnrich` mapping whose key is `country` and whose header name is not `countryHeader` SHALL fail plugin creation.
 
 #### Scenario: Enrich writes countryHeader
 - **WHEN** `mode` is `enrich` and `countryHeader` is `X-IPCountry`
@@ -35,9 +35,10 @@ When `mode` is not `disabled`, `countryHeader` SHALL be a non-empty request head
 - **THEN** the request is blocked
 - **AND** plugin creation did not open a DatabaseProvider
 
-#### Scenario: Empty countryHeader fails
+#### Scenario: Empty countryHeader defaults
 - **WHEN** `mode` is `enrichandblock` and `countryHeader` is empty
-- **THEN** plugin creation fails
+- **THEN** plugin creation succeeds
+- **AND** `countryHeader` is `X-IPCountry`
 
 ### Requirement: Provider opens only for lookup modes
 Plugin creation SHALL call `openDatabaseProvider` only when `mode` is `enrich` or `enrichandblock`. When `mode` is `disabled` or `block`, creation MUST NOT open a DatabaseProvider, MUST NOT insert default catalog rows, and MUST NOT start auto-update.

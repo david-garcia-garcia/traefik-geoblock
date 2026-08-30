@@ -40,6 +40,9 @@ const (
 	ModeEnrich         = "enrich"
 	ModeBlock          = "block"
 	ModeEnrichAndBlock = "enrichandblock"
+
+	// DefaultCountryHeader is used when countryHeader is omitted.
+	DefaultCountryHeader = "X-IPCountry"
 )
 
 // Config defines the plugin configuration.
@@ -79,7 +82,7 @@ type Config struct {
 	// Response settings
 	DisallowedStatusCode  int    // HTTP status code for blocked requests
 	BanHtmlFilePath       string // Custom HTML template for blocked requests
-	CountryHeader         string // Required when mode is not disabled. Lookup writes; block reads.
+	CountryHeader         string // Lookup writes; block reads. Empty becomes DefaultCountryHeader.
 	LogStatusDetailHeader string // Header to write detailed status to (on REQUEST): "pass:{reason}" or "block:{reason}"
 
 	// RequestHeaderEnrich maps request header names to metadata keys
@@ -130,7 +133,7 @@ func CreateConfig() *Config {
 		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,                 // Default to checking all IPs
 		DatabaseProvider:     DatabaseProviderIP2Location,              // Default provider
-		CountryHeader:        "",                                       // Required when mode is not disabled
+		CountryHeader:        DefaultCountryHeader,
 		DatabaseSources:      make(map[string]DatabaseSource),
 	}
 }
@@ -189,7 +192,7 @@ func Prepare(cfg *Config, name string) error {
 			IPHeaderStrategyCheckAll, IPHeaderStrategyCheckFirst, IPHeaderStrategyCheckFirstNonePrivate)
 	}
 	if strings.TrimSpace(cfg.CountryHeader) == "" {
-		return fmt.Errorf("%s: countryHeader is required when mode is not %s", name, ModeDisabled)
+		cfg.CountryHeader = DefaultCountryHeader
 	}
 	if err := checkCountryHeaderBridge(cfg.CountryHeader, cfg.RequestHeaderEnrich); err != nil {
 		return fmt.Errorf("%s: %w", name, err)

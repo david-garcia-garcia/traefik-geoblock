@@ -570,10 +570,10 @@ func TestCheckAllowed_Localhost(t *testing.T) {
 
 	for _, ip := range testIPs {
 		t.Run("IP_"+ip, func(t *testing.T) {
-			allowed, rec, phase, err := p.CheckAllowed(ip)
+			allowed, phase, err := p.CheckAllowed(ip)
 
-			t.Logf("CheckAllowed(%s) = allowed:%v, country:%s, phase:%s, err:%v",
-				ip, allowed, rec.Country, phase, err)
+			t.Logf("CheckAllowed(%s) = allowed:%v, phase:%s, err:%v",
+				ip, allowed, phase, err)
 
 			if err != nil {
 				t.Errorf("CheckAllowed returned error: %v", err)
@@ -582,11 +582,6 @@ func TestCheckAllowed_Localhost(t *testing.T) {
 			// With allowPrivate=true, loopback IPs should be allowed
 			if !allowed {
 				t.Errorf("IP %s should be allowed when allowPrivate=true, but was blocked", ip)
-			}
-
-			// Country should be "PRIVATE" for private IPs
-			if rec.Country != "PRIVATE" {
-				t.Errorf("IP %s should have country='PRIVATE', but got '%s'", ip, rec.Country)
 			}
 
 			// Phase should be "allow_private" for private IPs

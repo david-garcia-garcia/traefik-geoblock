@@ -731,11 +731,11 @@ func TestEnrichNullSentinel(t *testing.T) {
 		"X-Geo-Asn":            dbprovider.MetaAsn,
 	}
 
-	t.Run("applyGeoHeaders writes null for every empty mapped key", func(t *testing.T) {
+	t.Run("writePublicLookupHeaders writes null for every empty mapped key", func(t *testing.T) {
 		p := Plugin{requestHeaderEnrich: allKeys}
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		set := false
-		p.applyGeoHeaders(req, dbprovider.Record{Country: "US", Isp: "Acme"}, &set)
+		p.writePublicLookupHeaders(req, dbprovider.Record{Country: "US", Isp: "Acme"}, &set)
 		if !set {
 			t.Fatal("expected geo headers marked set")
 		}
@@ -758,12 +758,12 @@ func TestEnrichNullSentinel(t *testing.T) {
 		}
 	})
 
-	t.Run("applyGeoHeaders does not write when country is empty or PRIVATE", func(t *testing.T) {
+	t.Run("writePublicLookupHeaders does not write when country is empty or PRIVATE", func(t *testing.T) {
 		p := Plugin{requestHeaderEnrich: allKeys}
 		for _, rec := range []dbprovider.Record{{}, {Country: PrivateIpCountryAlias}} {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			set := false
-			p.applyGeoHeaders(req, rec, &set)
+			p.writePublicLookupHeaders(req, rec, &set)
 			if set {
 				t.Errorf("country %q: must not mark headers set", rec.Country)
 			}
@@ -773,10 +773,10 @@ func TestEnrichNullSentinel(t *testing.T) {
 		}
 	})
 
-	t.Run("setPrivateGeoHeaders writes PRIVATE on country and null on other keys", func(t *testing.T) {
+	t.Run("writeDefaultEnrichHeaders writes PRIVATE on country and null on other keys", func(t *testing.T) {
 		p := Plugin{requestHeaderEnrich: allKeys}
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		p.setPrivateGeoHeaders(req)
+		p.writeDefaultEnrichHeaders(req)
 		if got := req.Header.Get("X-Geo-Country"); got != PrivateIpCountryAlias {
 			t.Errorf("country: got %q want PRIVATE", got)
 		}

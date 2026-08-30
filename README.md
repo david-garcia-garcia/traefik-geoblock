@@ -58,7 +58,7 @@ Every request that reaches the plugin gets a local GeoIP lookup. The result is w
 - **Traefik access logs** can `keep` those names so every line is geo-aware (dashboards, SIEM, compliance).
 - Headers are **not** copied onto the response, so browsers and other clients do not see them.
 
-Use `mode` to choose lookup, block, or both. Empty `mode` is `disabled` (pass through, no database). `enrich` and `enrichandblock` open the GeoIP database; `block` does not. `countryHeader` is required whenever `mode` is not `disabled`: lookup writes the country there, and the block stage reads that same header.
+Use `mode` to choose lookup, block, or both. Empty `mode` is `disabled` (pass through, no database). `enrich` and `enrichandblock` open the GeoIP database; `block` does not. Lookup writes the country to `countryHeader` (default `X-IPCountry`); the block stage reads that same header.
 
 To share one download/token config across routes, put `mode: enrich` on a shared middleware and `mode: block` (country lists only) on each route. Chain enrich before block. `block` must not run first or `countryHeader` is missing and `banIfError` applies.
 
@@ -69,7 +69,7 @@ To share one download/token config across routes, put `mode: enrich` on a shared
 | Config Setting | Purpose | Example Values |
 |----------------|---------|----------------|
 | `requestHeaderEnrich` | Geo metadata on the request. Every mapped header is written. Missing values are `null`. Country on a private IP is `PRIVATE`. | `X-Geo-Country: US`, `X-Geo-Region: null` |
-| `countryHeader` | **Required** when `mode` is not `disabled`. Lookup writes the country here; block reads it. | `US`, `DE`, `PRIVATE` |
+| `countryHeader` | Lookup writes the country here; block reads it. Omitted value is `X-IPCountry`. | `US`, `DE`, `PRIVATE` |
 | `logStatusDetailHeader` | Decision with reason | `pass:allowed_country`, `block:blocked_country` |
 
 ### logStatusDetailHeader Values
@@ -588,7 +588,7 @@ http:
           # Request header settings
           #-------------------------------  
           countryHeader: "X-IPCountry"
-          # Required when mode is not disabled. Enrich/enrichandblock write the ISO
+          # Default X-IPCountry when omitted. Enrich/enrichandblock write the ISO
           # country (or PRIVATE) here. Block/enrichandblock read this header for
           # country allow/block. If requestHeaderEnrich also maps country, it must
           # use this same header name.

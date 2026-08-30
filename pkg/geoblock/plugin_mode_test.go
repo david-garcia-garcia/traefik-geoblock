@@ -20,15 +20,18 @@ func TestPrepare_ModeAndCountryHeader(t *testing.T) {
 		}
 	})
 
-	t.Run("empty countryHeader fails when not disabled", func(t *testing.T) {
-		err := Prepare(&Config{
+	t.Run("empty countryHeader defaults to X-IPCountry", func(t *testing.T) {
+		cfg := &Config{
 			Mode:                 ModeBlock,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
-		}, pluginName)
-		if err == nil {
-			t.Fatal("expected empty countryHeader to fail")
+		}
+		if err := Prepare(cfg, pluginName); err != nil {
+			t.Fatalf("Prepare: %v", err)
+		}
+		if cfg.CountryHeader != DefaultCountryHeader {
+			t.Errorf("CountryHeader %q want %q", cfg.CountryHeader, DefaultCountryHeader)
 		}
 	})
 

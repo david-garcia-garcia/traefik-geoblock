@@ -7,8 +7,8 @@ The Traefik Config field that selects lookup, block, both, or pass-through. Valu
 _Avoid_: `enabled`
 
 **Country header**:
-The required request header name when mode is not `disabled`. Lookup writes the ISO country or `PRIVATE` here. The block stage reads that same header for country allow/block.
-_Avoid_: inventing `X-Geoblock-Country`; mapping a second `requestHeaderEnrich` header to `country`
+The request header name lookup writes and block reads. Empty config uses `X-IPCountry`.
+_Avoid_: mapping a second `requestHeaderEnrich` header to `country`
 
 ## Overview
 
@@ -17,21 +17,22 @@ One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeade
 ## How to use
 
 - Set `Config.Mode`. Unknown values fail `Prepare`. Empty is `disabled` (pass through, no database).
-- Require `countryHeader` when mode is not `disabled`. A `requestHeaderEnrich` `country` mapping must use that same header name.
+- Omit `countryHeader` to use `X-IPCountry`. A `requestHeaderEnrich` `country` mapping must use that same header name.
 - Call `openDatabaseProvider` / `bindDatabase` only when `ModeLooksUp` (`enrich`, `enrichandblock`).
 - Write country from lookup onto `countryHeader`, then read that header in the block stage. Do not pass `Record.Country` into country maps.
-- Do not call `setPrivateGeoHeaders` in `block` (it would overwrite the inbound country).
+- Do not call `writeDefaultEnrichHeaders` in `block` (it would overwrite the inbound country).
 - After CIDR, a `countryHeader` value of `PRIVATE` follows `allowPrivate`. Private or loopback IPs still apply `allowPrivate` first.
 
 ## Pattern snippet
 
 ```go
 if ModeLooksUp(p.mode) {
-	if p.lookupAndWriteHeaders(rw, req, remoteIPs, ipChain, passReason) {
+	lookupFailed = p.enrich(req, remoteIPs, ipChain)
+}
+if ModeBlocks(p.mode) && skipBlock == PhaseNone {
+	if lookupFailed && p.banIfError {
 		return
 	}
-}
-if ModeBlocks(p.mode) && passReason == PhaseNone {
 	if p.blockFromHeader(rw, req, remoteIPs, ipChain) {
 		return
 	}
@@ -41,7 +42,7 @@ if ModeBlocks(p.mode) && passReason == PhaseNone {
 ## Key files
 
 - `pkg/geoblock/config.go` — `Mode`, `Prepare`, `checkCountryHeaderBridge`
-- `pkg/geoblock/plugin.go` — `NewCore`, `lookupAndWriteHeaders`, `blockFromHeader`, `decide`
+- `pkg/geoblock/plugin.go` — `NewCore`, `enrich`, `blockFromHeader`, `decide`
 - `pkg/geoblock/plugin_mode_test.go` — mode, header, and PRIVATE cases
 
 ## Gotchas

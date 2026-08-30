@@ -28,7 +28,7 @@ Traefik Config key that names the implementation. Empty defaults to `ip2location
 - File location and keep-current: see Source (`core_geoblock_database_source`). Open and hot-swap: see Wrapper (`core_geoblock_database_wrapper`).
 - IPinfo maps `country_code` onto Country, plus `country_name`, continent, `isp` (`as_name`), `domain` (`as_domain`), `asn`. Region/city stay empty on Lite.
 - MaxMind maps nested `country.iso_code`. ASN/ISP stay empty on Country/City files. The plugin does not parse `accountId:licenseKey`.
-- `countryHeader` is required when `mode` is not `disabled`. Lookup writes it; block reads it.
+- `countryHeader` defaults to `X-IPCountry` when omitted. Lookup writes it; block reads it.
 
 ## Pattern snippet
 
@@ -43,4 +43,4 @@ req.Header.Set("X-Geo-Country", rec.Field("country"))
 - `pkg/ip2location` — geo Lookup plus optional ASN
 - `pkg/ipinfo` — IPinfo Lite/Core/Plus field mapping
 - `pkg/maxmind` — GeoIP2 / GeoLite2 field mapping
-- `pkg/geoblock/plugin.go` — `requestHeaderEnrich`, `applyGeoHeaders`
+- `pkg/geoblock/plugin.go` — `requestHeaderEnrich`, `writeDefaultEnrichHeaders`, `writePublicLookupHeaders`
