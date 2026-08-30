@@ -10,7 +10,7 @@ import (
 func TestBypassHeaders_ShouldStillEnrichWithGeoIP(t *testing.T) {
 	// Test that bypass headers skip blocking but still enrich with country information
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         false,          // Block private IPs
@@ -123,7 +123,7 @@ func TestBypassHeaders_ShouldStillEnrichWithGeoIP(t *testing.T) {
 func TestIgnoreVerbs_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 	// Test that ignored HTTP verbs skip blocking but still get GeoIP enrichment
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         false,
@@ -234,7 +234,7 @@ func TestIgnoreVerbs_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 
 func TestExcludedPathsRegex_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"AU"}, // Only AU allowed
@@ -364,7 +364,7 @@ func TestExcludedPathsRegex_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 
 func TestIncludedPathsRegex_OnlyMatchingPathsAreBlocked(t *testing.T) {
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"AU"},
@@ -412,7 +412,7 @@ func TestIncludedPathsRegex_OnlyMatchingPathsAreBlocked(t *testing.T) {
 
 func TestIncludedPathsRegex_ExcludeStillWinsAfterInclude(t *testing.T) {
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},
@@ -457,7 +457,7 @@ func TestIncludedPathsRegex_ExcludeStillWinsAfterInclude(t *testing.T) {
 
 func TestIncludedPathsRegex_InvalidRegex(t *testing.T) {
 	_, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		DisallowedStatusCode: http.StatusForbidden,
@@ -475,7 +475,7 @@ func TestIncludedPathsRegex_InvalidRegex(t *testing.T) {
 
 func TestIncludedPathsRegex_EmptyRegex(t *testing.T) {
 	plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},
@@ -499,7 +499,7 @@ func TestIncludedPathsRegex_EmptyRegex(t *testing.T) {
 
 func TestExcludedPathsRegex_InvalidRegex(t *testing.T) {
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		DisallowedStatusCode: http.StatusForbidden,
@@ -519,7 +519,7 @@ func TestExcludedPathsRegex_InvalidRegex(t *testing.T) {
 
 func TestExcludedPathsRegex_EmptyRegex(t *testing.T) {
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},
@@ -551,7 +551,7 @@ func TestExcludedPathsRegex_DomainBasedMatching(t *testing.T) {
 	// Test that regex can match specific domains
 	// Pattern: only exclude paths on "api.example.com" domain
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},

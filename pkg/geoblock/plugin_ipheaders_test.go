@@ -10,7 +10,7 @@ import (
 func TestIPHeaderStrategy_Integration(t *testing.T) {
 	// Create a plugin with blocked countries (e.g., block CN)
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
@@ -113,7 +113,7 @@ func TestIPHeaderStrategy_Integration(t *testing.T) {
 func TestIPHeaderStrategy_CountryHeaderPriority(t *testing.T) {
 	// Test that real countries take priority over private IP countries in the header
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
@@ -181,7 +181,7 @@ func TestIPHeaderStrategy_CountryHeaderPriority(t *testing.T) {
 
 func TestIPHeaderStrategy_InvalidStrategy(t *testing.T) {
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		IPHeaders:            []string{"x-forwarded-for"},
@@ -203,7 +203,7 @@ func TestIPHeaderStrategy_InvalidStrategy(t *testing.T) {
 func TestIPHeaderStrategy_PrivateIPDoesNotOverridePublicCountry(t *testing.T) {
 	// Test that private IPs processed AFTER public IPs do not override the country header
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
@@ -289,7 +289,7 @@ func TestIPHeaderStrategy_PrivateIPDoesNotOverridePublicCountry(t *testing.T) {
 func TestIPHeaderStrategy_CountryHeaderOverrideEdgeCases(t *testing.T) {
 	// Test edge cases for country header override protection
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
@@ -365,7 +365,7 @@ func TestIPHeaderStrategy_CountryHeaderOverrideEdgeCases(t *testing.T) {
 func TestIPHeaderStrategy_HeaderOrderRespected(t *testing.T) {
 	// Test that IP headers are processed in the order they are defined in ipHeaders
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
@@ -552,7 +552,7 @@ func TestIPHeaderStrategy_HeaderOrderWithStrategies(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				Mode: ModeEnrichAndBlock,
+				Mode:                 ModeEnrichAndBlock,
 				DatabaseSources:      seedCatalog(dbFilePath),
 				Ip2locationSourceGeo: "seed",
 				AllowPrivate:         true,
@@ -720,7 +720,7 @@ func TestGetRemoteIPs_SyntheticRemoteAddress(t *testing.T) {
 func TestRemoteAddress_IntegrationWithStrategies(t *testing.T) {
 	// Test remoteAddress with different IP header strategies
 	cfg := &Config{
-		Mode: ModeEnrichAndBlock,
+		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
