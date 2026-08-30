@@ -30,7 +30,8 @@ Operators pick one `databaseProvider` and bind catalog rows with vendor pointers
 
 - `pkg/geoblock/config.go` — catalog fields; remove provider pointers; shipped rows in `Prepare`.
 - `pkg/geoblock/plugin.go` — open and merge enabled sources.
-- `pkg/ip2location`, `pkg/ipinfo`, `pkg/maxmind` — one-file Lookup selected by `vendor`.
+- `pkg/dbwrappers` — vendor field maps (`BINSource`, `ASNSource`, `IPinfo`, `GeoIP2`).
+- `pkg/ip2location`, `pkg/ipinfo`, `pkg/maxmind` — seed/URL constants only.
 - `pkg/dbsource` — `DefaultFileName` from the catalog row.
 - `plugin.go` — Yaegi `Config` alias.
 - Tests, README, compose, `.traefik.yml`.

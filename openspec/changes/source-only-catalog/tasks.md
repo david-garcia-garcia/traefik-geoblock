@@ -6,7 +6,7 @@
 
 ## 2. Open and merge
 
-- [x] 2.1 Open one wrapper per enabled row (`ip2location` / `ip2location-asn` BIN, `ipinfo` / `maxmind` MMDB).
+- [x] 2.1 Open one wrapper per enabled row (`ip2location` / `ip2location-asn` BIN, `ipinfo` / `maxmind` MMDB). Delete vendor `provider.go`; field maps on `BINSource` / `ASNSource` / `IPinfo` / `GeoIP2`.
 - [x] 2.2 Merge Lookup in lexicographic key order; first non-empty meta key wins; skip source errors; all-error returns error.
 - [x] 2.3 `bindDatabase` / `NewCore` open merged sources only for `enrich` and `enrichandblock`.
 

@@ -13,7 +13,7 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
@@ -230,29 +230,63 @@ func openCatalogSources(ctx context.Context, cfg *Config, logger *slog.Logger) (
 	return dbprovider.NewCombined(sources), nil
 }
 
-// openCatalogRow opens one vendor Lookup for a catalog key.
+// openCatalogRow opens one wrapper Lookup for a catalog key.
 func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger *slog.Logger) (dbprovider.Provider, error) {
 	switch vendor {
 	case VendorIP2Location:
-		return ip2location.New(ctx, ip2location.DatabaseConfig{
-			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, key, dbsource.TypeBIN),
+		src := catalogSource(cfg, key, dbsource.TypeBIN)
+		bin, err := dbwrappers.OpenBIN(ctx, dbwrappers.BINConfig{
+			Dir:             cfg.DatabaseAutoUpdateDir,
+			Source:          src,
+			DefaultFileName: src.DefaultFileName,
+			MinAge:          dbwrappers.DefaultBINMinAge,
 		}, logger)
+		if err != nil {
+			return nil, err
+		}
+		return dbwrappers.NewBINSource(bin), nil
 	case VendorIP2LocationASN:
-		return ip2location.NewASN(ctx, ip2location.DatabaseConfig{
-			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			AsnSource:             catalogSource(cfg, key, dbsource.TypeBIN),
+		src := catalogSource(cfg, key, dbsource.TypeBIN)
+		bin, err := dbwrappers.OpenBIN(ctx, dbwrappers.BINConfig{
+			Dir:          cfg.DatabaseAutoUpdateDir,
+			Source:       src,
+			AllowMissing: src.Path == "",
+			MinAge:       dbwrappers.DefaultBINMinAge,
 		}, logger)
+		if err != nil {
+			return nil, err
+		}
+		return dbwrappers.NewASNSource(bin), nil
 	case VendorIPinfo:
-		return ipinfo.New(ctx, ipinfo.DatabaseConfig{
-			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, key, dbsource.TypeMMDB),
+		src := catalogSource(cfg, key, dbsource.TypeMMDB)
+		if src.DefaultFileName == "" {
+			src.DefaultFileName = ipinfo.DefaultFileName
+		}
+		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
+			Dir:             cfg.DatabaseAutoUpdateDir,
+			Source:          src,
+			DefaultFileName: src.DefaultFileName,
+			MinAge:          dbsource.DefaultMinAge,
 		}, logger)
+		if err != nil {
+			return nil, err
+		}
+		return dbwrappers.NewIPinfo(mmdb), nil
 	case VendorMaxMind:
-		return maxmind.New(ctx, maxmind.DatabaseConfig{
-			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, key, dbsource.TypeMMDB),
+		src := catalogSource(cfg, key, dbsource.TypeMMDB)
+		if src.DefaultFileName == "" {
+			src.DefaultFileName = maxmind.DefaultSeedFileName
+		}
+		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
+			Dir:             cfg.DatabaseAutoUpdateDir,
+			Source:          src,
+			DefaultFileName: src.DefaultFileName,
+			MinAge:          dbsource.DefaultMinAge,
 		}, logger)
+		if err != nil {
+			return nil, err
+		}
+		return dbwrappers.NewGeoIP2(mmdb), nil
 	default:
 		return nil, fmt.Errorf("unknown vendor %q", vendor)
 	}
