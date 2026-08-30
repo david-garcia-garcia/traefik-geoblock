@@ -16,13 +16,14 @@ Entrypoints stay at `github.com/david-garcia-garcia/traefik-geoblock`. Helpers l
 ## How to use
 
 - Root package exports `Config`, `CreateConfig`, and `New`. Those are the Yaegi entrypoints. Root `New` calls `Prepare` (so the instance key is the normalized config), `reclaim.Open`s the Plugin, and `ForRoute`s this `next`.
-- Put Plugin, Route, ServeHTTP, Prepare, NewCore, and ForRoute in `pkg/geoblock`. `NewCore` opens the DatabaseProvider. That package does not call `reclaim.Open`.
+- Put Config/Prepare, Plugin, Route, ServeHTTP, NewCore, and ForRoute in `pkg/geoblock`. `NewCore` opens the DatabaseProvider. That package does not call `reclaim.Open`.
 - Do not put `New` / `CreateConfig` only in a subpackage — Traefik evals the module root.
 
 ## Key files
 
 - `.traefik.yml` `import:` — module root
 - `plugin.go` — Yaegi `New` / `CreateConfig` / `Config` alias and instance reclaim
-- `pkg/geoblock/plugin.go` — Plugin, ServeHTTP, Prepare, NewCore
+- `pkg/geoblock/config.go` — Config, CreateConfig, Prepare
+- `pkg/geoblock/plugin.go` — Plugin, ServeHTTP, NewCore
 - `pkg/geoblock/route.go` — Route, ForRoute
 - `pkg/` — helpers (`dbprovider`, `dbwrappers`, `dbsource`, `reclaim`, `ip2location`, `ipinfo`, `maxmind`, `dbutils`, `fileutils`, `iplookup`, `logging`)

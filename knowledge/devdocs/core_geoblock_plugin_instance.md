@@ -39,7 +39,8 @@ return pluginInstance.ForRoute(next)
 
 - `plugin.go` — `New`, `bindPlugin`, `pluginKey`
 - `plugin_instance_test.go` — share, miss, reclaim, grace
-- `pkg/geoblock/plugin.go` — Prepare, NewCore, Plugin
+- `pkg/geoblock/config.go` — Config, Prepare, catalog bind
+- `pkg/geoblock/plugin.go` — NewCore, Plugin, ServeHTTP
 - `pkg/geoblock/route.go` — Route, ForRoute
 - `pkg/reclaim` — process table
 
