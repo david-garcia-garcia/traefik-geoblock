@@ -462,6 +462,54 @@ services:
       - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Isp=isp"
       - "traefik.http.middlewares.geoblock-enrichTest.plugin.geoblock.requestHeaderEnrich.X-Geo-Domain=domain"
 
+  # Enrich hop writes X-Ipcountry; block hop reads it. Middleware list order is enrich then block.
+  whoami-enrichthenblock:
+    image: traefik/whoami
+    container_name: "simple-service-enrichthenblock"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-enrichthenblock.rule=PathPrefix(`/enrichthenblock`)"
+      - "traefik.http.routers.router-enrichthenblock.entrypoints=web"
+      - "traefik.http.routers.router-enrichthenblock.middlewares=geoblock-chain-enrich@docker,geoblock-chain-block@docker"
+      - "traefik.http.services.service-enrichthenblock.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-chain-enrich.plugin.geoblock.mode=enrich"
+      - "traefik.http.middlewares.geoblock-chain-enrich.plugin.geoblock.countryHeader=X-Ipcountry"
+      - "traefik.http.middlewares.geoblock-chain-enrich.plugin.geoblock.logLevel=INFO"
+      - "traefik.http.middlewares.geoblock-chain-enrich.plugin.geoblock.databaseSources.seed.path=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/seeds/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-chain-enrich.plugin.geoblock.databaseSources.seed.databaseType=bin"
+      - "traefik.http.middlewares.geoblock-chain-enrich.plugin.geoblock.databaseSources.seed.fieldsPreconfigured=ip2location_lite"
+      - "traefik.http.middlewares.geoblock-chain-enrich.plugin.geoblock.databaseSources.default_ip2location.enabled=false"
+      - "traefik.http.middlewares.geoblock-chain-enrich.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-chain-block.plugin.geoblock.mode=block"
+      - "traefik.http.middlewares.geoblock-chain-block.plugin.geoblock.countryHeader=X-Ipcountry"
+      - "traefik.http.middlewares.geoblock-chain-block.plugin.geoblock.logLevel=INFO"
+      - "traefik.http.middlewares.geoblock-chain-block.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
+      - "traefik.http.middlewares.geoblock-chain-block.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-chain-block.plugin.geoblock.blockedCountries=US,CN,RU"
+      - "traefik.http.middlewares.geoblock-chain-block.plugin.geoblock.allowedCountries=DE,FR,GB"
+      - "traefik.http.middlewares.geoblock-chain-block.plugin.geoblock.defaultAllow=false"
+      - "traefik.http.middlewares.geoblock-chain-block.plugin.geoblock.banIfError=true"
+
+  # Block only: no lookup hop. Missing countryHeader uses banIfError.
+  whoami-blockonly:
+    image: traefik/whoami
+    container_name: "simple-service-blockonly"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-blockonly.rule=PathPrefix(`/blockonly`)"
+      - "traefik.http.routers.router-blockonly.entrypoints=web"
+      - "traefik.http.routers.router-blockonly.middlewares=geoblock-blockonly@docker"
+      - "traefik.http.services.service-blockonly.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-blockonly.plugin.geoblock.mode=block"
+      - "traefik.http.middlewares.geoblock-blockonly.plugin.geoblock.countryHeader=X-Ipcountry"
+      - "traefik.http.middlewares.geoblock-blockonly.plugin.geoblock.logLevel=INFO"
+      - "traefik.http.middlewares.geoblock-blockonly.plugin.geoblock.banHtmlFilePath=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/geoblockban.html"
+      - "traefik.http.middlewares.geoblock-blockonly.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-blockonly.plugin.geoblock.defaultAllow=true"
+      - "traefik.http.middlewares.geoblock-blockonly.plugin.geoblock.banIfError=true"
+
   # Local-only: started with `docker compose --profile local-tokens up`
   # when .env has IP2LOCATION_DOWNLOAD_TOKEN. CI does not enable this profile.
   whoami-tokendb:
