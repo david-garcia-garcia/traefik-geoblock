@@ -86,7 +86,6 @@ func TestMode_EnrichDoesNotBlock(t *testing.T) {
 		Mode:                 ModeEnrich,
 		CountryHeader:        "X-IPCountry",
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},
 		DefaultAllow:         false,
 		DisallowedStatusCode: http.StatusForbidden,

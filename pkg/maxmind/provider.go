@@ -53,10 +53,14 @@ type provider struct {
 
 // New opens the MaxMind DatabaseProvider (thin facade over the MMDB wrapper).
 func New(ctx context.Context, config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
+	defaultFile := config.Source.DefaultFileName
+	if defaultFile == "" {
+		defaultFile = DefaultSeedFileName
+	}
 	db, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
 		Dir:             config.DatabaseAutoUpdateDir,
 		Source:          config.Source,
-		DefaultFileName: DefaultSeedFileName,
+		DefaultFileName: defaultFile,
 		MinAge:          DownloadMinAge,
 	}, logger)
 	if err != nil {

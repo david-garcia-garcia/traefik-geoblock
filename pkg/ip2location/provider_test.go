@@ -142,8 +142,8 @@ func TestGeoBINConfig(t *testing.T) {
 	if cfg.Source.Path != testDBFile {
 		t.Errorf("geo path: got %q", cfg.Source.Path)
 	}
-	if cfg.DefaultFileName != defaultGeoFileName {
-		t.Errorf("geo default name: got %q", cfg.DefaultFileName)
+	if cfg.DefaultFileName != "" {
+		t.Errorf("geo default name comes from catalog, got %q", cfg.DefaultFileName)
 	}
 }
 

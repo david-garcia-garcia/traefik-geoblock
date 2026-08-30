@@ -12,7 +12,6 @@ func TestIPHeaderStrategy_Integration(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
 		DefaultAllow:         true,
 		BlockedCountries:     []string{"CN"},
@@ -115,7 +114,6 @@ func TestIPHeaderStrategy_CountryHeaderPriority(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
 		DefaultAllow:         true,
 		DisallowedStatusCode: http.StatusForbidden,
@@ -183,7 +181,6 @@ func TestIPHeaderStrategy_InvalidStrategy(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		IPHeaders:            []string{"x-forwarded-for"},
 		IPHeaderStrategy:     "InvalidStrategy",
 		DisallowedStatusCode: http.StatusForbidden,
@@ -205,7 +202,6 @@ func TestIPHeaderStrategy_PrivateIPDoesNotOverridePublicCountry(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
 		DefaultAllow:         true,
 		DisallowedStatusCode: http.StatusForbidden,
@@ -291,7 +287,6 @@ func TestIPHeaderStrategy_CountryHeaderOverrideEdgeCases(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
 		DefaultAllow:         true,
 		DisallowedStatusCode: http.StatusForbidden,
@@ -367,7 +362,6 @@ func TestIPHeaderStrategy_HeaderOrderRespected(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
 		DefaultAllow:         true,
 		DisallowedStatusCode: http.StatusForbidden,
@@ -554,7 +548,6 @@ func TestIPHeaderStrategy_HeaderOrderWithStrategies(t *testing.T) {
 			cfg := &Config{
 				Mode:                 ModeEnrichAndBlock,
 				DatabaseSources:      seedCatalog(dbFilePath),
-				Ip2locationSourceGeo: "seed",
 				AllowPrivate:         true,
 				DefaultAllow:         true,
 				DisallowedStatusCode: http.StatusForbidden,
@@ -722,7 +715,6 @@ func TestRemoteAddress_IntegrationWithStrategies(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
 		DefaultAllow:         true,
 		DisallowedStatusCode: http.StatusForbidden,

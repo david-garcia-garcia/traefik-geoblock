@@ -111,9 +111,11 @@ func tickerURL(t *testing.T) string {
 
 func lifecycleBIN(path, url, dir string) *Config {
 	return &Config{
-		Mode:                  ModeEnrichAndBlock,
-		DatabaseSources:       map[string]DatabaseSource{"seed": {Path: path, URL: url, DatabaseType: dbsource.TypeBIN}},
-		Ip2locationSourceGeo:  "seed",
+		Mode: ModeEnrichAndBlock,
+		DatabaseSources: map[string]DatabaseSource{
+			DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: dbsource.TypeBIN},
+			"seed":                       {Path: path, URL: url, DatabaseType: dbsource.TypeBIN, Vendor: VendorIP2Location},
+		},
 		DatabaseAutoUpdateDir: dir,
 		AllowedCountries:      []string{"US"},
 		DisallowedStatusCode:  http.StatusForbidden,
@@ -125,10 +127,11 @@ func lifecycleBIN(path, url, dir string) *Config {
 
 func lifecycleIPinfo(path, url, dir string) *Config {
 	return &Config{
-		Mode:                  ModeEnrichAndBlock,
-		DatabaseProvider:      DatabaseProviderIPinfo,
-		DatabaseSources:       map[string]DatabaseSource{"seed": {Path: path, URL: url, DatabaseType: dbsource.TypeMMDB}},
-		IpinfoSource:          "seed",
+		Mode: ModeEnrichAndBlock,
+		DatabaseSources: map[string]DatabaseSource{
+			DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: dbsource.TypeBIN},
+			"seed":                       {Path: path, URL: url, DatabaseType: dbsource.TypeMMDB, Vendor: VendorIPinfo},
+		},
 		DatabaseAutoUpdateDir: dir,
 		AllowedCountries:      []string{"US"},
 		DisallowedStatusCode:  http.StatusForbidden,

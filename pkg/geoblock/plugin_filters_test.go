@@ -12,7 +12,6 @@ func TestBypassHeaders_ShouldStillEnrichWithGeoIP(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         false,          // Block private IPs
 		DefaultAllow:         false,          // Block by default
 		BlockedCountries:     []string{"US"}, // Block US
@@ -125,7 +124,6 @@ func TestIgnoreVerbs_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         false,
 		DefaultAllow:         false,
 		BlockedCountries:     []string{"US"}, // Block US
@@ -236,7 +234,6 @@ func TestExcludedPathsRegex_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"AU"}, // Only AU allowed
 		BlockedCountries:     []string{"US"}, // US blocked
 		DefaultAllow:         false,          // Block by default
@@ -366,7 +363,6 @@ func TestIncludedPathsRegex_OnlyMatchingPathsAreBlocked(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"AU"},
 		BlockedCountries:     []string{"US"},
 		DefaultAllow:         false,
@@ -414,7 +410,6 @@ func TestIncludedPathsRegex_ExcludeStillWinsAfterInclude(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -459,7 +454,6 @@ func TestIncludedPathsRegex_InvalidRegex(t *testing.T) {
 	_, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		DisallowedStatusCode: http.StatusForbidden,
 		IPHeaders:            []string{"x-forwarded-for"},
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -477,7 +471,6 @@ func TestIncludedPathsRegex_EmptyRegex(t *testing.T) {
 	plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},
 		DefaultAllow:         false,
 		DisallowedStatusCode: http.StatusForbidden,
@@ -501,7 +494,6 @@ func TestExcludedPathsRegex_InvalidRegex(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		DisallowedStatusCode: http.StatusForbidden,
 		IPHeaders:            []string{"x-forwarded-for"},
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -521,7 +513,6 @@ func TestExcludedPathsRegex_EmptyRegex(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},
 		DefaultAllow:         false,
 		DisallowedStatusCode: http.StatusForbidden,
@@ -553,7 +544,6 @@ func TestExcludedPathsRegex_DomainBasedMatching(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},
 		DefaultAllow:         false,
 		DisallowedStatusCode: http.StatusForbidden,

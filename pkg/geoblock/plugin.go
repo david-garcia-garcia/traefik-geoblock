@@ -199,42 +199,62 @@ func (p *Plugin) Close() {
 	})
 }
 
-// bindDatabase opens the provider bound to this incarnation’s lifetime.
+// bindDatabase opens enabled catalog sources on this incarnation’s lifetime.
 func (p *Plugin) bindDatabase(life context.Context, cfg *Config) error {
 	if !ModeLooksUp(p.mode) {
 		return nil
 	}
-	db, err := openDatabaseProvider(life, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
+	db, err := openCatalogSources(life, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
 	if err != nil {
-		return fmt.Errorf("%s: failed to get database provider: %w", p.name, err)
+		return fmt.Errorf("%s: failed to open catalog sources: %w", p.name, err)
 	}
 	p.db = db
 	return nil
 }
 
-// openDatabaseProvider constructs the geo DatabaseProvider selected by Config.
-// Empty DatabaseProvider defaults to ip2location. Unknown values fail.
-func openDatabaseProvider(ctx context.Context, cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
-	name := providerName(cfg)
-	switch name {
-	case DatabaseProviderIP2Location:
+// openCatalogSources opens each enabled row and returns a Combined Lookup.
+func openCatalogSources(ctx context.Context, cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
+	var sources []dbprovider.Named
+	for _, key := range enabledSourceKeys(cfg) {
+		entry := cfg.DatabaseSources[key]
+		vendor := strings.ToLower(strings.TrimSpace(entry.Vendor))
+		p, err := openCatalogRow(ctx, cfg, key, vendor, logger)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, dbprovider.Named{Key: key, Provider: p})
+	}
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("no enabled databaseSources")
+	}
+	return dbprovider.NewCombined(sources), nil
+}
+
+// openCatalogRow opens one vendor Lookup for a catalog key.
+func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger *slog.Logger) (dbprovider.Provider, error) {
+	switch vendor {
+	case VendorIP2Location:
 		return ip2location.New(ctx, ip2location.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.Ip2locationSourceGeo, dbsource.TypeBIN),
-			AsnSource:             catalogSource(cfg, cfg.Ip2locationSourceAsn, dbsource.TypeBIN),
+			Source:                catalogSource(cfg, key, dbsource.TypeBIN),
 		}, logger)
-	case DatabaseProviderIPinfo:
+	case VendorIP2LocationASN:
+		return ip2location.NewASN(ctx, ip2location.DatabaseConfig{
+			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
+			AsnSource:             catalogSource(cfg, key, dbsource.TypeBIN),
+		}, logger)
+	case VendorIPinfo:
 		return ipinfo.New(ctx, ipinfo.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.IpinfoSource, dbsource.TypeMMDB),
+			Source:                catalogSource(cfg, key, dbsource.TypeMMDB),
 		}, logger)
-	case DatabaseProviderMaxMind:
+	case VendorMaxMind:
 		return maxmind.New(ctx, maxmind.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.MaxmindSource, dbsource.TypeMMDB),
+			Source:                catalogSource(cfg, key, dbsource.TypeMMDB),
 		}, logger)
 	default:
-		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)
+		return nil, fmt.Errorf("unknown vendor %q", vendor)
 	}
 }
 

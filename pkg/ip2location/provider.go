@@ -25,11 +25,19 @@ type provider struct {
 	asn *dbwrappers.BIN
 }
 
-// New constructs the IP2Location DatabaseProvider (geo factory plus optional ASN).
+// asnOnly is an IP2Location ASN BIN that fills Record.Asn only.
+type asnOnly struct {
+	asn *dbwrappers.BIN
+}
+
+// New constructs the IP2Location geo Lookup. Optional AsnSource is still merged when set (package tests).
 func New(ctx context.Context, config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
 	geo, err := dbwrappers.OpenBIN(ctx, geoBINConfig(config), logger)
 	if err != nil {
 		return nil, err
+	}
+	if config.AsnSource.Path == "" && config.AsnSource.URL == "" && config.AsnSource.Key == "" {
+		return &provider{geo: geo}, nil
 	}
 	asn, err := dbwrappers.OpenBIN(ctx, asnBINConfig(config), logger)
 	if err != nil {
@@ -38,11 +46,20 @@ func New(ctx context.Context, config DatabaseConfig, logger *slog.Logger) (dbpro
 	return &provider{geo: geo, asn: asn}, nil
 }
 
+// NewASN constructs the IP2Location ASN Lookup (Record.Asn only).
+func NewASN(ctx context.Context, config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
+	asn, err := dbwrappers.OpenBIN(ctx, asnBINConfig(config), logger)
+	if err != nil {
+		return nil, err
+	}
+	return &asnOnly{asn: asn}, nil
+}
+
 func geoBINConfig(cfg DatabaseConfig) dbwrappers.BINConfig {
 	return dbwrappers.BINConfig{
 		Dir:             cfg.DatabaseAutoUpdateDir,
 		Source:          cfg.Source,
-		DefaultFileName: defaultGeoFileName,
+		DefaultFileName: cfg.Source.DefaultFileName,
 		MinAge:          DownloadMinAge,
 	}
 }
@@ -61,10 +78,23 @@ func (p *provider) Lookup(ip string) (dbprovider.Record, error) {
 	if err != nil {
 		return rec, err
 	}
-	rec.Asn = p.asn.LookupASN(ip)
+	if p.asn != nil {
+		rec.Asn = p.asn.LookupASN(ip)
+	}
 	return rec, nil
 }
 
 func (p *provider) Close() error {
+	return nil
+}
+
+func (p *asnOnly) Lookup(ip string) (dbprovider.Record, error) {
+	if p == nil || p.asn == nil {
+		return dbprovider.Record{}, nil
+	}
+	return dbprovider.Record{Asn: p.asn.LookupASN(ip)}, nil
+}
+
+func (p *asnOnly) Close() error {
 	return nil
 }

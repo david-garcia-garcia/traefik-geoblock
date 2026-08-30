@@ -36,10 +36,14 @@ type provider struct {
 
 // New opens the IPinfo DatabaseProvider (thin facade over the MMDB wrapper).
 func New(ctx context.Context, config DatabaseConfig, logger *slog.Logger) (dbprovider.Provider, error) {
+	defaultFile := config.Source.DefaultFileName
+	if defaultFile == "" {
+		defaultFile = DefaultFileName
+	}
 	db, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
 		Dir:             config.DatabaseAutoUpdateDir,
 		Source:          config.Source,
-		DefaultFileName: DefaultFileName,
+		DefaultFileName: defaultFile,
 		MinAge:          DownloadMinAge,
 	}, logger)
 	if err != nil {

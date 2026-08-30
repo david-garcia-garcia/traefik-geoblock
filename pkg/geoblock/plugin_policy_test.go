@@ -14,7 +14,6 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			AllowedCountries:     []string{"AU"},
 			DisallowedStatusCode: http.StatusOK,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
@@ -41,7 +40,6 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			AllowedCountries:     []string{},
 			AllowPrivate:         true,
 			DisallowedStatusCode: http.StatusOK,
@@ -69,7 +67,6 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			AllowedCountries:     []string{},
 			AllowPrivate:         true,
 			DisallowedStatusCode: http.StatusOK,
@@ -97,7 +94,6 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			AllowedCountries:     []string{"DE"},
 			DisallowedStatusCode: http.StatusForbidden,
 			BanHtmlFilePath:      filepath.Join(moduleRoot(), "geoblockban.html"),
@@ -131,7 +127,6 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			AllowedCountries:     []string{},
 			AllowPrivate:         false,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -166,7 +161,6 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			BlockedCountries:     []string{"US"},
 			AllowPrivate:         false,
 			DefaultAllow:         true,
@@ -198,7 +192,6 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			AllowedIPBlocks:      []string{"203.0.113.0/24", "198.51.100.1/32"}, // Using TEST-NET-3 and TEST-NET-2 ranges
 			DefaultAllow:         false,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -221,7 +214,6 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			BlockedCountries:     []string{"US"},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
@@ -303,7 +295,6 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			AllowedCountries:     []string{"AU"},
 			DisallowedStatusCode: http.StatusForbidden,
 			CountryHeader:        countryHeader,
@@ -391,7 +382,6 @@ func TestPlugin_Lookup(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			AllowedCountries:     []string{},
 			AllowPrivate:         false,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -420,7 +410,6 @@ func TestPlugin_Lookup(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			AllowedCountries:     []string{},
 			AllowPrivate:         false,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -487,7 +476,6 @@ func TestPlugin_ServeHTTP_MalformedIP(t *testing.T) {
 				DisallowedStatusCode: http.StatusForbidden,
 				BanIfError:           tt.banIfError,
 				DatabaseSources:      seedCatalog(dbFilePath),
-				Ip2locationSourceGeo: "seed",
 				IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},
 				IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 			}
@@ -550,7 +538,6 @@ func TestCheckAllowed_Localhost(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
 		DefaultAllow:         false,
 		DisallowedStatusCode: http.StatusForbidden,
@@ -597,7 +584,6 @@ func TestServeHTTP_LocalhostWithAllowPrivate(t *testing.T) {
 	cfg := &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowPrivate:         true,
 		DefaultAllow:         false,
 		DisallowedStatusCode: http.StatusForbidden,

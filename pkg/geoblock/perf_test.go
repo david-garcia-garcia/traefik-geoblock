@@ -20,7 +20,6 @@ func newThroughputPlugin(tb testing.TB) *Route {
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -119,7 +118,6 @@ func BenchmarkPlugin_ServeHTTP_Enrich(b *testing.B) {
 	handler, err := newRoute(holdCtx(b), &noopHandler{}, &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -156,8 +154,6 @@ func newLITEASNPlugin(tb testing.TB) *Route {
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalogPair(dbFilePath, asn),
-		Ip2locationSourceGeo: "geo",
-		Ip2locationSourceAsn: "asn",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -181,8 +177,6 @@ func newDB8ASNPlugin(tb testing.TB) *Route {
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalogPair(path, asn),
-		Ip2locationSourceGeo: "geo",
-		Ip2locationSourceAsn: "asn",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -206,7 +200,6 @@ func newDB8CountryPlugin(tb testing.TB) *Route {
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(path),
-		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -233,7 +226,6 @@ func newDB8FullEnrichPlugin(tb testing.TB) *Route {
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Mode:                 ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(path),
-		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -418,8 +410,7 @@ func newMaxMindPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Mode:             ModeEnrichAndBlock,
-		DatabaseProvider: DatabaseProviderMaxMind,
-		DatabaseSources:  seedCatalog(maxmindFilePath), MaxmindSource: "seed",
+		DatabaseSources: seedCatalog(maxmindFilePath),
 		AllowedCountries:     []string{"GB"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -491,8 +482,7 @@ func BenchmarkPlugin_ServeHTTP_MaxMind(b *testing.B) {
 func BenchmarkPlugin_ServeHTTP_MaxMindEnrich(b *testing.B) {
 	handler, err := newRoute(holdCtx(b), &noopHandler{}, &Config{
 		Mode:             ModeEnrichAndBlock,
-		DatabaseProvider: DatabaseProviderMaxMind,
-		DatabaseSources:  seedCatalog(maxmindFilePath), MaxmindSource: "seed",
+		DatabaseSources: seedCatalog(maxmindFilePath),
 		AllowedCountries:     []string{"GB"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
