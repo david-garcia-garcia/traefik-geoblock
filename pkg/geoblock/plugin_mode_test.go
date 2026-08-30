@@ -6,7 +6,37 @@ import (
 	"testing"
 )
 
+// TestNormalizeMode_EmptyIsEnrichAndBlock checks empty and whitespace mode become enrichandblock.
+func TestNormalizeMode_EmptyIsEnrichAndBlock(t *testing.T) {
+	if got := NormalizeMode(""); got != ModeEnrichAndBlock {
+		t.Errorf("empty: %q want %q", got, ModeEnrichAndBlock)
+	}
+	if got := NormalizeMode("  "); got != ModeEnrichAndBlock {
+		t.Errorf("whitespace: %q want %q", got, ModeEnrichAndBlock)
+	}
+	if got := NormalizeMode(ModeDisabled); got != ModeDisabled {
+		t.Errorf("disabled: %q want %q", got, ModeDisabled)
+	}
+}
+
 func TestPrepare_ModeAndCountryHeader(t *testing.T) {
+	t.Run("empty mode is enrichandblock", func(t *testing.T) {
+		for _, mode := range []string{"", "  "} {
+			cfg := &Config{
+				Mode:                 mode,
+				DisallowedStatusCode: http.StatusForbidden,
+				IPHeaders:            []string{"x-real-ip"},
+				IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			}
+			if err := Prepare(cfg, pluginName); err != nil {
+				t.Fatalf("Prepare(%q): %v", mode, err)
+			}
+			if cfg.Mode != ModeEnrichAndBlock {
+				t.Errorf("Mode %q want %q", cfg.Mode, ModeEnrichAndBlock)
+			}
+		}
+	})
+
 	t.Run("unknown mode fails", func(t *testing.T) {
 		err := Prepare(&Config{
 			Mode:                 "full",
@@ -48,6 +78,29 @@ func TestPrepare_ModeAndCountryHeader(t *testing.T) {
 			t.Fatal("expected conflicting country enrich header to fail")
 		}
 	})
+}
+
+// TestMode_EmptyOpensCatalog checks omitted mode opens catalog sources as enrichandblock.
+func TestMode_EmptyOpensCatalog(t *testing.T) {
+	plugin, err := newTestPlugin(holdCtx(t), &Config{
+		CountryHeader:        "X-IPCountry",
+		DatabaseSources:      seedCatalog(dbFilePath),
+		BlockedCountries:     []string{"US"},
+		DefaultAllow:         true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		BanIfError:           true,
+	}, pluginName)
+	if err != nil {
+		t.Fatalf("NewCore: %v", err)
+	}
+	if plugin.db == nil {
+		t.Fatal("empty mode did not open catalog sources")
+	}
+	if plugin.mode != ModeEnrichAndBlock {
+		t.Errorf("mode %q want %q", plugin.mode, ModeEnrichAndBlock)
+	}
 }
 
 func TestMode_BlockDoesNotOpenDatabase(t *testing.T) {
