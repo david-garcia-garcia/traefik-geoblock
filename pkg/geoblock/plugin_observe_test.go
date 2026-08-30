@@ -22,7 +22,7 @@ func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
 	})
 
 	cfg := &Config{
-		Enabled:               true,
+		Mode:                  ModeEnrichAndBlock,
 		DatabaseSources:       seedCatalog(dbFilePath),
 		Ip2locationSourceGeo:  "seed",
 		AllowedCountries:      []string{"AU"},
@@ -121,7 +121,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 
 	t.Run("IgnoreVerb_should_set_pass_ignore_verb", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:               true,
+			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},
@@ -161,7 +161,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 
 	t.Run("ExcludedRegex_should_set_pass_excluded_regex", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:               true,
+			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},
@@ -202,7 +202,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 
 	t.Run("NotIncludedRegex_should_set_pass_not_included_regex", func(t *testing.T) {
 		handler, err := newRoute(holdCtx(t), captureHandler, &Config{
-			Enabled:               true,
+			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},
@@ -230,7 +230,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 
 	t.Run("BypassHeader_should_set_pass_bypass_header", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:               true,
+			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},
@@ -282,7 +282,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("DefaultAllow_true_should_set_pass_default_allow", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:               true,
+			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
 			AllowedCountries:      []string{}, // No countries explicitly allowed
@@ -322,7 +322,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("DefaultAllow_false_should_set_block_default_allow", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:               true,
+			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
 			AllowedCountries:      []string{}, // No countries explicitly allowed
@@ -360,7 +360,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("AllowedIPBlock_should_set_pass_allowed_ip_block", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:               true,
+			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},         // Block US
@@ -400,7 +400,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("BlockedIPBlock_should_set_block_blocked_ip_block", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:               true,
+			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
 			AllowedCountries:      []string{"AU"},         // Allow AU
@@ -438,7 +438,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 
 	t.Run("NoIPsFound_should_set_pass_none", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:               true,
+			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
 			DefaultAllow:          true,
@@ -500,7 +500,8 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("writes country region city", func(t *testing.T) {
 		plugin := &Plugin{
-			enabled: true,
+			mode:          ModeEnrichAndBlock,
+			countryHeader: "X-Geo-Country",
 			db: stubGeoProvider{rec: dbprovider.Record{
 				Country: "US", Region: "California", City: "Mountain View",
 				Isp: testGoogleIsp, Domain: testGoogleDomain, Asn: "15169",
@@ -550,7 +551,8 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("private IP writes PRIVATE country and null for other keys", func(t *testing.T) {
 		plugin := &Plugin{
-			enabled:          true,
+			mode:             ModeEnrichAndBlock,
+			countryHeader:    "X-Geo-Country",
 			db:               stubGeoProvider{},
 			defaultAllow:     true,
 			allowPrivate:     true,
@@ -582,7 +584,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("real BIN writes country and null for missing region city", func(t *testing.T) {
 		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
 			Ip2locationSourceGeo: "seed",
 			DefaultAllow:         true,
@@ -616,7 +618,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 	t.Run("DB8 writes region city isp domain", func(t *testing.T) {
 		path := requireDB8(t)
 		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(path),
 			Ip2locationSourceGeo: "seed",
 			DefaultAllow:         true,
@@ -654,7 +656,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("IPinfo Lite writes valued fields and null for empty region city", func(t *testing.T) {
 		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:          true,
+			Mode:             ModeEnrichAndBlock,
 			DatabaseProvider: DatabaseProviderIPinfo,
 			DatabaseSources:  seedCatalog(ipinfoFilePath), IpinfoSource: "seed",
 			DefaultAllow:         true,
@@ -790,7 +792,8 @@ func TestEnrichNullSentinel(t *testing.T) {
 
 	t.Run("empty public lookup keeps PRIVATE and null", func(t *testing.T) {
 		plugin := &Plugin{
-			enabled:             true,
+			mode:                ModeEnrichAndBlock,
+			countryHeader:       "X-Geo-Country",
 			db:                  stubGeoProvider{},
 			defaultAllow:        true,
 			allowPrivate:        true,
@@ -814,7 +817,8 @@ func TestEnrichNullSentinel(t *testing.T) {
 
 	t.Run("first public IP overwrites PRIVATE and null", func(t *testing.T) {
 		plugin := &Plugin{
-			enabled: true,
+			mode:          ModeEnrichAndBlock,
+			countryHeader: "X-Geo-Country",
 			db: stubGeoProvider{rec: dbprovider.Record{
 				Country: "DE", Region: "Berlin",
 			}},

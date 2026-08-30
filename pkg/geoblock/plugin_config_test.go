@@ -28,7 +28,7 @@ func pluginRootDir(t *testing.T) string {
 func TestNew(t *testing.T) {
 	t.Setenv(fileutils.PluginPathEnv, pluginRootDir(t))
 	t.Run("Disabled", func(t *testing.T) {
-		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Enabled: false, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Mode: ModeDisabled, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -44,7 +44,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("NoNextHandler", func(t *testing.T) {
-		plugin, err := newRoute(holdCtx(t), nil, &Config{Enabled: true, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
+		plugin, err := newRoute(holdCtx(t), nil, &Config{Mode: ModeEnrichAndBlock, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -64,7 +64,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("InvalidDisallowedStatusCode", func(t *testing.T) {
-		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: -1, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Mode: ModeEnrichAndBlock, DisallowedStatusCode: -1, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -83,7 +83,7 @@ func TestNew(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = os.Chdir(wd) })
 		t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", "")
-		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: http.StatusForbidden, DatabaseSources: seedCatalog(""), Ip2locationSourceGeo: "seed", IPHeaders: []string{"x-real-ip"}}, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Mode: ModeEnrichAndBlock, DisallowedStatusCode: http.StatusForbidden, DatabaseSources: seedCatalog(""), Ip2locationSourceGeo: "seed", IPHeaders: []string{"x-real-ip"}}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -98,7 +98,7 @@ func TestNew(t *testing.T) {
 			t.Fatal(err)
 		}
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(bad),
 			Ip2locationSourceGeo: "seed",
 			IPHeaders:            []string{"x-real-ip"},
@@ -113,7 +113,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("UnsupportedDatabaseProvider", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseProvider:     "no-such-vendor",
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -132,7 +132,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("ExplicitMaxMindProvider", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseProvider:     DatabaseProviderMaxMind,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -152,7 +152,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("ExplicitIPinfoProvider", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseProvider:     DatabaseProviderIPinfo,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -168,7 +168,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("IPinfoEmptyPathUsesBundledMMDB", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseProvider:     DatabaseProviderIPinfo,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -189,7 +189,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("IPinfoURLWithoutDirUsesTemp", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:          true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseProvider: DatabaseProviderIPinfo,
 			IpinfoSource:     "lite",
 			DatabaseSources: map[string]DatabaseSource{
@@ -213,7 +213,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("IPinfoEmptyMapUsesSeed", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseProvider:     DatabaseProviderIPinfo,
 			DatabaseSources:      map[string]DatabaseSource{},
 			DisallowedStatusCode: http.StatusForbidden,
@@ -230,7 +230,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("FreeCatalogKeySucceeds", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled: true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				"city":                       {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none"},
 				DefaultIP2LocationCatalogKey: {Path: dbFilePath, DatabaseType: "bin"},
@@ -250,7 +250,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("MissingPointerKeyWarnsAndStarts", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseProvider:     DatabaseProviderIPinfo,
 			IpinfoSource:         "lite",
 			DatabaseSources:      map[string]DatabaseSource{},
@@ -288,7 +288,7 @@ func TestNew(t *testing.T) {
 	t.Run("OperatorDefaultCatalogKept", func(t *testing.T) {
 		custom := "https://example.com/custom.BIN.ZIP"
 		cfg := &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -330,7 +330,7 @@ func TestNew(t *testing.T) {
 	t.Run("OperatorDefaultGeoliteKept", func(t *testing.T) {
 		custom := "https://example.com/custom.mmdb"
 		cfg := &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseProvider:     DatabaseProviderMaxMind,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -353,7 +353,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("PointerTypeMismatchFails", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:               true,
+			Mode: ModeEnrichAndBlock,
 			DisallowedStatusCode:  http.StatusForbidden,
 			IPHeaders:             []string{"x-real-ip"},
 			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
@@ -373,7 +373,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("UnknownDatabaseTypeFails", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled: true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				"litezip": {URL: "https://example.com/db.zip", DatabaseType: "csv", Archive: "zip"},
 			},
@@ -392,7 +392,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("UnknownArchiveFails", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled: true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				"litezip": {URL: "https://example.com/db.zip", DatabaseType: "bin", Archive: "rar"},
 			},
@@ -411,7 +411,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("ExtensionlessURLWithoutArchiveFails", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled: true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				"tok": {URL: "https://example.com/download", DatabaseType: "bin"},
 			},
@@ -433,7 +433,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("GeoNamedKeyIsOrdinary", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			Ip2locationSourceGeo: "geo",
 			DatabaseSources: map[string]DatabaseSource{
 				// Path only: a URL would GET into t.TempDir() and fail Linux cleanup.
@@ -454,7 +454,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("ExplicitIP2LocationProvider", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseProvider:     DatabaseProviderIP2Location,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -470,7 +470,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("EmptyMapLeavesASNEmpty", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources:      map[string]DatabaseSource{},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -493,7 +493,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("RequestHeaderEnrichIspDomainKeysAllowed", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -512,7 +512,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("RequestHeaderEnrichAsnKeyAllowed", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -528,7 +528,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("CountryHeaderFoldsIntoRequestHeaderEnrich", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			CountryHeader:        "X-IPCountry",
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -545,7 +545,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("RequestHeaderEnrichWinsOverCountryHeader", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			CountryHeader:        "X-Geo-Country",
 			RequestHeaderEnrich:  map[string]string{"X-Geo-Country": "city"},
 			DisallowedStatusCode: http.StatusForbidden,
@@ -563,7 +563,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("UnknownRequestHeaderEnrichKey", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -582,7 +582,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("EmptyIPHeaders", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{}, // Empty slice should be rejected
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -597,7 +597,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("CustomIPHeaders", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"custom-ip-header", "another-ip-header"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -667,7 +667,7 @@ func TestNew(t *testing.T) {
 
 		// Try to create plugin with empty DatabaseFilePath - should use environment variable
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
@@ -723,7 +723,7 @@ func TestNew(t *testing.T) {
 		}()
 
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog("/nonexistent/path/bad-database.bin"),
 			Ip2locationSourceGeo: "seed",
 			DisallowedStatusCode: http.StatusForbidden,
@@ -771,7 +771,7 @@ func TestNew(t *testing.T) {
 			t.Fatal(err)
 		}
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(bad),
 			Ip2locationSourceGeo: "seed",
 			DisallowedStatusCode: http.StatusForbidden,
@@ -803,7 +803,7 @@ func TestNew(t *testing.T) {
 		}()
 
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Enabled:               true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
 			IPHeaders:             []string{"x-real-ip"},
@@ -849,7 +849,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 
 	t.Run("AutoUpdateEnabled", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:               true,
+			Mode: ModeEnrichAndBlock,
 			Ip2locationSourceGeo:  "geo",
 			DatabaseSources:       map[string]DatabaseSource{"geo": {}},
 			DatabaseAutoUpdateDir: tmpDir,
@@ -879,7 +879,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 
 	t.Run("AutoUpdateEnabledNoDir", func(t *testing.T) {
 		cfg := &Config{
-			Enabled:              true,
+			Mode: ModeEnrichAndBlock,
 			Ip2locationSourceGeo: "litezip",
 			DatabaseSources: map[string]DatabaseSource{
 				"litezip": {URL: "https://example.com/geo.ZIP", DatabaseType: "bin", Archive: "zip"},
@@ -907,7 +907,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 		defer os.RemoveAll(emptyDir)
 
 		cfg := &Config{
-			Enabled:               true,
+			Mode: ModeEnrichAndBlock,
 			DatabaseAutoUpdateDir: emptyDir,
 			DisallowedStatusCode:  http.StatusForbidden,
 			IPHeaders:             []string{"x-forwarded-for", "x-real-ip"},

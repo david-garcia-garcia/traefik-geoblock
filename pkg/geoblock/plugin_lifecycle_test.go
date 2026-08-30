@@ -111,7 +111,7 @@ func tickerURL(t *testing.T) string {
 
 func lifecycleBIN(path, url, dir string) *Config {
 	return &Config{
-		Enabled:               true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseSources:       map[string]DatabaseSource{"seed": {Path: path, URL: url, DatabaseType: dbsource.TypeBIN}},
 		Ip2locationSourceGeo:  "seed",
 		DatabaseAutoUpdateDir: dir,
@@ -125,7 +125,7 @@ func lifecycleBIN(path, url, dir string) *Config {
 
 func lifecycleIPinfo(path, url, dir string) *Config {
 	return &Config{
-		Enabled:               true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseProvider:      DatabaseProviderIPinfo,
 		DatabaseSources:       map[string]DatabaseSource{"seed": {Path: path, URL: url, DatabaseType: dbsource.TypeMMDB}},
 		IpinfoSource:          "seed",

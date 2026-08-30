@@ -18,7 +18,7 @@ const (
 func newThroughputPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
-		Enabled:              true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
@@ -117,7 +117,7 @@ func BenchmarkPlugin_ServeHTTP(b *testing.B) {
 // Plugin-only allocs: request and recorder are reused (Traefik does this).
 func BenchmarkPlugin_ServeHTTP_Enrich(b *testing.B) {
 	handler, err := newRoute(holdCtx(b), &noopHandler{}, &Config{
-		Enabled:              true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
@@ -154,7 +154,7 @@ func newLITEASNPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	asn := requireASN(tb)
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
-		Enabled:              true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalogPair(dbFilePath, asn),
 		Ip2locationSourceGeo: "geo",
 		Ip2locationSourceAsn: "asn",
@@ -179,7 +179,7 @@ func newDB8ASNPlugin(tb testing.TB) *Route {
 	path := requireDB8(tb)
 	asn := requireASN(tb)
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
-		Enabled:              true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalogPair(path, asn),
 		Ip2locationSourceGeo: "geo",
 		Ip2locationSourceAsn: "asn",
@@ -204,7 +204,7 @@ func newDB8CountryPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	path := requireDB8(tb)
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
-		Enabled:              true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(path),
 		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
@@ -231,7 +231,7 @@ func newDB8FullEnrichPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	path := requireDB8(tb)
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
-		Enabled:              true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseSources:      seedCatalog(path),
 		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US", "AU"},
@@ -417,7 +417,7 @@ const maxmindDummyIP = "81.2.69.142"
 func newMaxMindPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
-		Enabled:          true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseProvider: DatabaseProviderMaxMind,
 		DatabaseSources:  seedCatalog(maxmindFilePath), MaxmindSource: "seed",
 		AllowedCountries:     []string{"GB"},
@@ -490,7 +490,7 @@ func BenchmarkPlugin_ServeHTTP_MaxMind(b *testing.B) {
 
 func BenchmarkPlugin_ServeHTTP_MaxMindEnrich(b *testing.B) {
 	handler, err := newRoute(holdCtx(b), &noopHandler{}, &Config{
-		Enabled:          true,
+		Mode: ModeEnrichAndBlock,
 		DatabaseProvider: DatabaseProviderMaxMind,
 		DatabaseSources:  seedCatalog(maxmindFilePath), MaxmindSource: "seed",
 		AllowedCountries:     []string{"GB"},

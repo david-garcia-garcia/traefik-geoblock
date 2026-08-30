@@ -34,13 +34,21 @@ const (
 	IPHeaderStrategyCheckFirstNonePrivate = "CheckFirstNonePrivate"
 )
 
+// Mode is the Traefik Config field that selects lookup, block, both, or pass-through.
+const (
+	ModeDisabled       = "disabled"
+	ModeEnrich         = "enrich"
+	ModeBlock          = "block"
+	ModeEnrichAndBlock = "enrichandblock"
+)
+
 // Config defines the plugin configuration.
 type Config struct {
-	// Core settings
-	Enabled      bool // Enable/disable the plugin
-	DefaultAllow bool // Default behavior when IP matches no rules
-	AllowPrivate bool // Allow requests from private/internal networks
-	BanIfError   bool // Ban requests if IP lookup fails
+	// Mode is disabled, enrich, block, or enrichandblock. Empty is disabled.
+	Mode         string `json:"mode,omitempty" mapstructure:"mode"`
+	DefaultAllow bool   // Default behavior when IP matches no rules
+	AllowPrivate bool   // Allow requests from private/internal networks
+	BanIfError   bool   // Ban requests if IP lookup fails
 
 	// Database provider. Empty defaults to ip2location. Implemented: ip2location, ipinfo, maxmind.
 	DatabaseProvider string `json:"databaseProvider,omitempty" mapstructure:"databaseProvider"`
@@ -71,7 +79,7 @@ type Config struct {
 	// Response settings
 	DisallowedStatusCode  int    // HTTP status code for blocked requests
 	BanHtmlFilePath       string // Custom HTML template for blocked requests
-	CountryHeader         string // Deprecated: folded into RequestHeaderEnrich as key country
+	CountryHeader         string // Required when mode is not disabled. Lookup writes; block reads.
 	LogStatusDetailHeader string // Header to write detailed status to (on REQUEST): "pass:{reason}" or "block:{reason}"
 
 	// RequestHeaderEnrich maps request header names to metadata keys
@@ -122,15 +130,49 @@ func CreateConfig() *Config {
 		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,                 // Default to checking all IPs
 		DatabaseProvider:     DatabaseProviderIP2Location,              // Default provider
-		CountryHeader:        "",                                       // Default to empty thus not setting the header
+		CountryHeader:        "",                                       // Required when mode is not disabled
 		DatabaseSources:      make(map[string]DatabaseSource),
+	}
+}
+
+// NormalizeMode is empty → disabled, else lowercased trimmed mode.
+func NormalizeMode(mode string) string {
+	m := strings.ToLower(strings.TrimSpace(mode))
+	if m == "" {
+		return ModeDisabled
+	}
+	return m
+}
+
+// ModeLooksUp reports whether this mode opens the DatabaseProvider and writes headers.
+func ModeLooksUp(mode string) bool {
+	return mode == ModeEnrich || mode == ModeEnrichAndBlock
+}
+
+// ModeBlocks reports whether this mode applies CIDR, private, and country rules.
+func ModeBlocks(mode string) bool {
+	return mode == ModeBlock || mode == ModeEnrichAndBlock
+}
+
+// validMode reports whether mode is one of the four allowed values.
+func validMode(mode string) bool {
+	switch mode {
+	case ModeDisabled, ModeEnrich, ModeBlock, ModeEnrichAndBlock:
+		return true
+	default:
+		return false
 	}
 }
 
 // Prepare normalizes and validates cfg. Mutates cfg. Call before hashing or NewCore.
 func Prepare(cfg *Config, name string) error {
-	if !cfg.Enabled {
+	cfg.Mode = NormalizeMode(cfg.Mode)
+	if cfg.Mode == ModeDisabled {
 		return nil
+	}
+	if !validMode(cfg.Mode) {
+		return fmt.Errorf("%s: invalid mode %q, must be one of: %s, %s, %s, %s",
+			name, cfg.Mode, ModeDisabled, ModeEnrich, ModeBlock, ModeEnrichAndBlock)
 	}
 	logger := pluginLogger(name, cfg)
 	if http.StatusText(cfg.DisallowedStatusCode) == "" {
@@ -146,22 +188,44 @@ func Prepare(cfg *Config, name string) error {
 			name, cfg.IPHeaderStrategy,
 			IPHeaderStrategyCheckAll, IPHeaderStrategyCheckFirst, IPHeaderStrategyCheckFirstNonePrivate)
 	}
-
-	ensureDefaultIP2LocationCatalog(cfg)
-	ensureDefaultGeoliteCatalog(cfg)
-	applyMissingPointerFallbacks(cfg, logger)
-	bindEmptyIP2LocationGeo(cfg)
-	bindEmptyMaxmindSource(cfg)
-	if err := validateDatabaseSources(cfg); err != nil {
+	if strings.TrimSpace(cfg.CountryHeader) == "" {
+		return fmt.Errorf("%s: countryHeader is required when mode is not %s", name, ModeDisabled)
+	}
+	if err := checkCountryHeaderBridge(cfg.CountryHeader, cfg.RequestHeaderEnrich); err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
-	applyTempAutoUpdateDir(cfg, logger)
+
+	if ModeLooksUp(cfg.Mode) {
+		ensureDefaultIP2LocationCatalog(cfg)
+		ensureDefaultGeoliteCatalog(cfg)
+		applyMissingPointerFallbacks(cfg, logger)
+		bindEmptyIP2LocationGeo(cfg)
+		bindEmptyMaxmindSource(cfg)
+		if err := validateDatabaseSources(cfg); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		applyTempAutoUpdateDir(cfg, logger)
+	}
 
 	if cfg.BanHtmlFilePath != "" {
 		var err error
 		cfg.BanHtmlFilePath, err = fileutils.Default.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
 		if err != nil {
 			return fmt.Errorf("%s: failed to find ban HTML file: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// checkCountryHeaderBridge fails when requestHeaderEnrich maps a different header to country.
+func checkCountryHeaderBridge(countryHeader string, enrich map[string]string) error {
+	canon := http.CanonicalHeaderKey(strings.TrimSpace(countryHeader))
+	for header, key := range enrich {
+		if strings.ToLower(strings.TrimSpace(key)) != dbprovider.MetaCountry {
+			continue
+		}
+		if http.CanonicalHeaderKey(header) != canon {
+			return fmt.Errorf("requestHeaderEnrich header %q maps to country; countryHeader is %q", header, countryHeader)
 		}
 	}
 	return nil
@@ -402,15 +466,13 @@ func normalizeRequestHeaderEnrich(in map[string]string) (map[string]string, erro
 	return out, nil
 }
 
-// foldCountryHeader copies deprecated countryHeader into requestHeaderEnrich as
-// key country. A set enrich mapping for the same header name wins.
-func foldCountryHeader(countryHeader string, enrich map[string]string, logger *slog.Logger) map[string]string {
+// foldCountryHeader copies countryHeader into requestHeaderEnrich as key country
+// so lookup writes the bridge header. A set enrich mapping for the same name wins.
+func foldCountryHeader(countryHeader string, enrich map[string]string) map[string]string {
 	h := strings.TrimSpace(countryHeader)
 	if h == "" {
 		return enrich
 	}
-	logger.Warn("countryHeader is deprecated; use requestHeaderEnrich with metadata key country",
-		"header", h)
 	canon := http.CanonicalHeaderKey(h)
 	if enrich == nil {
 		enrich = map[string]string{}

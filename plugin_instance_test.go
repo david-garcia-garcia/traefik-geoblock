@@ -113,7 +113,8 @@ func instanceModuleRoot() string {
 // instanceBIN is an enabled IP2Location config that allows US.
 func instanceBIN(path string) *Config {
 	return &Config{
-		Enabled: true,
+		Mode:          geoblock.ModeEnrichAndBlock,
+		CountryHeader: "X-Country",
 		DatabaseSources: map[string]geoblock.DatabaseSource{
 			"seed": {Path: path, DatabaseType: dbsource.TypeBIN},
 		},
@@ -129,7 +130,8 @@ func instanceBIN(path string) *Config {
 // instanceMaxMind is an enabled MaxMind config that points at a seed MMDB.
 func instanceMaxMind(path string) *Config {
 	return &Config{
-		Enabled:          true,
+		Mode:             geoblock.ModeEnrichAndBlock,
+		CountryHeader:    "X-Country",
 		DatabaseProvider: geoblock.DatabaseProviderMaxMind,
 		DatabaseSources: map[string]geoblock.DatabaseSource{
 			"seed": {Path: path, DatabaseType: dbsource.TypeMMDB},
