@@ -117,7 +117,7 @@ func UpdateIfNeeded(cfg Config, logger *slog.Logger) (string, error) {
 	}
 	minAge := cfg.MinAge
 	if minAge <= 0 {
-		minAge = 24 * time.Hour
+		minAge = DefaultMinAge
 	}
 	if latest != "" {
 		if date, err := dbutils.GetDateFromName(latest); err == nil && time.Since(date) < minAge {

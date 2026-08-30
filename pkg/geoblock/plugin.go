@@ -221,12 +221,12 @@ func openDatabaseProvider(ctx context.Context, cfg *Config, logger *slog.Logger)
 	case DatabaseProviderIPinfo:
 		return ipinfo.New(ctx, ipinfo.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.IpinfoSource, dbsource.TypeMMDB, mmdbSourceMinAge),
+			Source:                catalogSource(cfg, cfg.IpinfoSource, dbsource.TypeMMDB, ipinfo.DownloadMinAge),
 		}, logger)
 	case DatabaseProviderMaxMind:
 		return maxmind.New(ctx, maxmind.DatabaseConfig{
 			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.MaxmindSource, dbsource.TypeMMDB, mmdbSourceMinAge),
+			Source:                catalogSource(cfg, cfg.MaxmindSource, dbsource.TypeMMDB, maxmind.DownloadMinAge),
 		}, logger)
 	default:
 		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)

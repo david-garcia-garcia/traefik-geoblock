@@ -35,8 +35,6 @@ const (
 	IPHeaderStrategyCheckFirstNonePrivate = "CheckFirstNonePrivate"
 )
 
-const mmdbSourceMinAge = dbsource.DefaultMinAge
-
 // Config defines the plugin configuration.
 type Config struct {
 	// Core settings
