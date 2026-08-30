@@ -165,7 +165,7 @@ type Plugin struct {
 	name                  string
 	db                    dbprovider.Provider
 	lifeCancel            context.CancelFunc
-	closeOnce             sync.Once
+	closeOnce             *sync.Once
 	enabled               bool
 	allowedCountries      map[string]struct{} // Instead of []string to improve lookup performance
 	blockedCountries      map[string]struct{} // Instead of []string to improve lookup performance
@@ -241,7 +241,7 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		"logFormat", cfg.LogFormat)
 	if !cfg.Enabled {
 		logger.Warn("plugin disabled")
-		return &Plugin{name: name, enabled: false, logger: logger}, nil
+		return &Plugin{name: name, enabled: false, logger: logger, closeOnce: &sync.Once{}}, nil
 	}
 
 	requestHeaderEnrich, err := normalizeRequestHeaderEnrich(cfg.RequestHeaderEnrich)
@@ -303,6 +303,7 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 	pluginInstance := &Plugin{
 		name:                  name,
 		lifeCancel:            lifeCancel,
+		closeOnce:             &sync.Once{},
 		enabled:               cfg.Enabled,
 		allowedCountries:      allowedCountries,
 		blockedCountries:      blockedCountries,
@@ -333,6 +334,9 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 // Close ends this incarnation’s lifetime so format wrappers drop this holder.
 func (p *Plugin) Close() {
 	if p == nil {
+		return
+	}
+	if p.closeOnce == nil {
 		return
 	}
 	p.closeOnce.Do(func() {
