@@ -11,8 +11,6 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 // pluginRootDir is the module root so New tests can set PluginPathEnv for seed lookup.
@@ -132,7 +130,7 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("ExplicitMaxMindProvider", func(t *testing.T) {
+	t.Run("ExplicitMaxMindCatalog", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -148,7 +146,7 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("ExplicitIPinfoProvider", func(t *testing.T) {
+	t.Run("ExplicitIPinfoCatalog", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -251,13 +249,13 @@ func TestNew(t *testing.T) {
 		if !ok {
 			t.Fatal("expected default_ip2location catalog row")
 		}
-		if row.URL != ip2location.DefaultLiteURL {
+		if row.URL != DefaultIP2LocationLiteURL {
 			t.Errorf("default URL: got %q", row.URL)
 		}
 		if row.DatabaseType != "bin" || row.Archive != "zip" {
 			t.Errorf("default type/archive: got %q %q", row.DatabaseType, row.Archive)
 		}
-		if row.Vendor != VendorIP2Location || row.DefaultFile != ip2location.DefaultGeoFileName {
+		if row.Vendor != VendorIP2Location || row.DefaultFile != DefaultIP2LocationGeoFile {
 			t.Errorf("vendor/defaultFile: got %q %q", row.Vendor, row.DefaultFile)
 		}
 		if _, ok := cfg.DatabaseSources[DefaultIPinfoCatalogKey]; !ok {
@@ -298,7 +296,7 @@ func TestNew(t *testing.T) {
 		if !ok {
 			t.Fatal("expected default_geolite catalog row")
 		}
-		if row.URL != maxmind.DefaultGeoliteURL {
+		if row.URL != DefaultGeoliteURL {
 			t.Errorf("default URL: got %q", row.URL)
 		}
 		if row.DatabaseType != "mmdb" || row.Archive != "none" {
@@ -434,7 +432,7 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("ExplicitIP2LocationProvider", func(t *testing.T) {
+	t.Run("DefaultIP2LocationCatalog", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -442,7 +440,7 @@ func TestNew(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}, pluginName)
 		if err != nil {
-			t.Errorf("expected no error with databaseProvider ip2location, but got: %v", err)
+			t.Errorf("expected no error with default catalog, but got: %v", err)
 		}
 		if plugin == nil {
 			t.Error("expected plugin not to be nil")

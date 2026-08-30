@@ -14,7 +14,6 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 const (
@@ -28,7 +27,7 @@ func testCountryMMDB(t *testing.T) string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	p := filepath.Join(filepath.Dir(file), "..", "..", "seeds", maxmind.DefaultSeedFileName)
+	p := filepath.Join(filepath.Dir(file), "..", "..", "seeds", "GeoIP2-Country-Test.mmdb")
 	if !fileutils.Exists(p) {
 		t.Fatal("GeoIP2-Country-Test.mmdb not found; commit it under seeds/")
 	}
@@ -90,7 +89,7 @@ func TestGeoIP2_EmptyPathFindsBundled(t *testing.T) {
 
 	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", filepath.Dir(testCountryMMDB(t)))
 
-	mmdb, err := OpenMMDB(holdCtx(t), MMDBConfig{DefaultFileName: maxmind.DefaultSeedFileName}, testLogger())
+	mmdb, err := OpenMMDB(holdCtx(t), MMDBConfig{DefaultFileName: "GeoIP2-Country-Test.mmdb"}, testLogger())
 	if err != nil {
 		t.Fatalf("OpenMMDB with empty path: %v", err)
 	}

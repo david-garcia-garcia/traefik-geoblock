@@ -8,6 +8,6 @@ When `mode` is `enrich` or `enrichandblock`, `NewCore` SHALL open enabled catalo
 - **THEN** lookups on the returned handler still succeed
 - **AND** that context is a holder on the format wrapper
 
-#### Scenario: Block incarnation has no provider
+#### Scenario: Block incarnation has no catalog sources
 - **WHEN** `mode` is `block` and `New` constructs or reuses a plugin incarnation
 - **THEN** that incarnation has no open catalog sources

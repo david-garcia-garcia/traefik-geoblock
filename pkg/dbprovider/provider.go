@@ -74,7 +74,7 @@ func KnownMetaKey(key string) bool {
 	}
 }
 
-// Provider opens a geo database, looks up metadata, and owns auto-update.
+// Provider looks up geo metadata for an IP. Close does not close shared wrappers.
 type Provider interface {
 	Lookup(ip string) (Record, error)
 	Close() error

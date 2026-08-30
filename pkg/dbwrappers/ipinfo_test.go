@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
 )
 
 func TestIPinfo_PublicAndPrivate(t *testing.T) {
@@ -84,7 +83,7 @@ func TestIPinfo_EmptyPathFindsBundled(t *testing.T) {
 
 	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", filepath.Dir(testLiteMMDB(t)))
 
-	mmdb, err := OpenMMDB(holdCtx(t), MMDBConfig{DefaultFileName: ipinfo.DefaultFileName}, testLogger())
+	mmdb, err := OpenMMDB(holdCtx(t), MMDBConfig{DefaultFileName: "ipinfo_lite.mmdb"}, testLogger())
 	if err != nil {
 		t.Fatalf("OpenMMDB with empty path: %v", err)
 	}

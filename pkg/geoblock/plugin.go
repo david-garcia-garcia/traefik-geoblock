@@ -14,10 +14,8 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 const (
@@ -46,7 +44,7 @@ const (
 	PhaseBypassHeader     = "bypass_header"
 )
 
-// Plugin is the shared policy for one middleware name and config, including the database provider.
+// Plugin is the shared policy for one middleware name and config, including catalog lookup.
 type Plugin struct {
 	name                  string
 	db                    dbprovider.Provider
@@ -80,7 +78,7 @@ func pluginLogger(name string, cfg *Config) *slog.Logger {
 	return logging.New(name, cfg.LogLevel, cfg.LogFormat, bootstrap)
 }
 
-// NewCore builds the Plugin and opens the database provider on this incarnation’s lifetime. cfg must already be Prepare'd.
+// NewCore builds the Plugin and opens catalog sources on this incarnation’s lifetime. cfg must already be Prepare'd.
 func NewCore(name string, cfg *Config) (*Plugin, error) {
 	logger := pluginLogger(name, cfg)
 	logger.Debug("initializing plugin",
@@ -218,11 +216,11 @@ func openCatalogSources(ctx context.Context, cfg *Config, logger *slog.Logger) (
 	for _, key := range enabledSourceKeys(cfg) {
 		entry := cfg.DatabaseSources[key]
 		vendor := strings.ToLower(strings.TrimSpace(entry.Vendor))
-		p, err := openCatalogRow(ctx, cfg, key, vendor, logger)
+		lookup, err := openCatalogRow(ctx, cfg, key, vendor, logger)
 		if err != nil {
 			return nil, err
 		}
-		sources = append(sources, dbprovider.Named{Key: key, Provider: p})
+		sources = append(sources, dbprovider.Named{Key: key, Provider: lookup})
 	}
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("no enabled databaseSources")
@@ -260,7 +258,7 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger
 	case VendorIPinfo:
 		src := catalogSource(cfg, key, dbsource.TypeMMDB)
 		if src.DefaultFileName == "" {
-			src.DefaultFileName = ipinfo.DefaultFileName
+			src.DefaultFileName = DefaultIPinfoFile
 		}
 		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
 			Dir:             cfg.DatabaseAutoUpdateDir,
@@ -275,7 +273,7 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger
 	case VendorMaxMind:
 		src := catalogSource(cfg, key, dbsource.TypeMMDB)
 		if src.DefaultFileName == "" {
-			src.DefaultFileName = maxmind.DefaultSeedFileName
+			src.DefaultFileName = DefaultMaxMindSeedFile
 		}
 		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
 			Dir:             cfg.DatabaseAutoUpdateDir,
@@ -472,7 +470,7 @@ func (p Plugin) logLookupError(req *http.Request, ip, ipChain string, remoteIPs 
 		"remote_addr", req.RemoteAddr)
 }
 
-// CheckAllowed is private + CIDR + country from a lookup when a provider is bound.
+// CheckAllowed is private + CIDR + country from a lookup when catalog sources are bound.
 // Request country rules use decide with countryHeader instead.
 func (p Plugin) CheckAllowed(ip string) (allow bool, phase string, err error) {
 	rec, err := p.recordForLookup(ip)
@@ -482,7 +480,7 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, phase string, err error) {
 	return p.decide(ip, rec.Country)
 }
 
-// recordForLookup is PRIVATE for private/loopback IPs, else DatabaseProvider Lookup.
+// recordForLookup is PRIVATE for private/loopback IPs, else catalog Lookup.
 func (p Plugin) recordForLookup(ip string) (dbprovider.Record, error) {
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {

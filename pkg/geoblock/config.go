@@ -12,9 +12,6 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 const (
@@ -33,6 +30,17 @@ const (
 	// DefaultGeoliteCatalogKey is the reserved disabled unofficial Country GET.
 	DefaultGeoliteCatalogKey = "default_geolite"
 	defaultAutoUpdateDirName = "traefik-geoblock"
+
+	// DefaultIP2LocationLiteURL is the official free IP2Location geo LITE ZIP (no token).
+	DefaultIP2LocationLiteURL = "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
+	// DefaultIP2LocationGeoFile is the committed country LITE BIN under seeds/.
+	DefaultIP2LocationGeoFile = "IP2LOCATION-LITE-DB1.IPV6.BIN"
+	// DefaultIPinfoFile is the committed Lite snapshot under seeds/.
+	DefaultIPinfoFile = "ipinfo_lite.mmdb"
+	// DefaultMaxMindSeedFile is MaxMind's official dummy Country fixture under seeds/.
+	DefaultMaxMindSeedFile = "GeoIP2-Country-Test.mmdb"
+	// DefaultGeoliteURL is the unofficial P3TERX Country MMDB on the download branch.
+	DefaultGeoliteURL = "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb"
 )
 
 // IP header strategy constants
@@ -146,7 +154,7 @@ func NormalizeMode(mode string) string {
 	return m
 }
 
-// ModeLooksUp reports whether this mode opens the DatabaseProvider and writes headers.
+// ModeLooksUp reports whether this mode opens catalog sources and writes headers.
 func ModeLooksUp(mode string) bool {
 	return mode == ModeEnrich || mode == ModeEnrichAndBlock
 }
@@ -293,26 +301,26 @@ func insertReservedCatalog(cfg *Config) {
 		cfg.DatabaseSources = make(map[string]DatabaseSource)
 	}
 	insertCatalogIfAbsent(cfg, DefaultIP2LocationCatalogKey, DatabaseSource{
-		URL:          ip2location.DefaultLiteURL,
+		URL:          DefaultIP2LocationLiteURL,
 		DatabaseType: dbsource.TypeBIN,
 		Archive:      dbsource.ArchiveZIP,
 		Vendor:       VendorIP2Location,
-		DefaultFile:  ip2location.DefaultGeoFileName,
+		DefaultFile:  DefaultIP2LocationGeoFile,
 	})
 	insertCatalogIfAbsent(cfg, DefaultIPinfoCatalogKey, DatabaseSource{
 		DatabaseType: dbsource.TypeMMDB,
 		Vendor:       VendorIPinfo,
-		DefaultFile:  ipinfo.DefaultFileName,
+		DefaultFile:  DefaultIPinfoFile,
 		Enabled:      boolPtr(false),
 	})
 	insertCatalogIfAbsent(cfg, DefaultMaxmindCatalogKey, DatabaseSource{
 		DatabaseType: dbsource.TypeMMDB,
 		Vendor:       VendorMaxMind,
-		DefaultFile:  maxmind.DefaultSeedFileName,
+		DefaultFile:  DefaultMaxMindSeedFile,
 		Enabled:      boolPtr(false),
 	})
 	insertCatalogIfAbsent(cfg, DefaultGeoliteCatalogKey, DatabaseSource{
-		URL:          maxmind.DefaultGeoliteURL,
+		URL:          DefaultGeoliteURL,
 		DatabaseType: dbsource.TypeMMDB,
 		Archive:      dbsource.ArchiveNone,
 		Vendor:       VendorMaxMind,

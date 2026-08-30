@@ -16,7 +16,7 @@ Traefik Config SHALL expose `mode` as `disabled`, `enrich`, `block`, or `enricha
 - **WHEN** the operator sets `enabled` on the plugin Config
 - **THEN** that field is not part of Config (Yaegi does not decode it onto the plugin)
 
-### Requirement: Provider opens only for lookup modes
+### Requirement: Catalog sources open only for lookup modes
 Plugin creation SHALL open enabled `databaseSources` rows only when `mode` is `enrich` or `enrichandblock`. When `mode` is `disabled` or `block`, creation MUST NOT open catalog sources, MUST NOT insert default catalog rows, and MUST NOT start auto-update.
 
 #### Scenario: Block does not open the database

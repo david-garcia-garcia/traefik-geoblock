@@ -37,7 +37,7 @@ Creating the plugin SHALL open enabled `databaseSources` rows. Config MUST NOT e
 - **THEN** plugin creation fails
 
 ### Requirement: Provider implementations are isolated
-Vendor field maps SHALL live on the format wrapper (`BINSource`, `ASNSource`, `IPinfo`, `GeoIP2`). Open and hot-swap SHALL live in `pkg/dbwrappers`. HTTP GET and Resolve SHALL stay in `pkg/dbsource`. A later vendor MUST be addable by adding a wrapper Lookup for a new `vendor` value and a catalog row. Vendor packages MUST NOT expose a Provider facade. The plugin MUST NOT type-assert a format wrapper to read source state.
+Vendor field maps SHALL live on the format wrapper (`BINSource`, `ASNSource`, `IPinfo`, `GeoIP2`). Open and hot-swap SHALL live in `pkg/dbwrappers`. HTTP GET and Resolve SHALL stay in `pkg/dbsource`. Shipped seed filenames and reserved download URLs SHALL live on catalog insert. A later vendor MUST be addable by adding a wrapper Lookup for a new `vendor` value and a catalog row. The tree MUST NOT keep a vendor package that only wraps Lookup. The plugin MUST NOT type-assert a format wrapper to read source state.
 
 #### Scenario: Implemented vendors
 - **WHEN** this change ships

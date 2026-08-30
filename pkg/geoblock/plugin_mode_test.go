@@ -65,7 +65,7 @@ func TestMode_BlockDoesNotOpenDatabase(t *testing.T) {
 		t.Fatalf("NewCore: %v", err)
 	}
 	if plugin.db != nil {
-		t.Fatal("block mode opened a DatabaseProvider")
+		t.Fatal("block mode opened catalog sources")
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)

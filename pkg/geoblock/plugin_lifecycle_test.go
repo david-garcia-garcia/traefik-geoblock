@@ -245,7 +245,7 @@ func TestNew_UnreclaimedHashDisposesAfterGrace(t *testing.T) {
 	}
 }
 
-func TestNew_ProviderCloseDoesNotDispose(t *testing.T) {
+func TestNew_MergedLookupCloseDoesNotDispose(t *testing.T) {
 	shortLeases(t)
 	cfg := lifecycleBIN(dbFilePath, "", "")
 	ctxA, cancelA := context.WithCancel(context.Background())

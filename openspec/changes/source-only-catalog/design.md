@@ -24,7 +24,7 @@ Lookup today is one `databaseProvider` plus vendor pointers into `databaseSource
 - `enabled` is `*bool`. Nil / omitted = enabled. Shipped extras insert `enabled: false`.
 - `defaultFile` is the basename Resolve already searches under `seeds/`.
 - One internal `dbprovider.Provider` walks enabled sources. Plugin `Lookup` unchanged.
-- Vendor field maps live on the wrapper (`BINSource`, `ASNSource`, `IPinfo`, `GeoIP2`). Vendor packages are seed/URL constants only.
+- Vendor field maps live on the wrapper (`BINSource`, `ASNSource`, `IPinfo`, `GeoIP2`). Shipped seed/URL names live on catalog insert. No vendor packages.
 - IP2Location ASN is its own `vendor` (`LookupASN`), not a second field on the geo constructor.
 - Skip a source that errors; if every enabled source errors, return error (`banIfError`).
 - Empty `vendor` or format mismatch on an enabled row fails `Prepare`.
