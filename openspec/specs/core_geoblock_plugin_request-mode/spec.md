@@ -21,7 +21,7 @@ Traefik Config SHALL expose `mode` as `disabled`, `enrich`, `block`, or `enricha
 - **THEN** that field is not part of Config (Yaegi does not decode it onto the plugin)
 
 ### Requirement: Country header is the write/read bridge
-When `mode` is not `disabled`, `countryHeader` SHALL be a request header name. Empty `countryHeader` SHALL default to `X-IPCountry`. Lookup (`enrich` or `enrichandblock`) SHALL write the ISO country or `PRIVATE` to that header. The block stage (`block` or `enrichandblock`) SHALL read that same header for country allow/block. Country rules MUST NOT take the lookup `Record` country directly. A `requestHeaderEnrich` mapping whose key is `country` and whose header name is not `countryHeader` SHALL fail plugin creation.
+When `mode` is not `disabled`, `countryHeader` SHALL be a request header name. Empty `countryHeader` SHALL default to `X-IPCountry`. Lookup (`enrich` or `enrichandblock`) SHALL write the ISO country or `PRIVATE` to that header. The block stage (`block` or `enrichandblock`) SHALL read that same header for country allow/block. Country rules MUST NOT take the lookup `Record` country directly. A `requestHeaderEnrich` mapping whose key is `country` and whose header name is not `countryHeader` SHALL also be written. Plugin creation MUST NOT fail because more than one header maps to `country`.
 
 #### Scenario: Enrich writes countryHeader
 - **WHEN** `mode` is `enrich` and `countryHeader` is `X-IPCountry`
@@ -39,6 +39,13 @@ When `mode` is not `disabled`, `countryHeader` SHALL be a request header name. E
 - **WHEN** `mode` is `enrichandblock` and `countryHeader` is empty
 - **THEN** plugin creation succeeds
 - **AND** `countryHeader` is `X-IPCountry`
+
+#### Scenario: Extra country enrich header is written
+- **WHEN** `mode` is `enrich`, `countryHeader` is `X-IPCountry`, and `requestHeaderEnrich` maps `X-Geo-Country` to `country`
+- **AND** the first public IP looks up as `US`
+- **THEN** plugin creation succeeds
+- **AND** the request header `X-IPCountry` is `US`
+- **AND** the request header `X-Geo-Country` is `US`
 
 ### Requirement: Catalog sources open only for lookup modes
 Plugin creation SHALL open enabled `databaseSources` rows only when `mode` is `enrich` or `enrichandblock`. When `mode` is `disabled` or `block`, creation MUST NOT open catalog sources, MUST NOT insert default catalog rows, and MUST NOT start auto-update.

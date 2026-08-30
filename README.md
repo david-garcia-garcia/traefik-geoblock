@@ -657,11 +657,12 @@ http:
           countryHeader: "X-IPCountry"
           # Default X-IPCountry when omitted. Enrich/enrichandblock write the ISO
           # country (or PRIVATE) here. Block/enrichandblock read this header for
-          # country allow/block. If requestHeaderEnrich also maps country, it must
-          # use this same header name.
+          # country allow/block. requestHeaderEnrich may also map country onto
+          # other header names; those are written as well.
 
           requestHeaderEnrich:
-            X-IPCountry: country            # must be the same header as countryHeader
+            X-IPCountry: country
+            X-Geo-Country: country
             X-Geo-Country-Name: country_name
             X-Geo-Continent: continent
             X-Geo-Continent-Code: continent_code

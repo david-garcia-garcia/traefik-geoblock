@@ -8,7 +8,7 @@ _Avoid_: `enabled`
 
 **Country header**:
 The request header name lookup writes and block reads. Empty config uses `X-IPCountry`.
-_Avoid_: mapping a second `requestHeaderEnrich` header to `country`
+_Avoid_: using the lookup `Record` country for allow/block
 
 ## Overview
 
@@ -17,7 +17,7 @@ One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeade
 ## How to use
 
 - Set `Config.Mode`. Unknown values fail `Prepare`. Empty is `enrichandblock`. Set `disabled` for pass through with no database.
-- Omit `countryHeader` to use `X-IPCountry`. A `requestHeaderEnrich` `country` mapping must use that same header name.
+- Omit `countryHeader` to use `X-IPCountry`. Extra `requestHeaderEnrich` `country` mappings are written too. Block still reads `countryHeader` only.
 - Call `openCatalogSources` / `bindDatabase` only when `ModeLooksUp` (`enrich`, `enrichandblock`).
 - Write country from lookup onto `countryHeader`, then read that header in the block stage. Do not pass `Record.Country` into country maps.
 - Do not call `writeDefaultEnrichHeaders` in `block` (it would overwrite the inbound country).
@@ -41,7 +41,7 @@ if ModeBlocks(p.mode) && skipBlock == PhaseNone {
 
 ## Key files
 
-- `pkg/geoblock/config.go` — `Mode`, `Prepare`, `checkCountryHeaderBridge`
+- `pkg/geoblock/config.go` — `Mode`, `Prepare`, `foldCountryHeader`
 - `pkg/geoblock/plugin.go` — `NewCore`, `enrich`, `blockFromHeader`, `decide`
 - `pkg/geoblock/plugin_mode_test.go` — mode, header, and PRIVATE cases
 

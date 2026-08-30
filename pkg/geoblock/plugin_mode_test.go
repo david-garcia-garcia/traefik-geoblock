@@ -65,17 +65,17 @@ func TestPrepare_ModeAndCountryHeader(t *testing.T) {
 		}
 	})
 
-	t.Run("second country enrich header fails", func(t *testing.T) {
+	t.Run("extra country enrich header is allowed", func(t *testing.T) {
 		err := Prepare(&Config{
 			Mode:                 ModeEnrich,
 			CountryHeader:        "X-IPCountry",
-			RequestHeaderEnrich:  map[string]string{"X-Other": "country"},
+			RequestHeaderEnrich:  map[string]string{"X-Geo-Country": "country"},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}, pluginName)
-		if err == nil {
-			t.Fatal("expected conflicting country enrich header to fail")
+		if err != nil {
+			t.Fatalf("Prepare: %v", err)
 		}
 	})
 }
@@ -131,6 +131,34 @@ func TestMode_BlockDoesNotOpenDatabase(t *testing.T) {
 	}
 	if req.Header.Get("X-IPCountry") != "US" {
 		t.Errorf("block overwrote inbound country: %q", req.Header.Get("X-IPCountry"))
+	}
+}
+
+func TestMode_ExtraCountryEnrichHeaderWritesBoth(t *testing.T) {
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+		Mode:                 ModeEnrich,
+		CountryHeader:        "X-IPCountry",
+		RequestHeaderEnrich:  map[string]string{"X-Geo-Country": "country"},
+		DatabaseSources:      seedCatalog(dbFilePath),
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+	}, pluginName)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+	req.Header.Set("X-Real-IP", "8.8.8.8")
+	rr := httptest.NewRecorder()
+	plugin.ServeHTTP(rr, req)
+	if rr.Code != http.StatusTeapot {
+		t.Errorf("status %d", rr.Code)
+	}
+	if req.Header.Get("X-IPCountry") != "US" {
+		t.Errorf("countryHeader: got %q", req.Header.Get("X-IPCountry"))
+	}
+	if req.Header.Get("X-Geo-Country") != "US" {
+		t.Errorf("extra enrich country: got %q", req.Header.Get("X-Geo-Country"))
 	}
 }
 

@@ -202,9 +202,6 @@ func Prepare(cfg *Config, name string) error {
 	if strings.TrimSpace(cfg.CountryHeader) == "" {
 		cfg.CountryHeader = DefaultCountryHeader
 	}
-	if err := checkCountryHeaderBridge(cfg.CountryHeader, cfg.RequestHeaderEnrich); err != nil {
-		return fmt.Errorf("%s: %w", name, err)
-	}
 
 	if ModeLooksUp(cfg.Mode) {
 		insertReservedCatalog(cfg)
@@ -219,20 +216,6 @@ func Prepare(cfg *Config, name string) error {
 		cfg.BanHtmlFilePath, err = fileutils.Default.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
 		if err != nil {
 			return fmt.Errorf("%s: failed to find ban HTML file: %w", name, err)
-		}
-	}
-	return nil
-}
-
-// checkCountryHeaderBridge fails when requestHeaderEnrich maps a different header to country.
-func checkCountryHeaderBridge(countryHeader string, enrich map[string]string) error {
-	canon := http.CanonicalHeaderKey(strings.TrimSpace(countryHeader))
-	for header, key := range enrich {
-		if strings.ToLower(strings.TrimSpace(key)) != dbprovider.MetaCountry {
-			continue
-		}
-		if http.CanonicalHeaderKey(header) != canon {
-			return fmt.Errorf("requestHeaderEnrich header %q maps to country; countryHeader is %q", header, countryHeader)
 		}
 	}
 	return nil
