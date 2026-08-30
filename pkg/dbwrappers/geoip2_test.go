@@ -42,7 +42,7 @@ func TestGeoIP2_DummyCountry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	src := NewGeoIP2(mmdb)
+	src := NewGeoIP2(mmdb, nil)
 
 	gb, err := src.Lookup(dummyGB)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestGeoIP2_EmptyPathFindsBundled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB with empty path: %v", err)
 	}
-	rec, err := NewGeoIP2(mmdb).Lookup(dummyGB)
+	rec, err := NewGeoIP2(mmdb, nil).Lookup(dummyGB)
 	if err != nil || rec.Country != "GB" {
 		t.Fatalf("bundled MMDB lookup: rec=%+v err=%v", rec, err)
 	}
@@ -110,7 +110,7 @@ func TestGeoIP2_EmptyMapUsesSeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	rec, err := NewGeoIP2(mmdb).Lookup(dummyGB)
+	rec, err := NewGeoIP2(mmdb, nil).Lookup(dummyGB)
 	if err != nil || rec.Country != "GB" {
 		t.Fatalf("seed lookup without download URL: rec=%+v err=%v", rec, err)
 	}
@@ -129,10 +129,10 @@ func TestGeoIP2_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB b: %v", err)
 	}
-	if err := NewGeoIP2(first).Close(); err != nil {
+	if err := NewGeoIP2(first, nil).Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	rec, err := NewGeoIP2(second).Lookup(dummyGB)
+	rec, err := NewGeoIP2(second, nil).Lookup(dummyGB)
 	if err != nil || rec.Country != "GB" {
 		t.Fatalf("shared lookup after Close: rec=%+v err=%v", rec, err)
 	}
@@ -200,7 +200,7 @@ func TestGeoIP2_DownloadThroughComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open downloaded: %v", err)
 	}
-	rec, err := NewGeoIP2(mmdb).Lookup(dummyGB)
+	rec, err := NewGeoIP2(mmdb, nil).Lookup(dummyGB)
 	if err != nil || rec.Country != "GB" {
 		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
 	}

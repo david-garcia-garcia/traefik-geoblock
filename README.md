@@ -210,14 +210,15 @@ experimental:
 
 ## GeoIP database configuration and updates
 
-The plugin looks up IPs from **enabled** `databaseSources` rows. Each row sets `vendor` (`ip2location`, `ip2location-asn`, `ipinfo`, or `maxmind`) and optional `defaultFile` (basename under `seeds/`). Omitted `enabled` means on. Config has no `databaseProvider` and no `*_source_*` pointers.
+The plugin looks up IPs from **enabled** `databaseSources` rows. Each row sets `vendor` (`ip2location`, `ipinfo`, or `maxmind`) and optional `defaultFile` (basename under `seeds/`). Optional `fields` is an allowlist of normalized Record keys (`country`, `asn`, …). Empty `fields` keeps every key that vendor’s code map can fill. Omitted `enabled` means on. Config has no `databaseProvider` and no `*_source_*` pointers.
 
 | Vendor | Format | Shipped catalog row | Bundled `defaultFile` |
 | --- | --- | --- | --- |
 | `ip2location` | `bin` | `default_ip2location` (**enabled**) — free LITE ZIP URL | `IP2LOCATION-LITE-DB1.IPV6.BIN` |
-| `ip2location-asn` | `bin` | none (ASN LITE needs a token) | none |
 | `ipinfo` | `mmdb` | `default_ipinfo` (disabled) | `ipinfo_lite.mmdb` |
 | `maxmind` | `mmdb` | `default_maxmind` (disabled dummy Country); `default_geolite` (disabled unofficial GET) | `GeoIP2-Country-Test.mmdb` on `default_maxmind` |
+
+IP2Location ASN LITE is the same `vendor: ip2location` (`bin`). Set `fields: [asn]` so the row calls `Get_asn` and does not treat the file as a geo BIN. There is no shipped ASN seed (token download).
 
 Empty lookup config opens only `default_ip2location`. Enable another row and set `default_ip2location.enabled: false` if you do not want both. Several enabled rows merge: first non-empty field wins, in lexicographic catalog-key order.
 
@@ -232,7 +233,7 @@ How auto-update works:
   - `default_ipinfo` — disabled; `vendor: ipinfo`; `defaultFile` `ipinfo_lite.mmdb`.
   - `default_maxmind` — disabled; `vendor: maxmind`; `defaultFile` `GeoIP2-Country-Test.mmdb` (official dummy Country fixture, not a live GeoLite file).
   - `default_geolite` — disabled; unofficial [P3TERX GeoLite.mmdb](https://github.com/P3TERX/GeoLite.mmdb/tree/download) Country GET. Official GeoLite still needs an account. Operator-defined reserved keys are kept.
-- Add named entries under `databaseSources` (`vendor`, `url`, `databaseType`, `archive`, optional `headers`, `path`, `defaultFile`, `enabled`). Keys are operator-chosen except the reserved names above. A token may live in the URL query (`?token=`). `path` is the operator seed **file** (use a full path). It is not the bundled `seeds/` copy. `databaseType` is `bin` or `mmdb` and must match `vendor`. Set `archive` to `none`, `zip`, or `tar.gz`. Empty `archive` is inferred from the URL path. Official IP2Location token and MaxMind permalink URLs have no path extension — set `archive` on those entries. Examples:
+- Add named entries under `databaseSources` (`vendor`, `url`, `databaseType`, `archive`, optional `headers`, `path`, `defaultFile`, `fields`, `enabled`). Keys are operator-chosen except the reserved names above. A token may live in the URL query (`?token=`). `path` is the operator seed **file** (use a full path). It is not the bundled `seeds/` copy. `databaseType` is `bin` or `mmdb` and must match `vendor`. Set `archive` to `none`, `zip`, or `tar.gz`. Empty `archive` is inferred from the URL path. Official IP2Location token and MaxMind permalink URLs have no path extension — set `archive` on those entries. Examples:
 
   ```yaml
   databaseSources:
@@ -250,7 +251,8 @@ How auto-update works:
       databaseType: bin
       archive: zip
     asnlite:
-      vendor: ip2location-asn
+      vendor: ip2location
+      fields: [asn]
       url: "https://www.ip2location.com/download?token=YOUR_TOKEN&file=DBASNLITEBINIPV6"
       databaseType: bin
       archive: zip
@@ -280,7 +282,8 @@ How auto-update works:
       vendor: ip2location
       # ...
     asnlite:
-      vendor: ip2location-asn
+      vendor: ip2location
+      fields: [asn]
       # ...
   ```
 - Set `databaseAutoUpdateDir` when a bound entry has a URL. Prefer durable storage: a persistent volume that survives container restarts **and** replacement. If the dir is empty, the plugin WARNs and writes dated files under the process temp dir (`traefik-geoblock`). That path is wiped on container replace. Do not rely on `/tmp` in production. If the directory is empty after a restart the plugin falls back to seed/`path` and will download again.
@@ -573,7 +576,8 @@ http:
               archive: zip
               defaultFile: IP2LOCATION-LITE-DB1.IPV6.BIN
             # asnlite:
-            #   vendor: ip2location-asn
+            #   vendor: ip2location
+            #   fields: [asn]
             #   url: "https://www.ip2location.com/download?token=$TOKEN&file=DBASNLITEBINIPV6"
             #   databaseType: bin
             #   archive: zip
@@ -606,7 +610,8 @@ http:
           # The first public IP wins. Every mapped header is written; empty or
           # unavailable fields are the string null (logs and backends need the header present).
           # IP2Location LITE DB1 is country-only; region/city/isp/domain need DB8 or richer.
-          # asn needs an enabled row with vendor ip2location-asn.
+          # asn from IP2Location ASN LITE needs an enabled row with vendor
+          # ip2location and fields: [asn].
           # IPinfo Lite fills country, country_name, continent, continent_code,
           # isp (as_name), domain (as_domain), and asn (AS15169 form).
           # region and city stay empty.

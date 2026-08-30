@@ -131,6 +131,28 @@ func TestNew(t *testing.T) {
 		}
 	})
 
+	t.Run("UnknownFieldsFails", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode: ModeEnrichAndBlock,
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
+				"seed":                       {Path: dbFilePath, Vendor: VendorIP2Location, DatabaseType: "bin", Fields: []string{"not-a-meta"}},
+			},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err == nil {
+			t.Errorf("expected error about unknown fields, but got none")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil, but is not")
+		}
+		if err != nil && !strings.Contains(err.Error(), "fields") {
+			t.Errorf("expected fields error, got: %v", err)
+		}
+	})
+
 	t.Run("ExplicitMaxMindCatalog", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                 ModeEnrichAndBlock,

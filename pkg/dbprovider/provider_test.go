@@ -32,3 +32,15 @@ func TestRecordFieldAndKnownMetaKey(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordKeep(t *testing.T) {
+	rec := Record{Country: "US", Region: "California", Asn: "AS15169"}
+	all := rec.Keep(nil)
+	if all != rec {
+		t.Errorf("Keep(nil): %+v", all)
+	}
+	asnOnly := rec.Keep([]string{MetaAsn})
+	if asnOnly.Asn != "AS15169" || asnOnly.Country != "" || asnOnly.Region != "" {
+		t.Errorf("Keep(asn): %+v", asnOnly)
+	}
+}

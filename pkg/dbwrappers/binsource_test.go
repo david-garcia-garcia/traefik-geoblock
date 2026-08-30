@@ -23,7 +23,7 @@ func TestBINSource_LookupWithoutASN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	src := NewBINSource(bin)
+	src := NewBINSource(bin, nil)
 	rec, err := src.Lookup("8.8.8.8")
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
@@ -49,7 +49,7 @@ func TestBINSource_LookupDB8(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	rec, err := NewBINSource(bin).Lookup("8.8.8.8")
+	rec, err := NewBINSource(bin, nil).Lookup("8.8.8.8")
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -77,10 +77,10 @@ func TestBINSource_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second OpenBIN: %v", err)
 	}
-	if err := NewBINSource(first).Close(); err != nil {
+	if err := NewBINSource(first, nil).Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	rec, err := NewBINSource(second).Lookup("8.8.8.8")
+	rec, err := NewBINSource(second, nil).Lookup("8.8.8.8")
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("shared lookup after Close: rec=%+v err=%v", rec, err)
 	}
@@ -138,23 +138,30 @@ func TestBINSource_DownloadThroughComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	rec, err := NewBINSource(bin).Lookup("8.8.8.8")
+	rec, err := NewBINSource(bin, nil).Lookup("8.8.8.8")
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
 	}
 }
 
-func TestASNSource_Nil(t *testing.T) {
-	rec, err := (*ASNSource)(nil).Lookup("8.8.8.8")
-	if err != nil || rec.Asn != "" {
-		t.Fatalf("nil ASNSource: rec=%+v err=%v", rec, err)
+func TestBINSource_FieldsAsnOnlySkipsGeo(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+
+	bin, err := OpenBIN(holdCtx(t), BINConfig{Source: dbsource.Config{Path: testBIN}}, testLogger())
+	if err != nil {
+		t.Fatalf("OpenBIN: %v", err)
 	}
-	if err := (*ASNSource)(nil).Close(); err != nil {
-		t.Errorf("nil Close: %v", err)
+	rec, err := NewBINSource(bin, []string{dbprovider.MetaAsn}).Lookup("8.8.8.8")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if rec.Country != "" {
+		t.Errorf("fields [asn] must not call Get_all, country=%q", rec.Country)
 	}
 }
 
-func TestASNSource_LookupWithASNFile(t *testing.T) {
+func TestBINSource_LookupWithASNFile(t *testing.T) {
 	asnPath := os.Getenv("IP2LOCATION_ASN_BIN")
 	if asnPath == "" {
 		for _, candidate := range []string{
@@ -185,8 +192,8 @@ func TestASNSource_LookupWithASNFile(t *testing.T) {
 		t.Fatalf("asn OpenBIN: %v", err)
 	}
 	merged := dbprovider.NewCombined([]dbprovider.Named{
-		{Key: "geo", Provider: NewBINSource(geo)},
-		{Key: "asn", Provider: NewASNSource(asn)},
+		{Key: "geo", Provider: NewBINSource(geo, nil)},
+		{Key: "asn", Provider: NewBINSource(asn, []string{dbprovider.MetaAsn})},
 	})
 	rec, err := merged.Lookup("8.8.8.8")
 	if err != nil {

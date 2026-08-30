@@ -119,7 +119,7 @@ func seedCatalogPair(geo, asn string) map[string]DatabaseSource {
 	return map[string]DatabaseSource{
 		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
 		"geo":                        {Path: geo, Vendor: VendorIP2Location, DatabaseType: "bin"},
-		"asn":                        {Path: asn, Vendor: VendorIP2LocationASN, DatabaseType: "bin"},
+		"asn":                        {Path: asn, Vendor: VendorIP2Location, DatabaseType: "bin", Fields: []string{dbprovider.MetaAsn}},
 	}
 }
 

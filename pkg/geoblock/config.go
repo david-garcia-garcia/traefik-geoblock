@@ -16,10 +16,9 @@ import (
 
 const (
 	// Vendor values on a catalog row. databaseType stays bin/mmdb.
-	VendorIP2Location    = "ip2location"
-	VendorIP2LocationASN = "ip2location-asn"
-	VendorIPinfo         = "ipinfo"
-	VendorMaxMind        = "maxmind"
+	VendorIP2Location = "ip2location"
+	VendorIPinfo      = "ipinfo"
+	VendorMaxMind     = "maxmind"
 
 	// DefaultIP2LocationCatalogKey is the reserved enabled geo LITE ZIP + seed.
 	DefaultIP2LocationCatalogKey = "default_ip2location"
@@ -117,7 +116,7 @@ type Config struct {
 	ExcludedPathsRegex string
 }
 
-// DatabaseSource is one catalog row: file location, vendor schema, and enabled.
+// DatabaseSource is one catalog row: file location, vendor schema, optional fields allowlist, and enabled.
 type DatabaseSource struct {
 	URL          string            `json:"url,omitempty" mapstructure:"url"`
 	Headers      map[string]string `json:"headers,omitempty" mapstructure:"headers"`
@@ -127,6 +126,8 @@ type DatabaseSource struct {
 	Vendor       string            `json:"vendor,omitempty" mapstructure:"vendor"`
 	DefaultFile  string            `json:"defaultFile,omitempty" mapstructure:"defaultFile"`
 	Enabled      *bool             `json:"enabled,omitempty" mapstructure:"enabled"`
+	// Fields is the Record keys this row may fill (country, asn, …). Empty keeps every mapped key.
+	Fields []string `json:"fields,omitempty" mapstructure:"fields"`
 }
 
 // CreateConfig creates the default plugin configuration.
@@ -391,14 +392,40 @@ func validateDatabaseSources(cfg *Config) error {
 		if got != "" && got != want {
 			return fmt.Errorf("databaseSources.%s: databaseType %q; vendor %s requires %s", key, got, vendor, want)
 		}
+		fields, err := normalizeSourceFields(entry.Fields)
+		if err != nil {
+			return fmt.Errorf("databaseSources.%s: %w", key, err)
+		}
+		entry.Fields = fields
+		cfg.DatabaseSources[key] = entry
 	}
 	return nil
+}
+
+// normalizeSourceFields lowercases Record keys and rejects unknown names.
+func normalizeSourceFields(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		key := strings.ToLower(strings.TrimSpace(raw))
+		if key == "" {
+			continue
+		}
+		if !dbprovider.KnownMetaKey(key) {
+			return nil, fmt.Errorf("unknown fields value %q (supported: %s)",
+				raw, strings.Join(dbprovider.MetaKeys(), ", "))
+		}
+		out = append(out, key)
+	}
+	return out, nil
 }
 
 // vendorDatabaseType is the format a vendor can open. Empty vendor is unknown.
 func vendorDatabaseType(vendor string) string {
 	switch vendor {
-	case VendorIP2Location, VendorIP2LocationASN:
+	case VendorIP2Location:
 		return dbsource.TypeBIN
 	case VendorIPinfo, VendorMaxMind:
 		return dbsource.TypeMMDB

@@ -39,15 +39,16 @@ type geoIP2Record struct {
 
 // GeoIP2 is an MMDB queried with nested GeoIP2 / GeoLite2 tags.
 type GeoIP2 struct {
-	mmdb *MMDB
+	mmdb   *MMDB
+	fields []string
 }
 
 // NewGeoIP2 returns a Provider that maps GeoIP2 tags onto Record.
-func NewGeoIP2(mmdb *MMDB) *GeoIP2 {
-	return &GeoIP2{mmdb: mmdb}
+func NewGeoIP2(mmdb *MMDB, fields []string) *GeoIP2 {
+	return &GeoIP2{mmdb: mmdb, fields: fields}
 }
 
-// Lookup returns country.iso_code and related GeoIP2 fields for ip.
+// Lookup returns country.iso_code and related GeoIP2 fields for ip, then Keep(fields).
 func (s *GeoIP2) Lookup(ip string) (dbprovider.Record, error) {
 	var rec geoIP2Record
 	if err := s.mmdb.Lookup(ip, &rec); err != nil {
@@ -64,7 +65,7 @@ func (s *GeoIP2) Lookup(ip string) (dbprovider.Record, error) {
 		ContinentCode: rec.Continent.Code,
 		Region:        region,
 		City:          rec.City.Names.En,
-	}, nil
+	}.Keep(s.fields), nil
 }
 
 // Close does not close the shared MMDB.

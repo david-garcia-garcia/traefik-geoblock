@@ -17,15 +17,16 @@ type ipinfoRecord struct {
 
 // IPinfo is an MMDB queried with IPinfo field tags.
 type IPinfo struct {
-	mmdb *MMDB
+	mmdb   *MMDB
+	fields []string
 }
 
 // NewIPinfo returns a Provider that maps IPinfo tags onto Record.
-func NewIPinfo(mmdb *MMDB) *IPinfo {
-	return &IPinfo{mmdb: mmdb}
+func NewIPinfo(mmdb *MMDB, fields []string) *IPinfo {
+	return &IPinfo{mmdb: mmdb, fields: fields}
 }
 
-// Lookup returns IPinfo Lite/Core fields for ip.
+// Lookup returns IPinfo Lite/Core fields for ip, then Keep(fields).
 func (s *IPinfo) Lookup(ip string) (dbprovider.Record, error) {
 	var rec ipinfoRecord
 	if err := s.mmdb.Lookup(ip, &rec); err != nil {
@@ -41,7 +42,7 @@ func (s *IPinfo) Lookup(ip string) (dbprovider.Record, error) {
 		Isp:           rec.ASName,
 		Domain:        rec.ASDomain,
 		Asn:           rec.ASN,
-	}, nil
+	}.Keep(s.fields), nil
 }
 
 // Close does not close the shared MMDB.

@@ -230,6 +230,7 @@ func openCatalogSources(ctx context.Context, cfg *Config, logger *slog.Logger) (
 
 // openCatalogRow opens one wrapper Lookup for a catalog key.
 func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger *slog.Logger) (dbprovider.Provider, error) {
+	entry := cfg.DatabaseSources[key]
 	switch vendor {
 	case VendorIP2Location:
 		src := catalogSource(cfg, key, dbsource.TypeBIN)
@@ -237,24 +238,13 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger
 			Dir:             cfg.DatabaseAutoUpdateDir,
 			Source:          src,
 			DefaultFileName: src.DefaultFileName,
+			AllowMissing:    src.Path == "" && src.DefaultFileName == "",
 			MinAge:          dbwrappers.DefaultBINMinAge,
 		}, logger)
 		if err != nil {
 			return nil, err
 		}
-		return dbwrappers.NewBINSource(bin), nil
-	case VendorIP2LocationASN:
-		src := catalogSource(cfg, key, dbsource.TypeBIN)
-		bin, err := dbwrappers.OpenBIN(ctx, dbwrappers.BINConfig{
-			Dir:          cfg.DatabaseAutoUpdateDir,
-			Source:       src,
-			AllowMissing: src.Path == "",
-			MinAge:       dbwrappers.DefaultBINMinAge,
-		}, logger)
-		if err != nil {
-			return nil, err
-		}
-		return dbwrappers.NewASNSource(bin), nil
+		return dbwrappers.NewBINSource(bin, entry.Fields), nil
 	case VendorIPinfo:
 		src := catalogSource(cfg, key, dbsource.TypeMMDB)
 		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
@@ -266,7 +256,7 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger
 		if err != nil {
 			return nil, err
 		}
-		return dbwrappers.NewIPinfo(mmdb), nil
+		return dbwrappers.NewIPinfo(mmdb, entry.Fields), nil
 	case VendorMaxMind:
 		src := catalogSource(cfg, key, dbsource.TypeMMDB)
 		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
@@ -278,7 +268,7 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger
 		if err != nil {
 			return nil, err
 		}
-		return dbwrappers.NewGeoIP2(mmdb), nil
+		return dbwrappers.NewGeoIP2(mmdb, entry.Fields), nil
 	default:
 		return nil, fmt.Errorf("unknown vendor %q", vendor)
 	}
