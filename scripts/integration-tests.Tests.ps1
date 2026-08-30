@@ -612,7 +612,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         It "Should enrich all IPinfo Lite fields on an allowed request" {
             $response = (curl -s -H "X-Real-IP: $($script:TestIPs.German_IP)" "$script:BaseUrl/ipinfo") -join "`n"
             $response | Should -Match "X-Ipcountry:\s*DE"
-            $response | Should -Match "X-Geo-Country:\s*DE"
             $response | Should -Match "X-Geo-Country-Name:\s*Germany"
             $response | Should -Match "X-Geo-Continent:\s*Europe"
             $response | Should -Match "X-Geo-Continent-Code:\s*EU"
@@ -640,7 +639,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         It "Should enrich GeoIP2 country fields on an allowed request" {
             $response = (curl -s -H "X-Real-IP: $($script:TestIPs.MaxMindDummyGB)" "$script:BaseUrl/maxmind") -join "`n"
             $response | Should -Match "X-Ipcountry:\s*GB"
-            $response | Should -Match "X-Geo-Country:\s*GB"
             $response | Should -Match "X-Geo-Country-Name:\s*United Kingdom"
             $response | Should -Match "X-Geo-Continent:\s*Europe"
             $response | Should -Match "X-Geo-Continent-Code:\s*EU"
@@ -674,7 +672,6 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         It "Should enrich DB8 region/city/isp and ASN on /tokendb" -Skip:(-not $script:HasIP2LocationToken) {
             $response = (curl -s -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" "$script:BaseUrl/tokendb") -join "`n"
             $response | Should -Match "X-IP-Country:\s*US"
-            $response | Should -Match "X-Geo-Country:\s*US"
             $response | Should -Not -Match "X-Geo-Region:\s*null"
             $response | Should -Not -Match "X-Geo-City:\s*null"
             $response | Should -Not -Match "X-Geo-Isp:\s*null"

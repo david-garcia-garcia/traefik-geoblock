@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
@@ -15,6 +16,12 @@ import (
 func newTestPlugin(ctx context.Context, cfg *Config, name string) (*Plugin, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("%s: no config provided", name)
+	}
+	if NormalizeMode(cfg.Mode) != ModeDisabled && strings.TrimSpace(cfg.CountryHeader) == "" {
+		cfg.CountryHeader = countryHeaderFromEnrich(cfg.RequestHeaderEnrich)
+		if cfg.CountryHeader == "" {
+			cfg.CountryHeader = "x-country-code"
+		}
 	}
 	if err := Prepare(cfg, name); err != nil {
 		return nil, err
@@ -68,6 +75,16 @@ var (
 	ipinfoFilePath  = filepath.Join(moduleRoot(), "seeds", "ipinfo_lite.mmdb")
 	maxmindFilePath = filepath.Join(moduleRoot(), "seeds", "GeoIP2-Country-Test.mmdb")
 )
+
+// countryHeaderFromEnrich is the requestHeaderEnrich header mapped to country, if any.
+func countryHeaderFromEnrich(enrich map[string]string) string {
+	for header, key := range enrich {
+		if strings.ToLower(strings.TrimSpace(key)) == dbprovider.MetaCountry {
+			return header
+		}
+	}
+	return ""
+}
 
 func seedCatalog(path string) map[string]DatabaseSource {
 	return map[string]DatabaseSource{"seed": {Path: path}}

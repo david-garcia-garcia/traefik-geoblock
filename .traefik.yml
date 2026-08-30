@@ -7,7 +7,7 @@ testData:
   # It doesn't appear to be possible to get the pilot plugin analyzer
   # to load local files. To prevent errors, the plugin is disabled here.
   # This will cause the plugin to not attempt to load the database file.
-  enabled: false
+  mode: disabled
   # databaseProvider: ip2location
   # path is a full file path (operator seed). Omit it to use seeds/ via TRAEFIK_PLUGIN_GEOBLOCK_PATH.
   # databaseSources.seed.path: /data/geo/IP2LOCATION-LITE-DB1.IPV6.BIN

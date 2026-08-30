@@ -52,7 +52,8 @@ type Plugin struct {
 	db                    dbprovider.Provider
 	lifeCancel            context.CancelFunc
 	closeOnce             *sync.Once
-	enabled               bool
+	mode                  string
+	countryHeader         string
 	allowedCountries      map[string]struct{} // Instead of []string to improve lookup performance
 	blockedCountries      map[string]struct{} // Instead of []string to improve lookup performance
 	defaultAllow          bool
@@ -85,16 +86,19 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 	logger.Debug("initializing plugin",
 		"logLevel", cfg.LogLevel,
 		"logFormat", cfg.LogFormat)
-	if !cfg.Enabled {
+	mode := NormalizeMode(cfg.Mode)
+	if mode == ModeDisabled {
 		logger.Warn("plugin disabled")
-		return &Plugin{name: name, enabled: false, logger: logger, closeOnce: &sync.Once{}}, nil
+		return &Plugin{name: name, mode: ModeDisabled, logger: logger, closeOnce: &sync.Once{}}, nil
 	}
 
 	requestHeaderEnrich, err := normalizeRequestHeaderEnrich(cfg.RequestHeaderEnrich)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
-	requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich, logger)
+	if ModeLooksUp(mode) {
+		requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich)
+	}
 
 	allowedIPHelper, err := iplookup.NewIpLookupFileMonitor(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
 	if err != nil {
@@ -150,7 +154,8 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		name:                  name,
 		lifeCancel:            lifeCancel,
 		closeOnce:             &sync.Once{},
-		enabled:               cfg.Enabled,
+		mode:                  mode,
+		countryHeader:         http.CanonicalHeaderKey(strings.TrimSpace(cfg.CountryHeader)),
 		allowedCountries:      allowedCountries,
 		blockedCountries:      blockedCountries,
 		defaultAllow:          cfg.DefaultAllow,
@@ -170,9 +175,11 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		logStatusDetailHeader: cfg.LogStatusDetailHeader,
 		requestHeaderEnrich:   requestHeaderEnrich,
 	}
-	if err := pluginInstance.bindDatabase(life, cfg); err != nil {
-		lifeCancel()
-		return nil, err
+	if ModeLooksUp(mode) {
+		if err := pluginInstance.bindDatabase(life, cfg); err != nil {
+			lifeCancel()
+			return nil, err
+		}
 	}
 	return pluginInstance, nil
 }
@@ -194,7 +201,7 @@ func (p *Plugin) Close() {
 
 // bindDatabase opens the provider bound to this incarnation’s lifetime.
 func (p *Plugin) bindDatabase(life context.Context, cfg *Config) error {
-	if !p.enabled {
+	if !ModeLooksUp(p.mode) {
 		return nil
 	}
 	db, err := openDatabaseProvider(life, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
@@ -231,40 +238,8 @@ func openDatabaseProvider(ctx context.Context, cfg *Config, logger *slog.Logger)
 	}
 }
 
-func compilePathRegex(pluginName, field, pattern string) (*regexp.Regexp, error) {
-	if pattern == "" {
-		return nil, nil
-	}
-	re, err := regexp.Compile(pattern)
-	if err != nil {
-		return nil, fmt.Errorf("%s: invalid %s pattern %q: %w", pluginName, field, pattern, err)
-	}
-	return re, nil
-}
-
-// isExcludedByRegex reports whether {host}{path} matches excludedPathsRegex.
-func (p Plugin) isExcludedByRegex(host, path string) bool {
-	return pathRegexMatches(p.excludedPathsRegex, host, path)
-}
-
-// isIncludedByRegex is true when includedPathsRegex is unset, or when {host}{path} matches it.
-func (p Plugin) isIncludedByRegex(host, path string) bool {
-	if p.includedPathsRegex == nil {
-		return true
-	}
-	return pathRegexMatches(p.includedPathsRegex, host, path)
-}
-
-func pathRegexMatches(re *regexp.Regexp, host, path string) bool {
-	if re == nil {
-		return false
-	}
-	return re.MatchString(host + path)
-}
-
-// setLogHeaders sets the log status headers on the request for observability.
-// status is "pass" or "block", reason is the detailed reason (e.g., "allowed_country").
-func (p Plugin) setLogHeaders(req *http.Request, status, reason string) {
+// setDecisionLogHeader writes logStatusDetailHeader as "{status}:{reason}" when that header is configured.
+func (p Plugin) setDecisionLogHeader(req *http.Request, status, reason string) {
 	if p.logStatusDetailHeader != "" {
 		req.Header.Set(p.logStatusDetailHeader, status+":"+reason)
 	}
@@ -272,300 +247,262 @@ func (p Plugin) setLogHeaders(req *http.Request, status, reason string) {
 
 // ServeHTTP applies this Plugin’s policy, then calls next.
 func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request, next http.Handler) {
-	if !p.enabled {
+	if p.mode == ModeDisabled {
 		logging.Trace(p.logger, "plugin disabled, passing request through")
 		next.ServeHTTP(rw, req)
 		return
 	}
 
-	// Get list of unique remote IPs
 	remoteIPs := p.GetRemoteIPs(req)
-	ipChain := ""
-	if p.logger.Enabled(context.Background(), logging.LevelTrace) {
-		ipChain = strings.Join(remoteIPs, ", ")
+	ipChain := p.traceIPChain(remoteIPs)
+
+	// 1. Enrich: look up and write countryHeader / requestHeaderEnrich. Does not ban.
+	lookupFailed := false
+	if ModeLooksUp(p.mode) {
+		lookupFailed = p.enrich(req, remoteIPs, ipChain)
 	}
 
-	// passReason tracks why the request is allowed to pass.
-	// If set early (by bypass conditions), blocking is skipped but enrichment still happens.
-	// Otherwise, geo-blocking rules are evaluated and passReason is set from CheckAllowed.
-	// Initialized to PhaseNone in case no IPs are found to process.
-	passReason := PhaseNone
-
-	// Check if this HTTP verb should be ignored for blocking (but still enriched)
-	if passReason == PhaseNone {
-		if _, ignored := p.ignoreVerbs[strings.ToUpper(req.Method)]; ignored {
-			passReason = PhaseIgnoreVerb
-			logging.Trace(p.logger, "HTTP verb ignored for blocking",
-				"method", req.Method,
-				"remote_addr", req.RemoteAddr,
-				"ip_chain", ipChain)
-		}
+	// 2. Block: CIDR, private, country from countryHeader.
+	if !ModeBlocks(p.mode) {
+		next.ServeHTTP(rw, req)
+		return
 	}
-
-	// Include first: when set, only matching {host}{path} may be blocked.
-	// Non-matching URLs skip blocking with no secret; bypassHeaders is stronger.
-	if passReason == PhaseNone && !p.isIncludedByRegex(req.Host, req.URL.Path) {
-		passReason = PhaseNotIncludedRegex
-		logging.Trace(p.logger, "request not included for blocking by regex",
-			"host", req.Host,
-			"path", req.URL.Path,
-			"remote_addr", req.RemoteAddr,
-			"ip_chain", ipChain)
+	skipBlock := p.blockSkipReason(req, ipChain)
+	if skipBlock != PhaseNone {
+		p.setDecisionLogHeader(req, LogStatusPass, skipBlock)
+		next.ServeHTTP(rw, req)
+		return
 	}
-
-	// Exclude after include: matching requests still skip blocking and stay enriched.
-	if passReason == PhaseNone && p.isExcludedByRegex(req.Host, req.URL.Path) {
-		passReason = PhaseExcludedRegex
-		logging.Trace(p.logger, "request excluded from blocking by regex",
-			"host", req.Host,
-			"path", req.URL.Path,
-			"remote_addr", req.RemoteAddr,
-			"ip_chain", ipChain)
+	if lookupFailed && p.banIfError {
+		p.setDecisionLogHeader(req, LogStatusBlock, "error")
+		p.serveBanHtml(rw, firstIP(remoteIPs), "Unknown", req.Method)
+		return
 	}
-
-	// Check for bypass headers
-	if passReason == PhaseNone {
-		for header, expectedValue := range p.bypassHeaders {
-			if actualValue := req.Header.Get(header); actualValue == expectedValue {
-				logging.Trace(p.logger, "bypassing geoblock due to bypass header match",
-					"header", header,
-					"value", logging.Redact(expectedValue),
-					"remote_addr", req.RemoteAddr,
-					"ip_chain", ipChain)
-				passReason = PhaseBypassHeader
-				break
-			}
-		}
+	if p.blockFromHeader(rw, req, remoteIPs, ipChain) {
+		return
 	}
-
-	// Process IPs based on strategy
-	var foundPublicIP bool = false
-	var geoHeaderSet bool = false
-
-	p.setPrivateGeoHeaders(req)
-
-	for i, ip := range remoteIPs {
-		// Apply strategy logic
-		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirst && i > 0 {
-			break // Only check first IP
-		}
-
-		// For CheckFirstNonePrivate, skip private IPs unless no public IP has been found
-		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirstNonePrivate {
-			ipAddr := net.ParseIP(ip)
-			isPrivate := ipAddr != nil && (ipAddr.IsPrivate() || ipAddr.IsLoopback())
-
-			if isPrivate && !foundPublicIP && i < len(remoteIPs)-1 {
-				// Skip this private IP, but continue looking for public IPs
-				continue
-			}
-			if !isPrivate {
-				foundPublicIP = true
-			}
-		}
-
-		allowed, rec, phase, err := p.CheckAllowed(ip)
-		country := rec.Country
-
-		if !geoHeaderSet {
-			p.applyGeoHeaders(req, rec, &geoHeaderSet)
-		}
-
-		if err != nil {
-			if ipChain == "" {
-				ipChain = strings.Join(remoteIPs, ", ")
-			}
-			p.logger.Error("request check failed",
-				"ip", ip,
-				"ip_chain", ipChain,
-				"host", req.Host,
-				"method", req.Method,
-				"path", req.URL.Path,
-				"phase", phase,
-				"error", err,
-				"remote_addr", req.RemoteAddr)
-
-			if p.banIfError && passReason == PhaseNone {
-				p.setLogHeaders(req, LogStatusBlock, "error")
-				p.serveBanHtml(rw, ip, "Unknown", req.Method)
-				return
-			}
-			// For non-CheckAll strategies, continue to next IP on error
-			if p.ipHeaderStrategy != IPHeaderStrategyCheckAll {
-				continue
-			}
-			continue
-		}
-
-		if !allowed && passReason == PhaseNone {
-			p.setLogHeaders(req, LogStatusBlock, phase)
-			p.serveBanHtml(rw, ip, country, req.Method)
-			return
-		}
-
-		// Update passReason from geo-check only if no bypass is active and request was allowed
-		if passReason == PhaseNone && allowed {
-			passReason = phase
-		}
-
-		// For CheckFirstNonePrivate, stop after processing first non-private IP
-		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirstNonePrivate && country != PrivateIpCountryAlias {
-			break
-		}
-	}
-
-	// Set log headers for allowed request
-	p.setLogHeaders(req, LogStatusPass, passReason)
-
 	next.ServeHTTP(rw, req)
 }
 
-// GetRemoteIPs collects the remote IPs from the configured IP headers.
-// Headers are processed in the order defined in ipHeaders.
-// Within each header, IPs are processed left-to-right (leftmost IP first)
-// because the leftmost IP is typically the original client IP in proxy chains.
-//
-// Special synthetic header "remoteAddress" maps to req.RemoteAddr for direct access to the connection's remote address.
-func (p Plugin) GetRemoteIPs(req *http.Request) []string {
-	var ips []string
-	var seenIPs map[string]struct{}
-
-	for _, headerName := range p.ipHeaders {
-		var headerValue string
-		if headerName == "remoteAddress" {
-			headerValue = req.RemoteAddr
-		} else {
-			headerValue = req.Header.Get(headerName)
-		}
-		if headerValue == "" {
-			continue
-		}
-
-		for len(headerValue) > 0 {
-			var part string
-			if i := strings.IndexByte(headerValue, ','); i >= 0 {
-				part = headerValue[:i]
-				headerValue = headerValue[i+1:]
-			} else {
-				part = headerValue
-				headerValue = ""
-			}
-			ip := cleanIPAddress(part)
-			if ip == "" {
-				continue
-			}
-			if len(ips) == 0 {
-				ips = append(ips, ip)
-				continue
-			}
-			if seenIPs == nil {
-				seenIPs = make(map[string]struct{}, 2)
-				seenIPs[ips[0]] = struct{}{}
-			}
-			if _, seen := seenIPs[ip]; seen {
-				continue
-			}
-			seenIPs[ip] = struct{}{}
-			ips = append(ips, ip)
-		}
-	}
-
-	return ips
-}
-
-func canonicalIPHeaders(headers []string) []string {
-	out := make([]string, len(headers))
-	for i, headerName := range headers {
-		if headerName == "remoteAddress" {
-			out[i] = headerName
-			continue
-		}
-		out[i] = http.CanonicalHeaderKey(headerName)
-	}
-	return out
-}
-
-func cleanIPAddress(ip string) string {
-	ip = strings.TrimSpace(ip)
-	if ip == "" {
+// traceIPChain is the joined hop list when trace logging is on.
+func (p Plugin) traceIPChain(remoteIPs []string) string {
+	if !p.logger.Enabled(context.Background(), logging.LevelTrace) {
 		return ""
 	}
-	// IPv4 without a port has no ':'. SplitHostPort allocates an error on that path.
-	if strings.IndexByte(ip, ':') == -1 {
-		return ip
-	}
-	host, _, err := net.SplitHostPort(ip)
-	if err == nil {
-		return host
-	}
-	return ip
+	return strings.Join(remoteIPs, ", ")
 }
 
-// CheckAllowed determines if an IP address should be allowed through based on configured rules.
-// Returns:
-// - allow: whether the request should be allowed
-// - country: the detected country code for the IP
-// - err: any errors encountered during the check
-// - phase: the phase in the verification process where the decision was made
-func (p Plugin) CheckAllowed(ip string) (allow bool, rec dbprovider.Record, phase string, err error) {
+// blockSkipReason is a verb / path / bypass match that skips the block stage. Enrich still runs.
+func (p Plugin) blockSkipReason(req *http.Request, ipChain string) string {
+	if _, ignored := p.ignoreVerbs[strings.ToUpper(req.Method)]; ignored {
+		logging.Trace(p.logger, "HTTP verb ignored for blocking",
+			"method", req.Method, "remote_addr", req.RemoteAddr, "ip_chain", ipChain)
+		return PhaseIgnoreVerb
+	}
+	if !p.isIncludedByRegex(req.Host, req.URL.Path) {
+		logging.Trace(p.logger, "request not included for blocking by regex",
+			"host", req.Host, "path", req.URL.Path, "remote_addr", req.RemoteAddr, "ip_chain", ipChain)
+		return PhaseNotIncludedRegex
+	}
+	if p.isExcludedByRegex(req.Host, req.URL.Path) {
+		logging.Trace(p.logger, "request excluded from blocking by regex",
+			"host", req.Host, "path", req.URL.Path, "remote_addr", req.RemoteAddr, "ip_chain", ipChain)
+		return PhaseExcludedRegex
+	}
+	for header, expectedValue := range p.bypassHeaders {
+		if actualValue := req.Header.Get(header); actualValue == expectedValue {
+			logging.Trace(p.logger, "bypassing geoblock due to bypass header match",
+				"header", header, "value", logging.Redact(expectedValue),
+				"remote_addr", req.RemoteAddr, "ip_chain", ipChain)
+			return PhaseBypassHeader
+		}
+	}
+	return PhaseNone
+}
+
+// enrich writes countryHeader and requestHeaderEnrich. It does not ban.
+// Defaults go on first so mapped headers exist; the first public lookup replaces them.
+func (p Plugin) enrich(req *http.Request, remoteIPs []string, ipChain string) (lookupFailed bool) {
+	var foundPublicIP bool
+	var publicCountryWritten bool
+	// Defaults first so every mapped header exists if no public lookup wins.
+	p.writeDefaultEnrichHeaders(req)
+	for i, ip := range remoteIPs {
+		if p.skipIP(i, ip, remoteIPs, &foundPublicIP) {
+			continue
+		}
+		rec, err := p.recordForLookup(ip)
+		if !publicCountryWritten {
+			p.writePublicLookupHeaders(req, rec, &publicCountryWritten)
+		}
+		if err != nil {
+			p.logLookupError(req, ip, ipChain, remoteIPs, err)
+			lookupFailed = true
+			continue
+		}
+		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirstNonePrivate && rec.Country != PrivateIpCountryAlias {
+			break
+		}
+	}
+	return lookupFailed
+}
+
+// blockFromHeader runs CIDR / private / country using countryHeader. true means banned.
+func (p Plugin) blockFromHeader(rw http.ResponseWriter, req *http.Request, remoteIPs []string, ipChain string) bool {
+	country := req.Header.Get(p.countryHeader)
+	if country == "" || country == EnrichNullAlias {
+		if p.banIfError {
+			p.setDecisionLogHeader(req, LogStatusBlock, "error")
+			p.serveBanHtml(rw, firstIP(remoteIPs), "Unknown", req.Method)
+			return true
+		}
+	}
+	var foundPublicIP bool
+	passReason := PhaseNone
+	for i, ip := range remoteIPs {
+		if p.skipIP(i, ip, remoteIPs, &foundPublicIP) {
+			continue
+		}
+		allowed, phase, err := p.decide(ip, country)
+		if err != nil {
+			p.logLookupError(req, ip, ipChain, remoteIPs, err)
+			if p.banIfError && passReason == PhaseNone {
+				p.setDecisionLogHeader(req, LogStatusBlock, "error")
+				p.serveBanHtml(rw, ip, "Unknown", req.Method)
+				return true
+			}
+			continue
+		}
+		if !allowed && passReason == PhaseNone {
+			p.setDecisionLogHeader(req, LogStatusBlock, phase)
+			p.serveBanHtml(rw, ip, countryForBan(ip, country), req.Method)
+			return true
+		}
+		if passReason == PhaseNone && allowed {
+			passReason = phase
+		}
+		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirstNonePrivate && !privateOrLoopback(ip) {
+			break
+		}
+	}
+	p.setDecisionLogHeader(req, LogStatusPass, passReason)
+	return false
+}
+
+// skipIP reports whether this hop is skipped by ipHeaderStrategy.
+func (p Plugin) skipIP(i int, ip string, remoteIPs []string, foundPublicIP *bool) bool {
+	if p.ipHeaderStrategy == IPHeaderStrategyCheckFirst && i > 0 {
+		return true
+	}
+	if p.ipHeaderStrategy != IPHeaderStrategyCheckFirstNonePrivate {
+		return false
+	}
+	isPrivate := privateOrLoopback(ip)
+	if isPrivate && !*foundPublicIP && i < len(remoteIPs)-1 {
+		return true
+	}
+	if !isPrivate {
+		*foundPublicIP = true
+	}
+	return false
+}
+
+// logLookupError writes the request-check failed log line.
+func (p Plugin) logLookupError(req *http.Request, ip, ipChain string, remoteIPs []string, err error) {
+	if ipChain == "" {
+		ipChain = strings.Join(remoteIPs, ", ")
+	}
+	p.logger.Error("request check failed",
+		"ip", ip, "ip_chain", ipChain, "host", req.Host,
+		"method", req.Method, "path", req.URL.Path, "error", err,
+		"remote_addr", req.RemoteAddr)
+}
+
+// CheckAllowed is private + CIDR + country from a lookup when a provider is bound.
+// Request country rules use decide with countryHeader instead.
+func (p Plugin) CheckAllowed(ip string) (allow bool, phase string, err error) {
+	rec, err := p.recordForLookup(ip)
+	if err != nil {
+		return false, "", err
+	}
+	return p.decide(ip, rec.Country)
+}
+
+// recordForLookup is PRIVATE for private/loopback IPs, else DatabaseProvider Lookup.
+func (p Plugin) recordForLookup(ip string) (dbprovider.Record, error) {
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
-		return false, dbprovider.Record{Country: ip}, "", fmt.Errorf("unable to parse IP address from [%s]", ip)
+		return dbprovider.Record{Country: ip}, fmt.Errorf("unable to parse IP address from [%s]", ip)
 	}
-
 	if ipAddr.IsPrivate() || ipAddr.IsLoopback() {
-		private := dbprovider.Record{Country: PrivateIpCountryAlias}
-		if p.allowPrivate {
-			return true, private, PhaseAllowPrivate, nil
-		}
-		return false, private, PhaseAllowPrivate, nil
+		return dbprovider.Record{Country: PrivateIpCountryAlias}, nil
 	}
-
-	rec, err = p.Lookup(ip)
+	rec, err := p.Lookup(ip)
 	if err != nil {
-		return false, dbprovider.Record{Country: ip}, "", fmt.Errorf("lookup of %s failed: %w", ip, err)
+		return dbprovider.Record{Country: ip}, fmt.Errorf("lookup of %s failed: %w", ip, err)
 	}
-	country := rec.Country
+	return rec, nil
+}
+
+// decide applies private, CIDR, and country maps using country from countryHeader.
+func (p Plugin) decide(ip, country string) (allow bool, phase string, err error) {
+	ipAddr := net.ParseIP(ip)
+	if ipAddr == nil {
+		return false, "", fmt.Errorf("unable to parse IP address from [%s]", ip)
+	}
+	// Private hops follow allowPrivate, not the inbound country.
+	if ipAddr.IsPrivate() || ipAddr.IsLoopback() {
+		return p.allowPrivate, PhaseAllowPrivate, nil
+	}
 
 	blocked, blockedNetworkLength, err := p.isBlockedIPBlocks(ipAddr)
 	if err != nil {
-		return false, rec, "", fmt.Errorf("failed to check if IP %q is blocked by IP block: %w", ip, err)
+		return false, "", fmt.Errorf("failed to check if IP %q is blocked by IP block: %w", ip, err)
 	}
 
 	allowed, allowedNetworkLength, err := p.isAllowedIPBlocks(ipAddr)
 	if err != nil {
-		return false, rec, "", fmt.Errorf("failed to check if IP %q is allowed by IP block: %w", ip, err)
+		return false, "", fmt.Errorf("failed to check if IP %q is allowed by IP block: %w", ip, err)
 	}
 
-	// NB: whichever matched prefix is longer has higher priority: more specific to less specific only if both matched.
 	if (allowedNetworkLength < blockedNetworkLength) && (allowedNetworkLength > 0) && (blockedNetworkLength > 0) {
 		if blocked {
-			return false, rec, PhaseBlockedIPBlock, nil
+			return false, PhaseBlockedIPBlock, nil
 		}
 		if allowed {
-			return true, rec, PhaseAllowedIPBlock, nil
+			return true, PhaseAllowedIPBlock, nil
 		}
 	} else {
 		if allowed {
-			return true, rec, PhaseAllowedIPBlock, nil
+			return true, PhaseAllowedIPBlock, nil
 		}
 		if blocked {
-			return false, rec, PhaseBlockedIPBlock, nil
+			return false, PhaseBlockedIPBlock, nil
 		}
 	}
 
-	if _, allowed := p.allowedCountries[country]; allowed {
-		return true, rec, PhaseAllowedCountry, nil
+	if country == PrivateIpCountryAlias {
+		return p.allowPrivate, PhaseAllowPrivate, nil
 	}
 
-	if _, blocked := p.blockedCountries[country]; blocked {
-		return false, rec, PhaseBlockedCountry, nil
+	if _, ok := p.allowedCountries[country]; ok {
+		return true, PhaseAllowedCountry, nil
 	}
-
+	if _, ok := p.blockedCountries[country]; ok {
+		return false, PhaseBlockedCountry, nil
+	}
 	if p.defaultAllow {
-		return true, rec, PhaseDefaultAllow, nil
+		return true, PhaseDefaultAllow, nil
 	}
-	return false, rec, PhaseDefaultAllow, nil
+	return false, PhaseDefaultAllow, nil
+}
+
+// countryForBan is PRIVATE for a private hop, else the countryHeader value.
+func countryForBan(ip, country string) string {
+	if privateOrLoopback(ip) {
+		return PrivateIpCountryAlias
+	}
+	return country
 }
 
 // Lookup returns geo metadata for ip.
@@ -573,7 +510,10 @@ func (p Plugin) Lookup(ip string) (dbprovider.Record, error) {
 	return p.db.Lookup(ip)
 }
 
-func (p Plugin) setPrivateGeoHeaders(req *http.Request) {
+// writeDefaultEnrichHeaders puts a value on every requestHeaderEnrich mapping.
+// Country is PRIVATE (not blank): a private-only chain still has a country for
+// allowPrivate, and block will not treat the header as missing. Other keys are null.
+func (p Plugin) writeDefaultEnrichHeaders(req *http.Request) {
 	for header, key := range p.requestHeaderEnrich {
 		if key == dbprovider.MetaCountry {
 			req.Header.Set(header, PrivateIpCountryAlias)
@@ -583,7 +523,10 @@ func (p Plugin) setPrivateGeoHeaders(req *http.Request) {
 	}
 }
 
-func (p Plugin) applyGeoHeaders(req *http.Request, rec dbprovider.Record, set *bool) {
+// writePublicLookupHeaders copies rec onto the enrich headers when rec is a public
+// country. Private or empty country is ignored so the defaults stay. written becomes
+// true so a later hop cannot replace the first public country.
+func (p Plugin) writePublicLookupHeaders(req *http.Request, rec dbprovider.Record, written *bool) {
 	if rec.Country == "" || rec.Country == PrivateIpCountryAlias {
 		return
 	}
@@ -594,7 +537,7 @@ func (p Plugin) applyGeoHeaders(req *http.Request, rec dbprovider.Record, set *b
 		}
 		req.Header.Set(header, value)
 	}
-	*set = true
+	*written = true
 }
 
 // isAllowedIPBlocks checks if an IP is allowed based on the allowed CIDR blocks using fast radix tree lookup
