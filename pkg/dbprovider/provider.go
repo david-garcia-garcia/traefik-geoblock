@@ -1,6 +1,9 @@
 package dbprovider
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Metadata keys a Provider may return. A BIN may leave fields empty
 // (IP2Location LITE DB1 is country-only; ISP/domain need DB8; ASN needs ASN LITE).
@@ -63,6 +66,62 @@ func (r Record) Field(key string) string {
 	}
 }
 
+// Set writes value onto the named Record key. Unknown keys are ignored.
+func (r *Record) Set(key, value string) {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case MetaCountry:
+		r.Country = value
+	case MetaCountryName:
+		r.CountryName = value
+	case MetaContinent:
+		r.Continent = value
+	case MetaContinentCode:
+		r.ContinentCode = value
+	case MetaRegion:
+		r.Region = value
+	case MetaCity:
+		r.City = value
+	case MetaIsp:
+		r.Isp = value
+	case MetaDomain:
+		r.Domain = value
+	case MetaAsn:
+		r.Asn = value
+	}
+}
+
+// FillEmpty copies non-empty src fields into empty fields of r.
+func (r Record) FillEmpty(src Record) Record {
+	if r.Country == "" {
+		r.Country = src.Country
+	}
+	if r.CountryName == "" {
+		r.CountryName = src.CountryName
+	}
+	if r.Continent == "" {
+		r.Continent = src.Continent
+	}
+	if r.ContinentCode == "" {
+		r.ContinentCode = src.ContinentCode
+	}
+	if r.Region == "" {
+		r.Region = src.Region
+	}
+	if r.City == "" {
+		r.City = src.City
+	}
+	if r.Isp == "" {
+		r.Isp = src.Isp
+	}
+	if r.Domain == "" {
+		r.Domain = src.Domain
+	}
+	if r.Asn == "" {
+		r.Asn = src.Asn
+	}
+	return r
+}
+
 // KnownMetaKey reports whether key is a supported requestHeaderEnrich value.
 func KnownMetaKey(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
@@ -74,8 +133,31 @@ func KnownMetaKey(key string) bool {
 	}
 }
 
-// Provider opens a geo database, looks up metadata, and owns auto-update.
+// Provider looks up geo metadata for an IP. Close does not close shared wrappers.
 type Provider interface {
 	Lookup(ip string) (Record, error)
 	Close() error
+}
+
+// boundLookup is a Lookup function used as a Provider.
+type boundLookup struct {
+	lookup func(ip string) (Record, error)
+}
+
+// Bind returns a Provider that calls lookup. Close is a no-op.
+func Bind(lookup func(ip string) (Record, error)) Provider {
+	return boundLookup{lookup: lookup}
+}
+
+// Lookup calls the bound function.
+func (b boundLookup) Lookup(ip string) (Record, error) {
+	if b.lookup == nil {
+		return Record{}, fmt.Errorf("no lookup")
+	}
+	return b.lookup(ip)
+}
+
+// Close does not close a shared format wrapper.
+func (b boundLookup) Close() error {
+	return nil
 }

@@ -19,8 +19,12 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
-// DefaultBINMinAge is how long a dated BIN stays current before GET.
-const DefaultBINMinAge = 30 * 24 * time.Hour
+const (
+	// DefaultBINMinAge is how long a dated BIN stays current before GET.
+	DefaultBINMinAge = 30 * 24 * time.Hour
+	// binASNPath is the IP2Location Get_all column name for ASN.
+	binASNPath = "asn"
+)
 
 // BINConfig is one BIN file to resolve, open, and keep current.
 type BINConfig struct {
@@ -206,8 +210,9 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 	return nil
 }
 
-// Lookup returns country/region/city/isp/domain for ip.
-func (w *BIN) Lookup(ip string) (dbprovider.Record, error) {
+// LookupRecord fills Record from the BIN using fields (path → Record key).
+// One Get_all; only mapped paths are copied.
+func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error) {
 	if w == nil || w.db == nil {
 		return dbprovider.Record{}, fmt.Errorf("BIN is not open")
 	}
@@ -219,30 +224,33 @@ func (w *BIN) Lookup(ip string) (dbprovider.Record, error) {
 	if len(country) >= 7 && strings.EqualFold(country[:7], "invalid") {
 		return dbprovider.Record{}, fmt.Errorf("%s", country)
 	}
-	return dbprovider.Record{
-		Country: country,
-		Region:  usableMeta(record.Region),
-		City:    usableMeta(record.City),
-		Isp:     usableMeta(record.Isp),
-		Domain:  usableMeta(record.Domain),
-	}, nil
+	var rec dbprovider.Record
+	fields.apply(&rec, func(path string) string {
+		return binColumn(record, path)
+	})
+	return rec, nil
 }
 
-// LookupASN returns the ASN string, or empty if the BIN is missing or has no ASN.
-func (w *BIN) LookupASN(ip string) string {
-	if w == nil || w.db == nil {
+// binColumn is one IP2Location Get_all column.
+func binColumn(rec ip2loc.IP2Locationrecord, path string) string {
+	switch path {
+	case "country_short":
+		return rec.Country_short
+	case "country_long":
+		return usableMeta(rec.Country_long)
+	case "region":
+		return usableMeta(rec.Region)
+	case "city":
+		return usableMeta(rec.City)
+	case "isp":
+		return usableMeta(rec.Isp)
+	case "domain":
+		return usableMeta(rec.Domain)
+	case binASNPath:
+		return usableMeta(rec.Asn)
+	default:
 		return ""
 	}
-	record, err := w.db.Get_asn(ip)
-	if err != nil {
-		return ""
-	}
-	return usableMeta(record.Asn)
-}
-
-// GetCountryShort is the IP2Location country-only lookup (tests).
-func (w *BIN) GetCountryShort(ip string) (ip2loc.IP2Locationrecord, error) {
-	return w.db.Get_country_short(ip)
 }
 
 // Version is the BIN header version.

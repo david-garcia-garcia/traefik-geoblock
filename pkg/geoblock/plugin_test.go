@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 )
 
 // newTestPlugin is NewCore plus Close when ctx is done. Tests that do not use the reclaim table.
@@ -86,14 +87,85 @@ func countryHeaderFromEnrich(enrich map[string]string) string {
 	return ""
 }
 
+// seedCatalog is one enabled row at key seed plus a disabled shipped IP2Location default.
 func seedCatalog(path string) map[string]DatabaseSource {
-	return map[string]DatabaseSource{"seed": {Path: path}}
+	databaseType, defaultFile, preset := typeAndSeedForPath(path)
+	return map[string]DatabaseSource{
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+		"seed": {
+			Path:                path,
+			DatabaseType:        databaseType,
+			DefaultFile:         defaultFile,
+			FieldsPreconfigured: preset,
+		},
+	}
 }
 
+// typeAndSeedForPath picks databaseType, seed basename, and preset from a filename.
+func typeAndSeedForPath(path string) (databaseType, defaultFile, preset string) {
+	base := strings.ToLower(filepath.Base(path))
+	switch {
+	case strings.Contains(base, "ipinfo"):
+		return "mmdb", DefaultIPinfoFile, dbwrappers.PresetIPinfoLite
+	case strings.HasSuffix(base, ".mmdb"):
+		return "mmdb", DefaultMaxMindSeedFile, dbwrappers.PresetMaxMindCountry
+	case strings.Contains(base, "asn"):
+		return "bin", "", dbwrappers.PresetIP2LocationASN
+	default:
+		return "bin", DefaultIP2LocationGeoFile, dbwrappers.PresetIP2Location
+	}
+}
+
+// seedCatalogPair is geo + ASN rows for merge tests.
 func seedCatalogPair(geo, asn string) map[string]DatabaseSource {
 	return map[string]DatabaseSource{
-		"geo": {Path: geo},
-		"asn": {Path: asn},
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+		"geo":                        {Path: geo, DatabaseType: "bin", FieldsPreconfigured: dbwrappers.PresetIP2Location},
+		"asn":                        {Path: asn, DatabaseType: "bin", FieldsPreconfigured: dbwrappers.PresetIP2LocationASN},
+	}
+}
+
+// shippedBINAndIPinfo enables LITE BIN and IPinfo Lite together (merge coverage).
+func shippedBINAndIPinfo() map[string]DatabaseSource {
+	return map[string]DatabaseSource{
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+		"bin": {
+			Path:                dbFilePath,
+			DatabaseType:        "bin",
+			FieldsPreconfigured: dbwrappers.PresetIP2LocationLite,
+		},
+		"lite": {
+			Path:                ipinfoFilePath,
+			DatabaseType:        "mmdb",
+			FieldsPreconfigured: dbwrappers.PresetIPinfoLite,
+		},
+	}
+}
+
+// shippedIPinfoOnly enables the shipped IPinfo seed and disables the IP2Location default.
+func shippedIPinfoOnly() map[string]DatabaseSource {
+	return map[string]DatabaseSource{
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+		DefaultIPinfoCatalogKey: {
+			Enabled:             boolPtr(true),
+			DatabaseType:        "mmdb",
+			DefaultFile:         DefaultIPinfoFile,
+			FieldsPreconfigured: dbwrappers.PresetIPinfoLite,
+		},
+	}
+}
+
+// shippedMaxMindOnly enables the dummy Country seed and disables the IP2Location default.
+func shippedMaxMindOnly(path string) map[string]DatabaseSource {
+	return map[string]DatabaseSource{
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+		DefaultMaxmindCatalogKey: {
+			Enabled:             boolPtr(true),
+			DatabaseType:        "mmdb",
+			Path:                path,
+			DefaultFile:         DefaultMaxMindSeedFile,
+			FieldsPreconfigured: dbwrappers.PresetMaxMindCountry,
+		},
 	}
 }
 

@@ -24,7 +24,6 @@ func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
 	cfg := &Config{
 		Mode:                  ModeEnrichAndBlock,
 		DatabaseSources:       seedCatalog(dbFilePath),
-		Ip2locationSourceGeo:  "seed",
 		AllowedCountries:      []string{"AU"},
 		BlockedCountries:      []string{"US"},
 		DefaultAllow:          false,
@@ -123,7 +122,6 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
-			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},
 			DefaultAllow:          false,
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -163,7 +161,6 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
-			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},
 			DefaultAllow:          false,
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -204,7 +201,6 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 		handler, err := newRoute(holdCtx(t), captureHandler, &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
-			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},
 			DefaultAllow:          false,
 			AllowPrivate:          false,
@@ -232,7 +228,6 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
-			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},
 			DefaultAllow:          false,
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -284,7 +279,6 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
-			Ip2locationSourceGeo:  "seed",
 			AllowedCountries:      []string{}, // No countries explicitly allowed
 			BlockedCountries:      []string{}, // No countries blocked
 			DefaultAllow:          true,       // Allow by default
@@ -324,7 +318,6 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
-			Ip2locationSourceGeo:  "seed",
 			AllowedCountries:      []string{}, // No countries explicitly allowed
 			BlockedCountries:      []string{}, // No countries blocked
 			DefaultAllow:          false,      // Block by default
@@ -362,7 +355,6 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
-			Ip2locationSourceGeo:  "seed",
 			BlockedCountries:      []string{"US"},         // Block US
 			AllowedIPBlocks:       []string{"8.8.8.0/24"}, // But allow this Google range
 			DefaultAllow:          false,
@@ -402,7 +394,6 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
-			Ip2locationSourceGeo:  "seed",
 			AllowedCountries:      []string{"AU"},         // Allow AU
 			BlockedIPBlocks:       []string{"1.1.1.0/24"}, // But block this AU range
 			DefaultAllow:          true,
@@ -440,7 +431,6 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
-			Ip2locationSourceGeo:  "seed",
 			DefaultAllow:          true,
 			DisallowedStatusCode:  http.StatusForbidden,
 			IPHeaders:             []string{"x-custom-ip"}, // Header that won't be set
@@ -586,7 +576,6 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(dbFilePath),
-			Ip2locationSourceGeo: "seed",
 			DefaultAllow:         true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -620,7 +609,6 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                 ModeEnrichAndBlock,
 			DatabaseSources:      seedCatalog(path),
-			Ip2locationSourceGeo: "seed",
 			DefaultAllow:         true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -656,9 +644,8 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("IPinfo Lite writes valued fields and null for empty region city", func(t *testing.T) {
 		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Mode:             ModeEnrichAndBlock,
-			DatabaseProvider: DatabaseProviderIPinfo,
-			DatabaseSources:  seedCatalog(ipinfoFilePath), IpinfoSource: "seed",
+			Mode:                 ModeEnrichAndBlock,
+			DatabaseSources:      seedCatalog(ipinfoFilePath),
 			DefaultAllow:         true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},

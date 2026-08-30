@@ -15,10 +15,10 @@ priority: normal
 local: core_geoblock_plugin_instance.md
 description: How New reuses one Plugin per middleware name and config hash.
 
-## Database provider
+## Database lookup
 priority: normal
-local: core_geoblock_database_provider.md
-description: How the plugin constructs and calls the geo DatabaseProvider.
+local: core_geoblock_database_lookup.md
+description: How the plugin opens and merges enabled catalog sources.
 
 ## Wrapper
 priority: normal

@@ -110,15 +110,20 @@ func instanceModuleRoot() string {
 	}
 }
 
+func boolPtrFalse() *bool {
+	v := false
+	return &v
+}
+
 // instanceBIN is an enabled IP2Location config that allows US.
 func instanceBIN(path string) *Config {
 	return &Config{
 		Mode:          geoblock.ModeEnrichAndBlock,
 		CountryHeader: "X-Country",
 		DatabaseSources: map[string]geoblock.DatabaseSource{
-			"seed": {Path: path, DatabaseType: dbsource.TypeBIN},
+			geoblock.DefaultIP2LocationCatalogKey: {Enabled: boolPtrFalse(), DatabaseType: dbsource.TypeBIN},
+			"seed":                                {Path: path, DatabaseType: dbsource.TypeBIN, FieldsPreconfigured: dbwrappers.PresetIP2LocationLite},
 		},
-		Ip2locationSourceGeo: "seed",
 		AllowedCountries:     []string{"US"},
 		DisallowedStatusCode: http.StatusForbidden,
 		IPHeaders:            []string{"x-real-ip"},
@@ -130,13 +135,12 @@ func instanceBIN(path string) *Config {
 // instanceMaxMind is an enabled MaxMind config that points at a seed MMDB.
 func instanceMaxMind(path string) *Config {
 	return &Config{
-		Mode:             geoblock.ModeEnrichAndBlock,
-		CountryHeader:    "X-Country",
-		DatabaseProvider: geoblock.DatabaseProviderMaxMind,
+		Mode:          geoblock.ModeEnrichAndBlock,
+		CountryHeader: "X-Country",
 		DatabaseSources: map[string]geoblock.DatabaseSource{
-			"seed": {Path: path, DatabaseType: dbsource.TypeMMDB},
+			geoblock.DefaultIP2LocationCatalogKey: {Enabled: boolPtrFalse(), DatabaseType: dbsource.TypeBIN},
+			"seed":                                {Path: path, DatabaseType: dbsource.TypeMMDB, FieldsPreconfigured: dbwrappers.PresetMaxMindCountry},
 		},
-		MaxmindSource:        "seed",
 		AllowedCountries:     []string{"GB"},
 		DisallowedStatusCode: http.StatusForbidden,
 		IPHeaders:            []string{"x-real-ip"},
@@ -317,17 +321,17 @@ func TestNew_DifferentConfigSharesBINWrappers(t *testing.T) {
 	if got := countPluginPuts(ev); got != 2 {
 		t.Fatalf("plugin puts: got %d want 2 ev=%+v", got, ev)
 	}
-	// IP2Location always opens geo plus allow-missing ASN. Two plugins must not double those.
-	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixBIN); got != 2 {
-		t.Fatalf("bin puts: got %d want 2 (geo+asn) ev=%+v", got, ev)
+	// One geo BIN is shared. ASN is a separate catalog row and is not opened here.
+	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixBIN); got != 1 {
+		t.Fatalf("bin puts: got %d want 1 (geo) ev=%+v", got, ev)
 	}
 
 	cancel()
 	ev = waitReclaimEvents(t, h, time.Second, func(ev [][2]string) bool {
 		return countPrefixedMsg(ev, reclaim.MsgDispose, keyPrefixPlugin) == 2 &&
-			countPrefixedMsg(ev, reclaim.MsgDispose, testPrefixBIN) == 2
+			countPrefixedMsg(ev, reclaim.MsgDispose, testPrefixBIN) == 1
 	})
-	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixBIN); got != 2 {
+	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixBIN); got != 1 {
 		t.Fatalf("bin must not put again during dispose ev=%+v", ev)
 	}
 
@@ -338,8 +342,8 @@ func TestNew_DifferentConfigSharesBINWrappers(t *testing.T) {
 	if got := countPluginPuts(ev); got != 3 {
 		t.Fatalf("later New must put a new plugin, got %d ev=%+v", got, ev)
 	}
-	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixBIN); got != 4 {
-		t.Fatalf("later New must put new BIN wrappers, got %d ev=%+v", got, ev)
+	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixBIN); got != 2 {
+		t.Fatalf("later New must put a new BIN wrapper, got %d ev=%+v", got, ev)
 	}
 }
 

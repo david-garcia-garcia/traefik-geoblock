@@ -111,9 +111,11 @@ func tickerURL(t *testing.T) string {
 
 func lifecycleBIN(path, url, dir string) *Config {
 	return &Config{
-		Mode:                  ModeEnrichAndBlock,
-		DatabaseSources:       map[string]DatabaseSource{"seed": {Path: path, URL: url, DatabaseType: dbsource.TypeBIN}},
-		Ip2locationSourceGeo:  "seed",
+		Mode: ModeEnrichAndBlock,
+		DatabaseSources: map[string]DatabaseSource{
+			DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
+			"seed":                       {Path: path, URL: url, DatabaseType: dbsource.TypeBIN, FieldsPreconfigured: dbwrappers.PresetIP2LocationLite},
+		},
 		DatabaseAutoUpdateDir: dir,
 		AllowedCountries:      []string{"US"},
 		DisallowedStatusCode:  http.StatusForbidden,
@@ -125,10 +127,11 @@ func lifecycleBIN(path, url, dir string) *Config {
 
 func lifecycleIPinfo(path, url, dir string) *Config {
 	return &Config{
-		Mode:                  ModeEnrichAndBlock,
-		DatabaseProvider:      DatabaseProviderIPinfo,
-		DatabaseSources:       map[string]DatabaseSource{"seed": {Path: path, URL: url, DatabaseType: dbsource.TypeMMDB}},
-		IpinfoSource:          "seed",
+		Mode: ModeEnrichAndBlock,
+		DatabaseSources: map[string]DatabaseSource{
+			DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
+			"seed":                       {Path: path, URL: url, DatabaseType: dbsource.TypeMMDB, FieldsPreconfigured: dbwrappers.PresetIPinfoLite},
+		},
 		DatabaseAutoUpdateDir: dir,
 		AllowedCountries:      []string{"US"},
 		DisallowedStatusCode:  http.StatusForbidden,
@@ -242,7 +245,7 @@ func TestNew_UnreclaimedHashDisposesAfterGrace(t *testing.T) {
 	}
 }
 
-func TestNew_ProviderCloseDoesNotDispose(t *testing.T) {
+func TestNew_MergedLookupCloseDoesNotDispose(t *testing.T) {
 	shortLeases(t)
 	cfg := lifecycleBIN(dbFilePath, "", "")
 	ctxA, cancelA := context.WithCancel(context.Background())

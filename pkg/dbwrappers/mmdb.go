@@ -15,6 +15,7 @@ import (
 
 	"github.com/oschwald/maxminddb-golang"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
@@ -123,7 +124,22 @@ func (w *MMDB) Path() string {
 	return w.path
 }
 
-// Lookup decodes ip into dest (vendor schema tags).
+// LookupRecord fills Record from the MMDB using fields (dotted path → Record key).
+// Only those paths are decoded; unused MMDB keys are skipped.
+func (w *MMDB) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error) {
+	if len(fields) == 0 {
+		return dbprovider.Record{}, w.Lookup(ip, &struct{}{})
+	}
+	extract := lookupExtract(fields)
+	dest := extract.takeDest()
+	defer extract.putDest(dest)
+	if err := w.Lookup(ip, dest); err != nil {
+		return dbprovider.Record{}, err
+	}
+	return extract.record(dest), nil
+}
+
+// Lookup decodes ip into dest (raw MMDB tags).
 func (w *MMDB) Lookup(ip string, dest any) error {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {

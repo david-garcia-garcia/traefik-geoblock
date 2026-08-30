@@ -1,57 +1,26 @@
-package ipinfo
+package dbwrappers
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
-	"log/slog"
-
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
-// holdCtx is a cancelable Open context. Background and TODO panic in reclaim.Open.
-func holdCtx(t *testing.T) context.Context {
-	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	return ctx
-}
+func TestIPinfo_PublicAndPrivate(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
 
-func testMMDB(t *testing.T) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-	p := filepath.Join(filepath.Dir(file), "..", "..", "seeds", DefaultFileName)
-	if !fileutils.Exists(p) {
-		t.Fatal("ipinfo_lite.mmdb not found; commit it under seeds/")
-	}
-	return p
-}
-
-func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-}
-
-func TestLookup_PublicAndPrivate(t *testing.T) {
-	dbwrappers.Reset()
-	t.Cleanup(dbwrappers.Reset)
-
-	p, err := New(holdCtx(t), DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}, testLogger())
+	mmdb, err := OpenMMDB(holdCtx(t), MMDBConfig{Source: dbsource.Config{Path: testLiteMMDB(t)}}, testLogger())
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("OpenMMDB: %v", err)
 	}
-
-	rec, err := p.Lookup("8.8.8.8")
+	rec, err := mmdb.LookupRecord("8.8.8.8", mustFields(t, PresetIPinfoLite))
 	if err != nil {
 		t.Fatalf("Lookup 8.8.8.8: %v", err)
 	}
@@ -77,7 +46,7 @@ func TestLookup_PublicAndPrivate(t *testing.T) {
 		t.Errorf("Lite has no region/city, got region=%q city=%q", rec.Region, rec.City)
 	}
 
-	au, err := p.Lookup("1.1.1.1")
+	au, err := mmdb.LookupRecord("1.1.1.1", mustFields(t, PresetIPinfoLite))
 	if err != nil {
 		t.Fatalf("Lookup 1.1.1.1: %v", err)
 	}
@@ -85,7 +54,7 @@ func TestLookup_PublicAndPrivate(t *testing.T) {
 		t.Errorf("1.1.1.1 country: got %q want AU", au.Country)
 	}
 
-	de, err := p.Lookup("85.214.132.117")
+	de, err := mmdb.LookupRecord("85.214.132.117", mustFields(t, PresetIPinfoLite))
 	if err != nil {
 		t.Fatalf("Lookup German test IP: %v", err)
 	}
@@ -93,7 +62,7 @@ func TestLookup_PublicAndPrivate(t *testing.T) {
 		t.Errorf("85.214.132.117 Lite fields: %+v", de)
 	}
 
-	priv, err := p.Lookup("127.0.0.1")
+	priv, err := mmdb.LookupRecord("127.0.0.1", mustFields(t, PresetIPinfoLite))
 	if err != nil {
 		t.Fatalf("Lookup 127.0.0.1: %v", err)
 	}
@@ -101,69 +70,91 @@ func TestLookup_PublicAndPrivate(t *testing.T) {
 		t.Errorf("private IP should have empty country, got %q", priv.Country)
 	}
 
-	_, err = p.Lookup("not-an-ip")
+	_, err = mmdb.LookupRecord("not-an-ip", mustFields(t, PresetIPinfoLite))
 	if err == nil {
 		t.Fatal("expected error for invalid IP")
 	}
 }
 
-func TestNew_EmptyPathFindsBundled(t *testing.T) {
-	dbwrappers.Reset()
-	t.Cleanup(dbwrappers.Reset)
+func TestIPinfo_FieldsCountryOnly(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
 
-	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", filepath.Dir(testMMDB(t)))
-
-	p, err := New(holdCtx(t), DatabaseConfig{}, testLogger())
+	mmdb, err := OpenMMDB(holdCtx(t), MMDBConfig{Source: dbsource.Config{Path: testLiteMMDB(t)}}, testLogger())
 	if err != nil {
-		t.Fatalf("New with empty path: %v", err)
+		t.Fatalf("OpenMMDB: %v", err)
 	}
-	rec, err := p.Lookup("8.8.8.8")
+	rec, err := mmdb.LookupRecord("8.8.8.8", FieldMap{"country_code": {Key: dbprovider.MetaCountry}})
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if rec.Country != "US" {
+		t.Errorf("country: got %q", rec.Country)
+	}
+	if rec.Asn != "" || rec.CountryName != "" {
+		t.Errorf("fields [country] leaked other keys: %+v", rec)
+	}
+}
+
+func TestIPinfo_EmptyPathFindsBundled(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+
+	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", filepath.Dir(testLiteMMDB(t)))
+
+	mmdb, err := OpenMMDB(holdCtx(t), MMDBConfig{DefaultFileName: "ipinfo_lite.mmdb"}, testLogger())
+	if err != nil {
+		t.Fatalf("OpenMMDB with empty path: %v", err)
+	}
+	rec, err := mmdb.LookupRecord("8.8.8.8", mustFields(t, PresetIPinfoLite))
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("bundled MMDB lookup: rec=%+v err=%v", rec, err)
 	}
 }
 
-func TestNew_EmptyMapUsesSeed(t *testing.T) {
-	dbwrappers.Reset()
-	t.Cleanup(dbwrappers.Reset)
+func TestIPinfo_EmptyMapUsesSeed(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
 
-	p, err := New(holdCtx(t), DatabaseConfig{
-		Source:                dbsource.Config{Path: testMMDB(t)},
-		DatabaseAutoUpdateDir: t.TempDir(),
+	mmdb, err := OpenMMDB(holdCtx(t), MMDBConfig{
+		Dir:    t.TempDir(),
+		Source: dbsource.Config{Path: testLiteMMDB(t)},
 	}, testLogger())
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("OpenMMDB: %v", err)
 	}
-	rec, err := p.Lookup("8.8.8.8")
+	rec, err := mmdb.LookupRecord("8.8.8.8", mustFields(t, PresetIPinfoLite))
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("seed lookup without download URL: rec=%+v err=%v", rec, err)
 	}
 }
 
-func TestNew_Singleton(t *testing.T) {
-	dbwrappers.Reset()
-	t.Cleanup(dbwrappers.Reset)
+func TestIPinfo_CloseDoesNotBreakSharedWrapper(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
 
-	cfg := DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}
-	a, err := New(holdCtx(t), cfg, testLogger())
+	cfg := MMDBConfig{Source: dbsource.Config{Path: testLiteMMDB(t)}}
+	first, err := OpenMMDB(holdCtx(t), cfg, testLogger())
 	if err != nil {
-		t.Fatalf("New a: %v", err)
+		t.Fatalf("OpenMMDB a: %v", err)
 	}
-	b, err := New(holdCtx(t), cfg, testLogger())
+	second, err := OpenMMDB(holdCtx(t), cfg, testLogger())
 	if err != nil {
-		t.Fatalf("New b: %v", err)
+		t.Fatalf("OpenMMDB b: %v", err)
 	}
-	if err := a.Close(); err != nil {
+	if err := dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+		return first.LookupRecord(ip, mustFields(t, PresetIPinfoLite))
+	}).Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	rec, err := b.Lookup("8.8.8.8")
+	rec, err := second.LookupRecord("8.8.8.8", mustFields(t, PresetIPinfoLite))
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("shared lookup after Close: rec=%+v err=%v", rec, err)
 	}
 }
 
-func TestDownloadThroughComponent_HTTP(t *testing.T) {
-	src, err := os.ReadFile(testMMDB(t))
+func TestIPinfo_DownloadThroughComponent(t *testing.T) {
+	src, err := os.ReadFile(testLiteMMDB(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,10 +184,10 @@ func TestDownloadThroughComponent_HTTP(t *testing.T) {
 		t.Errorf("dated name: %s", path)
 	}
 
-	dbwrappers.Reset()
-	t.Cleanup(dbwrappers.Reset)
-	p, err := New(holdCtx(t), DatabaseConfig{
-		DatabaseAutoUpdateDir: dir,
+	Reset()
+	t.Cleanup(Reset)
+	mmdb, err := OpenMMDB(holdCtx(t), MMDBConfig{
+		Dir: dir,
 		Source: dbsource.Config{
 			Key:          "lite",
 			DatabaseType: dbsource.TypeMMDB,
@@ -205,7 +196,7 @@ func TestDownloadThroughComponent_HTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open downloaded: %v", err)
 	}
-	rec, err := p.Lookup("8.8.8.8")
+	rec, err := mmdb.LookupRecord("8.8.8.8", mustFields(t, PresetIPinfoLite))
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
 	}

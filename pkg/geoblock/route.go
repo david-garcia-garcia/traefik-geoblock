@@ -11,7 +11,7 @@ type Route struct {
 	next http.Handler
 }
 
-// ForRoute returns a Route that serves next. The Plugin already holds the provider.
+// ForRoute returns a Route that serves next. The Plugin already holds catalog lookup.
 func (p *Plugin) ForRoute(next http.Handler) (*Route, error) {
 	if next == nil {
 		name := "geoblock"

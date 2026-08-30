@@ -12,13 +12,13 @@ _Avoid_: mapping a second `requestHeaderEnrich` header to `country`
 
 ## Overview
 
-One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeaderEnrich`. Block applies CIDR and private rules per IP, then country allow/block from `countryHeader`. `block` and `disabled` do not open a DatabaseProvider.
+One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeaderEnrich`. Block applies CIDR and private rules per IP, then country allow/block from `countryHeader`. `block` and `disabled` do not open catalog sources.
 
 ## How to use
 
 - Set `Config.Mode`. Unknown values fail `Prepare`. Empty is `disabled` (pass through, no database).
 - Omit `countryHeader` to use `X-IPCountry`. A `requestHeaderEnrich` `country` mapping must use that same header name.
-- Call `openDatabaseProvider` / `bindDatabase` only when `ModeLooksUp` (`enrich`, `enrichandblock`).
+- Call `openCatalogSources` / `bindDatabase` only when `ModeLooksUp` (`enrich`, `enrichandblock`).
 - Write country from lookup onto `countryHeader`, then read that header in the block stage. Do not pass `Record.Country` into country maps.
 - Do not call `writeDefaultEnrichHeaders` in `block` (it would overwrite the inbound country).
 - After CIDR, a `countryHeader` value of `PRIVATE` follows `allowPrivate`. Private or loopback IPs still apply `allowPrivate` first.

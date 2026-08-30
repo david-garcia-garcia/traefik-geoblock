@@ -32,3 +32,13 @@ func TestRecordFieldAndKnownMetaKey(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordSet(t *testing.T) {
+	var rec Record
+	rec.Set(MetaCountry, "US")
+	rec.Set("ASN", "AS15169")
+	rec.Set("unknown", "x")
+	if rec.Country != "US" || rec.Asn != "AS15169" {
+		t.Errorf("Set: %+v", rec)
+	}
+}

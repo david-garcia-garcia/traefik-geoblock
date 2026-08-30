@@ -65,7 +65,7 @@ func TestMode_BlockDoesNotOpenDatabase(t *testing.T) {
 		t.Fatalf("NewCore: %v", err)
 	}
 	if plugin.db != nil {
-		t.Fatal("block mode opened a DatabaseProvider")
+		t.Fatal("block mode opened catalog sources")
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
@@ -86,7 +86,6 @@ func TestMode_EnrichDoesNotBlock(t *testing.T) {
 		Mode:                 ModeEnrich,
 		CountryHeader:        "X-IPCountry",
 		DatabaseSources:      seedCatalog(dbFilePath),
-		Ip2locationSourceGeo: "seed",
 		BlockedCountries:     []string{"US"},
 		DefaultAllow:         false,
 		DisallowedStatusCode: http.StatusForbidden,

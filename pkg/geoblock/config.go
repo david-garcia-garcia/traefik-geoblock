@@ -6,25 +6,36 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 const (
-	DatabaseProviderIP2Location = "ip2location"
-	DatabaseProviderIPinfo      = "ipinfo"
-	DatabaseProviderMaxMind     = "maxmind"
-
-	// DefaultIP2LocationCatalogKey is the reserved catalog name for the free geo LITE ZIP.
+	// DefaultIP2LocationCatalogKey is the reserved enabled geo LITE ZIP + seed.
 	DefaultIP2LocationCatalogKey = "default_ip2location"
-	// DefaultGeoliteCatalogKey is the reserved catalog name for the unofficial Country MMDB GET.
+	// DefaultIPinfoCatalogKey is the reserved disabled IPinfo Lite seed.
+	DefaultIPinfoCatalogKey = "default_ipinfo"
+	// DefaultMaxmindCatalogKey is the reserved disabled dummy Country seed.
+	DefaultMaxmindCatalogKey = "default_maxmind"
+	// DefaultGeoliteCatalogKey is the reserved disabled unofficial Country GET.
 	DefaultGeoliteCatalogKey = "default_geolite"
 	defaultAutoUpdateDirName = "traefik-geoblock"
+
+	// DefaultIP2LocationLiteURL is the official free IP2Location geo LITE ZIP (no token).
+	DefaultIP2LocationLiteURL = "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
+	// DefaultIP2LocationGeoFile is the committed country LITE BIN under seeds/.
+	DefaultIP2LocationGeoFile = "IP2LOCATION-LITE-DB1.IPV6.BIN"
+	// DefaultIPinfoFile is the committed Lite snapshot under seeds/.
+	DefaultIPinfoFile = "ipinfo_lite.mmdb"
+	// DefaultMaxMindSeedFile is MaxMind's official dummy Country fixture under seeds/.
+	DefaultMaxMindSeedFile = "GeoIP2-Country-Test.mmdb"
+	// DefaultGeoliteURL is the unofficial P3TERX Country MMDB on the download branch.
+	DefaultGeoliteURL = "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb"
 )
 
 // IP header strategy constants
@@ -53,21 +64,10 @@ type Config struct {
 	AllowPrivate bool   // Allow requests from private/internal networks
 	BanIfError   bool   // Ban requests if IP lookup fails
 
-	// Database provider. Empty defaults to ip2location. Implemented: ip2location, ipinfo, maxmind.
-	DatabaseProvider string `json:"databaseProvider,omitempty" mapstructure:"databaseProvider"`
-
-	// DatabaseSources is the catalog of database files (seed path and/or URL).
-	// Operator keys plus reserved default_ip2location and default_geolite.
+	// DatabaseSources is the catalog of lookup sources (path, URL, databaseType, defaultFile, fields, enabled).
 	DatabaseSources map[string]DatabaseSource `json:"databaseSources,omitempty" mapstructure:"databaseSources"`
-	// DatabaseAutoUpdateDir is the shared dir for dated files. Empty with a bound URL uses a temp dir.
+	// DatabaseAutoUpdateDir is the shared dir for dated files. Empty with an enabled URL uses a temp dir.
 	DatabaseAutoUpdateDir string `json:"databaseAutoUpdateDir,omitempty" mapstructure:"databaseAutoUpdateDir"`
-
-	// Catalog pointers. Empty IP2Location geo binds default_ip2location.
-	// Empty MaxMind binds default_geolite. Unused pointers are ignored.
-	Ip2locationSourceGeo string `json:"ip2location_source_geo,omitempty" mapstructure:"ip2location_source_geo"`
-	Ip2locationSourceAsn string `json:"ip2location_source_asn,omitempty" mapstructure:"ip2location_source_asn"`
-	IpinfoSource         string `json:"ipinfo_source,omitempty" mapstructure:"ipinfo_source"`
-	MaxmindSource        string `json:"maxmind_source,omitempty" mapstructure:"maxmind_source"`
 
 	// Country-based rules (ISO 3166-1 alpha-2 format)
 	AllowedCountries []string // Whitelist of countries to allow
@@ -112,13 +112,21 @@ type Config struct {
 	ExcludedPathsRegex string
 }
 
-// DatabaseSource is one catalog row (seed path and/or GET URL).
+// DatabaseSource is one catalog row: file location, format, column map, and enabled.
 type DatabaseSource struct {
 	URL          string            `json:"url,omitempty" mapstructure:"url"`
 	Headers      map[string]string `json:"headers,omitempty" mapstructure:"headers"`
 	DatabaseType string            `json:"databaseType,omitempty" mapstructure:"databaseType"`
 	Archive      string            `json:"archive,omitempty" mapstructure:"archive"`
 	Path         string            `json:"path,omitempty" mapstructure:"path"`
+	DefaultFile  string            `json:"defaultFile,omitempty" mapstructure:"defaultFile"`
+	Enabled      *bool             `json:"enabled,omitempty" mapstructure:"enabled"`
+	// Fields maps on-disk path → Record key string, or {key, type}. Do not set with FieldsPreconfigured.
+	Fields map[string]any `json:"fields,omitempty" mapstructure:"fields"`
+	// bound is the resolved FieldMap after Prepare.
+	bound dbwrappers.FieldMap
+	// FieldsPreconfigured is a named vendor map (ip2location_db8, ipinfo_lite, …).
+	FieldsPreconfigured string `json:"fieldsPreconfigured,omitempty" mapstructure:"fieldsPreconfigured"`
 }
 
 // CreateConfig creates the default plugin configuration.
@@ -132,7 +140,6 @@ func CreateConfig() *Config {
 		RequestHeaderEnrich:  make(map[string]string),
 		IPHeaders:            []string{"x-forwarded-for", "x-real-ip"}, // Default IP headers
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,                 // Default to checking all IPs
-		DatabaseProvider:     DatabaseProviderIP2Location,              // Default provider
 		CountryHeader:        DefaultCountryHeader,
 		DatabaseSources:      make(map[string]DatabaseSource),
 	}
@@ -147,7 +154,7 @@ func NormalizeMode(mode string) string {
 	return m
 }
 
-// ModeLooksUp reports whether this mode opens the DatabaseProvider and writes headers.
+// ModeLooksUp reports whether this mode opens catalog sources and writes headers.
 func ModeLooksUp(mode string) bool {
 	return mode == ModeEnrich || mode == ModeEnrichAndBlock
 }
@@ -199,11 +206,7 @@ func Prepare(cfg *Config, name string) error {
 	}
 
 	if ModeLooksUp(cfg.Mode) {
-		ensureDefaultIP2LocationCatalog(cfg)
-		ensureDefaultGeoliteCatalog(cfg)
-		applyMissingPointerFallbacks(cfg, logger)
-		bindEmptyIP2LocationGeo(cfg)
-		bindEmptyMaxmindSource(cfg)
+		insertReservedCatalog(cfg)
 		if err := validateDatabaseSources(cfg); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
@@ -234,27 +237,29 @@ func checkCountryHeaderBridge(countryHeader string, enrich map[string]string) er
 	return nil
 }
 
-// providerName is the selected DatabaseProvider, or ip2location when empty.
-func providerName(cfg *Config) string {
-	name := strings.ToLower(strings.TrimSpace(cfg.DatabaseProvider))
-	if name == "" {
-		return DatabaseProviderIP2Location
-	}
-	return name
+// sourceEnabled is true when enabled is omitted or true.
+func sourceEnabled(entry DatabaseSource) bool {
+	return entry.Enabled == nil || *entry.Enabled
 }
 
-// boundSourceKeys is the catalog keys the selected provider will open.
-func boundSourceKeys(cfg *Config) []string {
-	switch providerName(cfg) {
-	case DatabaseProviderIP2Location:
-		return []string{cfg.Ip2locationSourceGeo, cfg.Ip2locationSourceAsn}
-	case DatabaseProviderIPinfo:
-		return []string{cfg.IpinfoSource}
-	case DatabaseProviderMaxMind:
-		return []string{cfg.MaxmindSource}
-	default:
+// boolPtr is a *bool for catalog Enabled literals.
+func boolPtr(v bool) *bool {
+	return &v
+}
+
+// enabledSourceKeys is enabled catalog keys in lexicographic order.
+func enabledSourceKeys(cfg *Config) []string {
+	if cfg.DatabaseSources == nil {
 		return nil
 	}
+	var keys []string
+	for name, entry := range cfg.DatabaseSources {
+		if sourceEnabled(entry) {
+			keys = append(keys, name)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // catalogSource builds a dbsource.Config from one catalog key.
@@ -268,14 +273,15 @@ func catalogSource(cfg *Config, key, databaseType string) dbsource.Config {
 		entry = cfg.DatabaseSources[key]
 	}
 	return dbsource.Config{
-		Key:          key,
-		URL:          strings.TrimSpace(entry.URL),
-		Path:         strings.TrimSpace(entry.Path),
-		Headers:      entry.Headers,
-		DatabaseType: firstNonEmpty(entry.DatabaseType, databaseType),
-		Archive:      entry.Archive,
-		Dir:          strings.TrimSpace(cfg.DatabaseAutoUpdateDir),
-		MinAge:       dbsource.DefaultMinAge,
+		Key:             key,
+		URL:             strings.TrimSpace(entry.URL),
+		Path:            strings.TrimSpace(entry.Path),
+		Headers:         entry.Headers,
+		DatabaseType:    firstNonEmpty(entry.DatabaseType, databaseType),
+		Archive:         entry.Archive,
+		Dir:             strings.TrimSpace(cfg.DatabaseAutoUpdateDir),
+		MinAge:          dbsource.DefaultMinAge,
+		DefaultFileName: strings.TrimSpace(entry.DefaultFile),
 	}
 }
 
@@ -289,93 +295,53 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// ensureDefaultIP2LocationCatalog inserts the reserved free LITE row unless the operator already set that key.
-func ensureDefaultIP2LocationCatalog(cfg *Config) {
+// insertReservedCatalog adds shipped seed and download rows when the key is absent.
+func insertReservedCatalog(cfg *Config) {
 	if cfg.DatabaseSources == nil {
 		cfg.DatabaseSources = make(map[string]DatabaseSource)
 	}
-	if _, ok := cfg.DatabaseSources[DefaultIP2LocationCatalogKey]; ok {
+	insertCatalogIfAbsent(cfg, DefaultIP2LocationCatalogKey, DatabaseSource{
+		URL:                 DefaultIP2LocationLiteURL,
+		DatabaseType:        dbsource.TypeBIN,
+		Archive:             dbsource.ArchiveZIP,
+		DefaultFile:         DefaultIP2LocationGeoFile,
+		FieldsPreconfigured: dbwrappers.PresetIP2LocationLite,
+	})
+	insertCatalogIfAbsent(cfg, DefaultIPinfoCatalogKey, DatabaseSource{
+		DatabaseType:        dbsource.TypeMMDB,
+		DefaultFile:         DefaultIPinfoFile,
+		Enabled:             boolPtr(false),
+		FieldsPreconfigured: dbwrappers.PresetIPinfoLite,
+	})
+	insertCatalogIfAbsent(cfg, DefaultMaxmindCatalogKey, DatabaseSource{
+		DatabaseType:        dbsource.TypeMMDB,
+		DefaultFile:         DefaultMaxMindSeedFile,
+		Enabled:             boolPtr(false),
+		FieldsPreconfigured: dbwrappers.PresetMaxMindCountry,
+	})
+	insertCatalogIfAbsent(cfg, DefaultGeoliteCatalogKey, DatabaseSource{
+		URL:                 DefaultGeoliteURL,
+		DatabaseType:        dbsource.TypeMMDB,
+		Archive:             dbsource.ArchiveNone,
+		Enabled:             boolPtr(false),
+		FieldsPreconfigured: dbwrappers.PresetMaxMindCountry,
+	})
+}
+
+// insertCatalogIfAbsent writes row when name is not already in the catalog.
+func insertCatalogIfAbsent(cfg *Config, name string, row DatabaseSource) {
+	if _, ok := cfg.DatabaseSources[name]; ok {
 		return
 	}
-	cfg.DatabaseSources[DefaultIP2LocationCatalogKey] = DatabaseSource{
-		URL:          ip2location.DefaultLiteURL,
-		DatabaseType: dbsource.TypeBIN,
-		Archive:      dbsource.ArchiveZIP,
-	}
+	cfg.DatabaseSources[name] = row
 }
 
-// ensureDefaultGeoliteCatalog inserts the reserved Country MMDB row unless the operator already set that key.
-func ensureDefaultGeoliteCatalog(cfg *Config) {
-	if cfg.DatabaseSources == nil {
-		cfg.DatabaseSources = make(map[string]DatabaseSource)
-	}
-	if _, ok := cfg.DatabaseSources[DefaultGeoliteCatalogKey]; ok {
-		return
-	}
-	cfg.DatabaseSources[DefaultGeoliteCatalogKey] = DatabaseSource{
-		URL:          maxmind.DefaultGeoliteURL,
-		DatabaseType: dbsource.TypeMMDB,
-		Archive:      dbsource.ArchiveNone,
-	}
-}
-
-// applyMissingPointerFallbacks clears a bound pointer that is not a catalog key and WARNs.
-func applyMissingPointerFallbacks(cfg *Config, logger *slog.Logger) {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	switch providerName(cfg) {
-	case DatabaseProviderIP2Location:
-		cfg.Ip2locationSourceGeo = fallbackPointer(cfg, "ip2location_source_geo", cfg.Ip2locationSourceGeo, logger)
-		cfg.Ip2locationSourceAsn = fallbackPointer(cfg, "ip2location_source_asn", cfg.Ip2locationSourceAsn, logger)
-	case DatabaseProviderIPinfo:
-		cfg.IpinfoSource = fallbackPointer(cfg, "ipinfo_source", cfg.IpinfoSource, logger)
-	case DatabaseProviderMaxMind:
-		cfg.MaxmindSource = fallbackPointer(cfg, "maxmind_source", cfg.MaxmindSource, logger)
-	}
-}
-
-// fallbackPointer returns key when it names a catalog row, otherwise "" after a WARN.
-func fallbackPointer(cfg *Config, field, key string, logger *slog.Logger) string {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return ""
-	}
-	if cfg.DatabaseSources != nil {
-		if _, ok := cfg.DatabaseSources[key]; ok {
-			return key
-		}
-	}
-	logger.Warn("source pointer is not a key in databaseSources; using default", "pointer", field, "key", key)
-	return ""
-}
-
-// bindEmptyIP2LocationGeo sets an empty IP2Location geo pointer to the reserved catalog key.
-func bindEmptyIP2LocationGeo(cfg *Config) {
-	if providerName(cfg) != DatabaseProviderIP2Location {
-		return
-	}
-	if strings.TrimSpace(cfg.Ip2locationSourceGeo) == "" {
-		cfg.Ip2locationSourceGeo = DefaultIP2LocationCatalogKey
-	}
-}
-
-// bindEmptyMaxmindSource sets an empty MaxMind pointer to the reserved catalog key.
-func bindEmptyMaxmindSource(cfg *Config) {
-	if providerName(cfg) != DatabaseProviderMaxMind {
-		return
-	}
-	if strings.TrimSpace(cfg.MaxmindSource) == "" {
-		cfg.MaxmindSource = DefaultGeoliteCatalogKey
-	}
-}
-
-// applyTempAutoUpdateDir sets a process temp dir when a bound URL has no operator dir.
+// applyTempAutoUpdateDir sets a process temp dir when an enabled URL has no operator dir.
 func applyTempAutoUpdateDir(cfg *Config, logger *slog.Logger) {
 	if strings.TrimSpace(cfg.DatabaseAutoUpdateDir) != "" {
 		return
 	}
-	if !boundURLNeedsDir(cfg) {
+	if !enabledURLNeedsDir(cfg) {
 		return
 	}
 	if logger == nil {
@@ -386,22 +352,18 @@ func applyTempAutoUpdateDir(cfg *Config, logger *slog.Logger) {
 	cfg.DatabaseAutoUpdateDir = dir
 }
 
-// boundURLNeedsDir reports whether a selected-provider pointer names a catalog row with a URL.
-func boundURLNeedsDir(cfg *Config) bool {
-	for _, key := range boundSourceKeys(cfg) {
-		key = strings.TrimSpace(key)
-		if key == "" || cfg.DatabaseSources == nil {
-			continue
-		}
-		entry, ok := cfg.DatabaseSources[key]
-		if ok && strings.TrimSpace(entry.URL) != "" {
+// enabledURLNeedsDir reports whether an enabled catalog row has a URL.
+func enabledURLNeedsDir(cfg *Config) bool {
+	for _, key := range enabledSourceKeys(cfg) {
+		entry := cfg.DatabaseSources[key]
+		if strings.TrimSpace(entry.URL) != "" {
 			return true
 		}
 	}
 	return false
 }
 
-// validateDatabaseSources normalizes each catalog row and checks bound pointer types.
+// validateDatabaseSources normalizes rows and checks enabled format/fields.
 func validateDatabaseSources(cfg *Config) error {
 	for name, entry := range cfg.DatabaseSources {
 		c := dbsource.Config{
@@ -414,42 +376,68 @@ func validateDatabaseSources(cfg *Config) error {
 			return fmt.Errorf("databaseSources.%s: %w", name, err)
 		}
 	}
-	return checkBoundPointerTypes(cfg)
-}
-
-// checkBoundPointerTypes fails when a bound catalog row's databaseType does not match the provider.
-func checkBoundPointerTypes(cfg *Config) error {
-	want := providerDatabaseType(cfg)
-	if want == "" {
-		return nil
+	enabled := enabledSourceKeys(cfg)
+	if len(enabled) == 0 {
+		return fmt.Errorf("no enabled databaseSources")
 	}
-	for _, key := range boundSourceKeys(cfg) {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
+	for _, key := range enabled {
+		entry := cfg.DatabaseSources[key]
+		databaseType := strings.ToLower(strings.TrimSpace(entry.DatabaseType))
+		if databaseType != dbsource.TypeBIN && databaseType != dbsource.TypeMMDB {
+			return fmt.Errorf("databaseSources.%s: unknown or empty databaseType %q", key, entry.DatabaseType)
 		}
-		entry, ok := cfg.DatabaseSources[key]
-		if !ok {
-			continue
+		fields, err := resolveSourceFields(entry, databaseType)
+		if err != nil {
+			return fmt.Errorf("databaseSources.%s: %w", key, err)
 		}
-		got := strings.ToLower(strings.TrimSpace(entry.DatabaseType))
-		if got != "" && got != want {
-			return fmt.Errorf("source pointer %q has databaseType %q; %s requires %s", key, got, providerName(cfg), want)
-		}
+		// Expand the preset into Fields. Clear the name so a later Prepare is not both-set.
+		entry.DatabaseType = databaseType
+		entry.bound = fields
+		entry.Fields = fields.CatalogYAML()
+		entry.FieldsPreconfigured = ""
+		cfg.DatabaseSources[key] = entry
 	}
 	return nil
 }
 
-// providerDatabaseType is the catalog databaseType the selected provider can open.
-func providerDatabaseType(cfg *Config) string {
-	switch providerName(cfg) {
-	case DatabaseProviderIP2Location:
-		return dbsource.TypeBIN
-	case DatabaseProviderIPinfo, DatabaseProviderMaxMind:
-		return dbsource.TypeMMDB
-	default:
-		return ""
+// resolveSourceFields expands a preset or validates an operator map. Both set is an error.
+func resolveSourceFields(entry DatabaseSource, databaseType string) (dbwrappers.FieldMap, error) {
+	preset := strings.ToLower(strings.TrimSpace(entry.FieldsPreconfigured))
+	if len(entry.Fields) > 0 && preset != "" {
+		return nil, fmt.Errorf("set fields or fieldsPreconfigured, not both")
 	}
+	if preset != "" {
+		format, fields, ok := dbwrappers.Preset(preset)
+		if !ok {
+			return nil, fmt.Errorf("unknown fieldsPreconfigured %q (see dbwrappers.PresetNames)",
+				entry.FieldsPreconfigured)
+		}
+		if format != databaseType {
+			return nil, fmt.Errorf("fieldsPreconfigured %s is %s; row is %s", preset, format, databaseType)
+		}
+		return fields, nil
+	}
+	if len(entry.Fields) == 0 {
+		return nil, fmt.Errorf("set fields or fieldsPreconfigured")
+	}
+	parsed, err := dbwrappers.ParseFields(entry.Fields)
+	if err != nil {
+		return nil, fmt.Errorf("fields: %w", err)
+	}
+	out := make(dbwrappers.FieldMap, len(parsed))
+	for path, field := range parsed {
+		path = strings.TrimSpace(path)
+		key := strings.ToLower(strings.TrimSpace(field.Key))
+		if path == "" {
+			return nil, fmt.Errorf("fields has an empty path")
+		}
+		if !dbprovider.KnownMetaKey(key) {
+			return nil, fmt.Errorf("unknown fields value %q for path %q (supported: %s)",
+				field.Key, path, strings.Join(dbprovider.MetaKeys(), ", "))
+		}
+		out[path] = dbwrappers.Field{Key: key, Type: field.Type}
+	}
+	return out, nil
 }
 
 // normalizeRequestHeaderEnrich canonicalizes header names and checks metadata keys.

@@ -13,11 +13,9 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ip2location"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/ipinfo"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/maxmind"
 )
 
 const (
@@ -46,7 +44,7 @@ const (
 	PhaseBypassHeader     = "bypass_header"
 )
 
-// Plugin is the shared policy for one middleware name and config, including the database provider.
+// Plugin is the shared policy for one middleware name and config, including catalog lookup.
 type Plugin struct {
 	name                  string
 	db                    dbprovider.Provider
@@ -80,7 +78,7 @@ func pluginLogger(name string, cfg *Config) *slog.Logger {
 	return logging.New(name, cfg.LogLevel, cfg.LogFormat, bootstrap)
 }
 
-// NewCore builds the Plugin and opens the database provider on this incarnation’s lifetime. cfg must already be Prepare'd.
+// NewCore builds the Plugin and opens catalog sources on this incarnation’s lifetime. cfg must already be Prepare'd.
 func NewCore(name string, cfg *Config) (*Plugin, error) {
 	logger := pluginLogger(name, cfg)
 	logger.Debug("initializing plugin",
@@ -199,42 +197,73 @@ func (p *Plugin) Close() {
 	})
 }
 
-// bindDatabase opens the provider bound to this incarnation’s lifetime.
+// bindDatabase opens enabled catalog sources on this incarnation’s lifetime.
 func (p *Plugin) bindDatabase(life context.Context, cfg *Config) error {
 	if !ModeLooksUp(p.mode) {
 		return nil
 	}
-	db, err := openDatabaseProvider(life, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
+	db, err := openCatalogSources(life, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
 	if err != nil {
-		return fmt.Errorf("%s: failed to get database provider: %w", p.name, err)
+		return fmt.Errorf("%s: failed to open catalog sources: %w", p.name, err)
 	}
 	p.db = db
 	return nil
 }
 
-// openDatabaseProvider constructs the geo DatabaseProvider selected by Config.
-// Empty DatabaseProvider defaults to ip2location. Unknown values fail.
-func openDatabaseProvider(ctx context.Context, cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
-	name := providerName(cfg)
-	switch name {
-	case DatabaseProviderIP2Location:
-		return ip2location.New(ctx, ip2location.DatabaseConfig{
-			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.Ip2locationSourceGeo, dbsource.TypeBIN),
-			AsnSource:             catalogSource(cfg, cfg.Ip2locationSourceAsn, dbsource.TypeBIN),
+// openCatalogSources opens each enabled row and returns a Combined Lookup.
+func openCatalogSources(ctx context.Context, cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
+	var sources []dbprovider.Named
+	for _, key := range enabledSourceKeys(cfg) {
+		lookup, err := openCatalogRow(ctx, cfg, key, logger)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, dbprovider.Named{Key: key, Provider: lookup})
+	}
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("no enabled databaseSources")
+	}
+	return dbprovider.NewCombined(sources), nil
+}
+
+// openCatalogRow opens one format wrapper Lookup for a catalog key.
+func openCatalogRow(ctx context.Context, cfg *Config, key string, logger *slog.Logger) (dbprovider.Provider, error) {
+	entry := cfg.DatabaseSources[key]
+	databaseType := strings.ToLower(strings.TrimSpace(entry.DatabaseType))
+	switch databaseType {
+	case dbsource.TypeBIN:
+		src := catalogSource(cfg, key, dbsource.TypeBIN)
+		bin, err := dbwrappers.OpenBIN(ctx, dbwrappers.BINConfig{
+			Dir:             cfg.DatabaseAutoUpdateDir,
+			Source:          src,
+			DefaultFileName: src.DefaultFileName,
+			AllowMissing:    src.Path == "" && src.DefaultFileName == "",
+			MinAge:          dbwrappers.DefaultBINMinAge,
 		}, logger)
-	case DatabaseProviderIPinfo:
-		return ipinfo.New(ctx, ipinfo.DatabaseConfig{
-			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.IpinfoSource, dbsource.TypeMMDB),
+		if err != nil {
+			return nil, err
+		}
+		fields := entry.bound
+		return dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+			return bin.LookupRecord(ip, fields)
+		}), nil
+	case dbsource.TypeMMDB:
+		src := catalogSource(cfg, key, dbsource.TypeMMDB)
+		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
+			Dir:             cfg.DatabaseAutoUpdateDir,
+			Source:          src,
+			DefaultFileName: src.DefaultFileName,
+			MinAge:          dbsource.DefaultMinAge,
 		}, logger)
-	case DatabaseProviderMaxMind:
-		return maxmind.New(ctx, maxmind.DatabaseConfig{
-			DatabaseAutoUpdateDir: cfg.DatabaseAutoUpdateDir,
-			Source:                catalogSource(cfg, cfg.MaxmindSource, dbsource.TypeMMDB),
-		}, logger)
+		if err != nil {
+			return nil, err
+		}
+		fields := entry.bound
+		return dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+			return mmdb.LookupRecord(ip, fields)
+		}), nil
 	default:
-		return nil, fmt.Errorf("unsupported database provider %q", cfg.DatabaseProvider)
+		return nil, fmt.Errorf("unknown databaseType %q", entry.DatabaseType)
 	}
 }
 
@@ -418,7 +447,7 @@ func (p Plugin) logLookupError(req *http.Request, ip, ipChain string, remoteIPs 
 		"remote_addr", req.RemoteAddr)
 }
 
-// CheckAllowed is private + CIDR + country from a lookup when a provider is bound.
+// CheckAllowed is private + CIDR + country from a lookup when catalog sources are bound.
 // Request country rules use decide with countryHeader instead.
 func (p Plugin) CheckAllowed(ip string) (allow bool, phase string, err error) {
 	rec, err := p.recordForLookup(ip)
@@ -428,7 +457,7 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, phase string, err error) {
 	return p.decide(ip, rec.Country)
 }
 
-// recordForLookup is PRIVATE for private/loopback IPs, else DatabaseProvider Lookup.
+// recordForLookup is PRIVATE for private/loopback IPs, else catalog Lookup.
 func (p Plugin) recordForLookup(ip string) (dbprovider.Record, error) {
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {

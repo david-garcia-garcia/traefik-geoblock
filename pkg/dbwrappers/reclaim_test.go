@@ -119,14 +119,14 @@ func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {
 	if a.updater != b.updater {
 		t.Fatal("expected one ticker")
 	}
-	rec, err := b.Lookup("8.8.8.8")
-	if err != nil || rec.Country != "US" {
-		t.Fatalf("lookup: %+v %v", rec, err)
+	rec := testBINRecord(t, b)
+	if rec.Country != "US" {
+		t.Fatalf("lookup: %+v", rec)
 	}
 	time.Sleep(80 * time.Millisecond)
-	rec, err = b.Lookup("8.8.8.8")
-	if err != nil || rec.Country != "US" {
-		t.Fatalf("after grace: %+v %v", rec, err)
+	rec = testBINRecord(t, b)
+	if rec.Country != "US" {
+		t.Fatalf("after grace: %+v", rec)
 	}
 }
 
@@ -180,12 +180,12 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 		t.Fatalf("H2: %v", err)
 	}
 	time.Sleep(80 * time.Millisecond)
-	if _, err := h1.Lookup("8.8.8.8"); err == nil {
+	if _, err := h1.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil {
 		t.Fatal("H1 loop must be stopped")
 	}
-	rec, err := h2.Lookup("8.8.8.8")
-	if err != nil || rec.Country != "US" {
-		t.Fatalf("H2 lookup: %+v %v", rec, err)
+	rec := testBINRecord(t, h2)
+	if rec.Country != "US" {
+		t.Fatalf("H2 lookup: %+v", rec)
 	}
 	ev := h.events()
 	if !hasSubseq(ev, [][2]string{{reclaim.MsgPut, key1}, {reclaim.MsgOrphan, key1}, {reclaim.MsgDispose, key1}}) ||
