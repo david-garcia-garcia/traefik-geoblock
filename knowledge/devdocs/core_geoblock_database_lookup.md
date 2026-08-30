@@ -1,10 +1,10 @@
-# Database provider
+# Database lookup
 
 ## Language
 
-**Provider**:
-The merged Lookup the plugin calls for one IP (`dbprovider.Provider`). Enabled catalog rows fill one `Record`; first non-empty field wins.
-_Avoid_: `databaseProvider` as a Traefik config key; a vendor constructor; `vendor` on a catalog row
+**Lookup**:
+The merged geo result the plugin calls for one IP (`dbprovider.Provider`). Enabled catalog rows fill one `Record`; first non-empty field wins.
+_Avoid_: `databaseProvider` as a Traefik config key; calling this a Provider in operator docs; a vendor constructor; `vendor` on a catalog row
 
 **Record**:
 Country, region, city, ISP, domain, and ASN for one IP. Lookup writes country onto `countryHeader`. The block stage reads that header. Other fields may be empty.
@@ -14,7 +14,7 @@ Traefik map of request header name → metadata key (`country`, `country_name`, 
 
 ## Overview
 
-`NewCore` opens enabled `databaseSources` only when `mode` is `enrich` or `enrichandblock`. Request path calls `Lookup` and gets a `Record`, then writes `countryHeader` and `requestHeaderEnrich`. An empty field is the string `null`. Country on a private IP is `PRIVATE`. `block` and `disabled` do not open catalog sources. A `bin` LITE DB1 is country-only. Region/city/ISP/domain need a richer BIN. ASN LITE is a second `bin` row with `fieldsPreconfigured: ip2location_asn` (`Get_asn`; no shipped seed). An `mmdb` row decodes only the operator or preset Field paths (type `string` or `uint32`). The bundled seeds are `ipinfo_lite.mmdb` and official dummy `GeoIP2-Country-Test.mmdb`. Shipped `default_geolite` is a disabled unofficial Country GET.
+`NewCore` opens enabled `databaseSources` only when `mode` is `enrich` or `enrichandblock`. Request path calls `Lookup` and gets a `Record`, then writes `countryHeader` and `requestHeaderEnrich`. An empty field is the string `null`. Country on a private IP is `PRIVATE`. `block` and `disabled` do not open catalog sources. A `bin` LITE DB1 is country-only. Region/city/ISP/domain need a richer BIN. ASN LITE is a second `bin` row with `fieldsPreconfigured: ip2location_asn` (no shipped seed). An `mmdb` row decodes only the operator or preset Field paths (type `string` or `uint32`). The bundled seeds are `ipinfo_lite.mmdb` and official dummy `GeoIP2-Country-Test.mmdb`. Shipped `default_geolite` is a disabled unofficial Country GET.
 
 ## How to use
 

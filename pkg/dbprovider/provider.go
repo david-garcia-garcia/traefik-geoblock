@@ -122,46 +122,6 @@ func (r Record) FillEmpty(src Record) Record {
 	return r
 }
 
-// Keep returns a copy with only the named keys. Empty keys keeps every field.
-func (r Record) Keep(keys []string) Record {
-	if len(keys) == 0 {
-		return r
-	}
-	keep := make(map[string]bool, len(keys))
-	for _, key := range keys {
-		keep[strings.ToLower(strings.TrimSpace(key))] = true
-	}
-	var out Record
-	if keep[MetaCountry] {
-		out.Country = r.Country
-	}
-	if keep[MetaCountryName] {
-		out.CountryName = r.CountryName
-	}
-	if keep[MetaContinent] {
-		out.Continent = r.Continent
-	}
-	if keep[MetaContinentCode] {
-		out.ContinentCode = r.ContinentCode
-	}
-	if keep[MetaRegion] {
-		out.Region = r.Region
-	}
-	if keep[MetaCity] {
-		out.City = r.City
-	}
-	if keep[MetaIsp] {
-		out.Isp = r.Isp
-	}
-	if keep[MetaDomain] {
-		out.Domain = r.Domain
-	}
-	if keep[MetaAsn] {
-		out.Asn = r.Asn
-	}
-	return out
-}
-
 // KnownMetaKey reports whether key is a supported requestHeaderEnrich value.
 func KnownMetaKey(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {

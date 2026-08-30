@@ -42,12 +42,6 @@ func (m FieldMap) Clone() FieldMap {
 	return out
 }
 
-// hasPath reports whether the map names that on-disk path.
-func (m FieldMap) hasPath(path string) bool {
-	_, ok := m[path]
-	return ok
-}
-
 // apply puts source values onto rec using the map. Empty source values are skipped.
 func (m FieldMap) apply(rec *dbprovider.Record, value func(path string) string) {
 	for path, field := range m {
@@ -197,30 +191,6 @@ func register(name, format string, fields FieldMap) {
 
 func registerAlias(alias, name string) {
 	fieldPresets[alias] = fieldPresets[name]
-}
-
-// walkPath follows dotted keys and numeric indexes on a decoded MMDB map.
-func walkPath(root any, path string) any {
-	cur := root
-	for _, part := range strings.Split(path, ".") {
-		if cur == nil {
-			return nil
-		}
-		if idx, err := strconv.Atoi(part); err == nil {
-			list, ok := cur.([]any)
-			if !ok || idx < 0 || idx >= len(list) {
-				return nil
-			}
-			cur = list[idx]
-			continue
-		}
-		obj, ok := cur.(map[string]any)
-		if !ok {
-			return nil
-		}
-		cur = obj[part]
-	}
-	return cur
 }
 
 // stringifyMMDB turns a decoded MMDB scalar into a Record string.

@@ -24,7 +24,7 @@ _Avoid_: slot
 
 ## Overview
 
-Each enabled catalog row is one wrapper plus one source. Merge happens after Lookup (`core_geoblock_database_provider`). `tools/dbdownload` is the seed CLI, not this package.
+Each enabled catalog row is one wrapper plus one source. Merge happens after Lookup (`core_geoblock_database_lookup`). `tools/dbdownload` is the seed CLI, not this package.
 
 ## How to use
 

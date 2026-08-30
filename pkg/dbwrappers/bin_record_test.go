@@ -15,7 +15,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
-func TestBINSource_LookupWithoutASN(t *testing.T) {
+func TestBIN_LookupWithoutASN(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
 
@@ -35,7 +35,7 @@ func TestBINSource_LookupWithoutASN(t *testing.T) {
 	}
 }
 
-func TestBINSource_LookupDB8(t *testing.T) {
+func TestBIN_LookupDB8(t *testing.T) {
 	db8 := filepath.Join("..", "..", "testdata", "IP2LOCATION-DB8.BIN")
 	if !fileutils.Exists(db8) {
 		t.Skip("paid DB8 BIN not present; place testdata/IP2LOCATION-DB8.BIN")
@@ -63,7 +63,7 @@ func TestBINSource_LookupDB8(t *testing.T) {
 	}
 }
 
-func TestBINSource_CloseDoesNotBreakSharedWrapper(t *testing.T) {
+func TestBIN_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
 
@@ -87,7 +87,7 @@ func TestBINSource_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 	}
 }
 
-func TestBINSource_DownloadThroughComponent(t *testing.T) {
+func TestBIN_DownloadThroughComponent(t *testing.T) {
 	src, err := os.ReadFile(testBIN)
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +145,7 @@ func TestBINSource_DownloadThroughComponent(t *testing.T) {
 	}
 }
 
-func TestBINSource_FieldsAsnOnlySkipsGeo(t *testing.T) {
+func TestBIN_FieldsAsnOnlyDoesNotWriteCountry(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
 
@@ -158,11 +158,11 @@ func TestBINSource_FieldsAsnOnlySkipsGeo(t *testing.T) {
 		t.Fatalf("Lookup: %v", err)
 	}
 	if rec.Country != "" {
-		t.Errorf("fields [asn] must not call Get_all, country=%q", rec.Country)
+		t.Errorf("fields [asn] must not write country, country=%q", rec.Country)
 	}
 }
 
-func TestBINSource_LookupWithASNFile(t *testing.T) {
+func TestBIN_LookupWithASNFile(t *testing.T) {
 	asnPath := os.Getenv("IP2LOCATION_ASN_BIN")
 	if asnPath == "" {
 		for _, candidate := range []string{

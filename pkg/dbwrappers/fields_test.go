@@ -71,18 +71,7 @@ func TestPresetNames_IncludesOfficialDB8(t *testing.T) {
 	}
 }
 
-func TestWalkPathAndStringifyMMDB(t *testing.T) {
-	root := map[string]any{
-		"country": map[string]any{"iso_code": "GB"},
-		"list":    []any{map[string]any{"iso_code": "CA"}},
-		"asn":     uint32(15169),
-	}
-	if got := walkPath(root, "country.iso_code"); got != "GB" {
-		t.Errorf("nested: %v", got)
-	}
-	if got := walkPath(root, "list.0.iso_code"); got != "CA" {
-		t.Errorf("index: %v", got)
-	}
+func TestStringifyMMDB(t *testing.T) {
 	if got := stringifyMMDB(dbprovider.MetaAsn, uint32(15169)); got != "AS15169" {
 		t.Errorf("asn prefix: %q", got)
 	}

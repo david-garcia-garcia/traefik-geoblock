@@ -280,7 +280,7 @@ LITE IPv6 BIN is the same token URL with `DBnLITEBINIPV6`. Free LITE DB1 (no tok
 
 `fieldsPreconfigured` names a vendor column map. MMDB: `ipinfo_lite`, `ipinfo_core`, `ipinfo_plus`, `maxmind_country`, `maxmind_city`, `maxmind_asn`, plus `geolite2_*` / `geoip2_*` aliases. `fields` is the same map written by hand (`country.iso_code: country`). Record keys are `country`, `country_name`, `continent`, `continent_code`, `region`, `city`, `isp`, `domain`, `asn`.
 
-ASN LITE is a `bin` row with `fieldsPreconfigured: ip2location_asn` so Lookup calls `Get_asn`. That package is a token download: set `path` or let auto-update write a dated file. An `mmdb` row walks dotted paths from the map (`country_code`, `country.iso_code`, …).
+ASN LITE is a `bin` row with `fieldsPreconfigured: ip2location_asn`. That package is a token download: set `path` or let auto-update write a dated file. An `mmdb` row walks dotted paths from the map (`country_code`, `country.iso_code`, …).
 
 Empty lookup config opens only `default_ip2location`. Enable another row and set `default_ip2location.enabled: false` if you do not want both. Several enabled rows merge: first non-empty field wins, in lexicographic catalog-key order.
 

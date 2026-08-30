@@ -7,8 +7,19 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 )
+
+// testBINRecord looks up 8.8.8.8 with the LITE country map.
+func testBINRecord(t *testing.T, w *BIN) dbprovider.Record {
+	t.Helper()
+	rec, err := w.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite))
+	if err != nil {
+		t.Fatalf("LookupRecord: %v", err)
+	}
+	return rec
+}
 
 var testBIN = filepath.Join("..", "..", "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
 
@@ -39,9 +50,9 @@ func TestOpenBIN_LookupAndSingleton(t *testing.T) {
 	if a != b {
 		t.Fatal("expected singleton")
 	}
-	rec, err := a.Lookup("8.8.8.8")
-	if err != nil || rec.Country != "US" {
-		t.Fatalf("lookup: %+v %v", rec, err)
+	rec := testBINRecord(t, a)
+	if rec.Country != "US" {
+		t.Fatalf("lookup: %+v", rec)
 	}
 	if a.Version() == nil || a.Path() == "" {
 		t.Fatal("expected version and path")
@@ -55,8 +66,8 @@ func TestOpenBIN_AllowMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AllowMissing: %v", err)
 	}
-	if w.LookupASN("8.8.8.8") != "" {
-		t.Fatal("expected empty ASN")
+	if _, err := w.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil {
+		t.Fatal("expected LookupRecord error when BIN is not open")
 	}
 }
 
@@ -79,9 +90,9 @@ func TestOpenBIN_EnvFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("env fallback: %v", err)
 	}
-	rec, err := w.GetCountryShort("8.8.8.8")
-	if err != nil || rec.Country_short != "US" {
-		t.Fatalf("env lookup: %+v %v", rec, err)
+	rec := testBINRecord(t, w)
+	if rec.Country != "US" {
+		t.Fatalf("env lookup: %+v", rec)
 	}
 }
 
@@ -95,8 +106,8 @@ func TestOpenBIN_HotSwap(t *testing.T) {
 	if err := w.hotSwap(testBIN); err != nil {
 		t.Fatalf("hotSwap: %v", err)
 	}
-	rec, err := w.Lookup("8.8.8.8")
-	if err != nil || rec.Country != "US" {
-		t.Fatalf("after swap: %+v %v", rec, err)
+	rec := testBINRecord(t, w)
+	if rec.Country != "US" {
+		t.Fatalf("after swap: %+v", rec)
 	}
 }

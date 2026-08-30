@@ -1,10 +1,10 @@
 ## Purpose
 
-Defines the geo-database provider the plugin uses so initialization, country lookup, and auto-update are not tied to one vendor at the plugin boundary. Enabled catalog rows open as BIN or MMDB wrappers and fill one Record.
+Defines how the plugin looks up geo fields for an IP from enabled catalog sources so initialization, country lookup, and auto-update are not tied to one vendor at the plugin boundary. Enabled catalog rows open as BIN or MMDB wrappers and fill one Record.
 
 ## Requirements
 
-### Requirement: Plugin looks up country through a provider
+### Requirement: Plugin looks up country through merged catalog sources
 When `mode` is `enrich` or `enrichandblock`, the plugin SHALL obtain the country for an IP from the merged enabled catalog sources and SHALL write it to `countryHeader`. It MUST NOT call a vendor SDK type from the request path. The block stage SHALL use the `countryHeader` value for country allow/block, not the lookup `Record` directly. A failed lookup SHALL surface as an error to the existing `banIfError` / allow-on-error behavior. When `mode` is `block` or `disabled`, the plugin MUST NOT look up through catalog sources.
 
 #### Scenario: Public IP lookup
@@ -21,7 +21,7 @@ When `mode` is `enrich` or `enrichandblock`, the plugin SHALL obtain the country
 - **WHEN** `mode` is `block`
 - **THEN** the plugin does not call source Lookup
 
-### Requirement: Provider is selected through the catalog
+### Requirement: Lookup opens enabled catalog rows
 Creating the plugin SHALL open enabled `databaseSources` rows. Config MUST NOT expose `databaseProvider` or `vendor`. An enabled row SHALL open as BIN when `databaseType` is `bin` and as MMDB when `databaseType` is `mmdb`. Lookup SHALL call `LookupRecord(ip, fields)` with that row's Field map.
 
 #### Scenario: Default sources
@@ -62,16 +62,16 @@ Field maps and named presets SHALL live in `pkg/dbwrappers`. Open and hot-swap S
 - **THEN** Lookup decodes that path as uint32
 - **AND** the Record ASN is the string form with an `AS` prefix when the number has none
 
-### Requirement: BIN Lookup uses Get_all or Get_asn
-`BIN.LookupRecord` SHALL call `Get_all` when any mapped path is not `asn`. When the map is ASN-only (`asn` → `asn`), Lookup SHALL call `Get_asn` and MUST NOT call `Get_all`. When `Get_all` has no usable ASN and the map names `asn`, Lookup SHALL call `Get_asn`.
+### Requirement: BIN Lookup applies mapped Get_all columns
+`BIN.LookupRecord` SHALL call `Get_all` once and SHALL copy only mapped paths onto the Record. Unused Get_all columns SHALL not be written. Path `asn` SHALL use the Get_all Asn field. Lookup MUST NOT call `Get_asn`.
 
-#### Scenario: ASN-only map skips Get_all
+#### Scenario: ASN-only map does not write country
 - **WHEN** the Field map is `ip2location_asn`
-- **THEN** Lookup calls `Get_asn`
-- **AND** does not call `Get_all`
+- **THEN** Lookup does not set country
+- **AND** Record ASN is the Get_all Asn value when the file has that column
 
 ### Requirement: Open and hot-swap are per format
-The format-wrapper package SHALL expose one BIN wrapper and one MMDB wrapper. IPinfo and MaxMind files SHALL open through the MMDB wrapper. IP2Location geo and ASN files SHALL open through the BIN wrapper (one instance per catalog row). The same wrapper configuration SHALL share one open file and one download ticker. Closing the merged Provider MUST NOT close that shared wrapper.
+The format-wrapper package SHALL expose one BIN wrapper and one MMDB wrapper. IPinfo and MaxMind files SHALL open through the MMDB wrapper. IP2Location geo and ASN files SHALL open through the BIN wrapper (one instance per catalog row). The same wrapper configuration SHALL share one open file and one download ticker. Closing the merged Lookup MUST NOT close that shared wrapper.
 
 #### Scenario: IPinfo and MaxMind share the MMDB wrapper
 - **WHEN** an enabled row has `databaseType` `mmdb`
@@ -85,4 +85,4 @@ The format-wrapper package SHALL expose one BIN wrapper and one MMDB wrapper. IP
 #### Scenario: Same config shares one wrapper
 - **WHEN** two plugin instances are created with the same enabled catalog rows
 - **THEN** both Lookups succeed
-- **AND** closing one merged Provider does not make the other Lookup fail
+- **AND** closing one merged Lookup does not make the other Lookup fail
