@@ -58,7 +58,7 @@ Every request that reaches the plugin gets a local GeoIP lookup. The result is w
 - **Traefik access logs** can `keep` those names so every line is geo-aware (dashboards, SIEM, compliance).
 - Headers are **not** copied onto the response, so browsers and other clients do not see them.
 
-Use `mode` to choose lookup, block, or both. Empty `mode` is `disabled` (pass through, no database). `enrich` and `enrichandblock` open the GeoIP database; `block` does not. Lookup writes the country to `countryHeader` (default `X-IPCountry`); the block stage reads that same header.
+Use `mode` to choose lookup, block, or both. Empty `mode` is `enrichandblock` (lookup plus allow/block). `enrich` and `enrichandblock` open the GeoIP database; `block` does not. Set `mode: disabled` for pass-through with no database. Lookup writes the country to `countryHeader` (default `X-IPCountry`); the block stage reads that same header.
 
 To share one download/token config across routes, put `mode: enrich` on a shared middleware and `mode: block` (country lists only) on each route. Chain enrich before block. `block` must not run first or `countryHeader` is missing and `banIfError` applies.
 

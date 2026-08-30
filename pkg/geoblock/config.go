@@ -58,7 +58,7 @@ const (
 
 // Config defines the plugin configuration.
 type Config struct {
-	// Mode is disabled, enrich, block, or enrichandblock. Empty is disabled.
+	// Mode is disabled, enrich, block, or enrichandblock. Empty is enrichandblock.
 	Mode         string `json:"mode,omitempty" mapstructure:"mode"`
 	DefaultAllow bool   // Default behavior when IP matches no rules
 	AllowPrivate bool   // Allow requests from private/internal networks
@@ -132,6 +132,7 @@ type DatabaseSource struct {
 // CreateConfig creates the default plugin configuration.
 func CreateConfig() *Config {
 	return &Config{
+		Mode:                 ModeEnrichAndBlock,
 		DisallowedStatusCode: http.StatusForbidden,
 		LogLevel:             "info",                  // Default to info logging
 		LogFormat:            "text",                  // Default to text format
@@ -145,11 +146,11 @@ func CreateConfig() *Config {
 	}
 }
 
-// NormalizeMode is empty → disabled, else lowercased trimmed mode.
+// NormalizeMode is empty → enrichandblock, else lowercased trimmed mode.
 func NormalizeMode(mode string) string {
 	m := strings.ToLower(strings.TrimSpace(mode))
 	if m == "" {
-		return ModeDisabled
+		return ModeEnrichAndBlock
 	}
 	return m
 }

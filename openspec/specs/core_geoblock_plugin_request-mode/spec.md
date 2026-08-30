@@ -5,12 +5,12 @@ Splits GeoIP lookup (enrichment) from country allow/block so one shared enrich m
 ## Requirements
 
 ### Requirement: Mode replaces enabled
-Traefik Config SHALL expose `mode` as `disabled`, `enrich`, `block`, or `enrichandblock`. Config SHALL NOT expose `enabled`. Empty `mode` SHALL be `disabled`. An unknown `mode` SHALL fail plugin creation.
+Traefik Config SHALL expose `mode` as `disabled`, `enrich`, `block`, or `enrichandblock`. Config SHALL NOT expose `enabled`. Empty `mode` SHALL be `enrichandblock`. An unknown `mode` SHALL fail plugin creation.
 
-#### Scenario: Empty mode is disabled
+#### Scenario: Empty mode is enrichandblock
 - **WHEN** the plugin is created with empty `mode`
-- **THEN** requests pass through with no lookup and no allow/block
-- **AND** plugin creation does not open catalog sources
+- **THEN** plugin creation behaves as `mode` `enrichandblock` (lookup and allow/block)
+- **AND** plugin creation opens enabled catalog sources
 
 #### Scenario: Unknown mode fails
 - **WHEN** the plugin is created with `mode` set to a value other than `disabled`, `enrich`, `block`, or `enrichandblock`

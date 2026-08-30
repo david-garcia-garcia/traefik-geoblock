@@ -928,6 +928,9 @@ func TestCreateConfig_DatabaseSources(t *testing.T) {
 	if len(cfg.DatabaseSources) != 0 {
 		t.Errorf("expected empty map, got %d entries", len(cfg.DatabaseSources))
 	}
+	if cfg.Mode != ModeEnrichAndBlock {
+		t.Errorf("CreateConfig.Mode %q want %q", cfg.Mode, ModeEnrichAndBlock)
+	}
 }
 
 func TestNew_AutoUpdate(t *testing.T) {

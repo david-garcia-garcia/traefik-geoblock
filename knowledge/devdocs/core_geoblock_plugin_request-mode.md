@@ -3,7 +3,7 @@
 ## Language
 
 **Mode**:
-The Traefik Config field that selects lookup, block, both, or pass-through. Values are `disabled`, `enrich`, `block`, and `enrichandblock`. Empty is `disabled`.
+The Traefik Config field that selects lookup, block, both, or pass-through. Values are `disabled`, `enrich`, `block`, and `enrichandblock`. Empty is `enrichandblock`.
 _Avoid_: `enabled`
 
 **Country header**:
@@ -16,7 +16,7 @@ One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeade
 
 ## How to use
 
-- Set `Config.Mode`. Unknown values fail `Prepare`. Empty is `disabled` (pass through, no database).
+- Set `Config.Mode`. Unknown values fail `Prepare`. Empty is `enrichandblock`. Set `disabled` for pass through with no database.
 - Omit `countryHeader` to use `X-IPCountry`. A `requestHeaderEnrich` `country` mapping must use that same header name.
 - Call `openCatalogSources` / `bindDatabase` only when `ModeLooksUp` (`enrich`, `enrichandblock`).
 - Write country from lookup onto `countryHeader`, then read that header in the block stage. Do not pass `Record.Country` into country maps.
