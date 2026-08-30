@@ -5,23 +5,22 @@ Defines MaxMind GeoLite2 / GeoIP2 as a selectable geo database: GeoIP2 nested co
 ## Requirements
 
 ### Requirement: MaxMind settings are vendor-prefixed
-MaxMind-only settings SHALL live on Traefik Config as `maxmind_source`. The plugin MUST pass that field to the MaxMind provider only. File location SHALL be the catalog `path` and dated files as specified in `core_geoblock_database_url-download`. MaxMind MUST NOT use IP2Location `file=` query codes or a vendor-built permalink from `accountId:licenseKey`. Config SHALL NOT expose `maxmind_databaseFilePath`.
+MaxMind-only settings SHALL live on a `databaseSources` row with `vendor` `maxmind`. The plugin MUST pass that row to the MaxMind Lookup only. File location SHALL be the catalog `path`, `defaultFile`, and dated files as specified in `core_geoblock_database_url-download`. MaxMind MUST NOT use IP2Location `file=` query codes or a vendor-built permalink from `accountId:licenseKey`. Config SHALL NOT expose `maxmind_source` or `maxmind_databaseFilePath`.
 
-#### Scenario: Pointer reaches MaxMind only
-- **WHEN** `databaseProvider` is `maxmind` and `maxmind_source` names a catalog entry whose `path` is an existing GeoIP2-schema MMDB
+#### Scenario: Catalog row reaches MaxMind only
+- **WHEN** an enabled row has `vendor` `maxmind` and `path` is an existing GeoIP2-schema MMDB
 - **THEN** plugin creation opens that file as the MaxMind database
 - **AND** no IP2Location `file=` download is used
 
 ### Requirement: Dummy Country MMDB is the default seed
-When the bound catalog `path` is empty, the MaxMind provider SHALL open the committed `GeoIP2-Country-Test.mmdb` snapshot (or the newest dated file for the bound catalog key in `databaseAutoUpdateDir` when that directory already has one). Empty `maxmind_source` SHALL bind reserved `default_geolite`. Plugin creation MUST succeed without a dated file when the dummy seed exists. The committed file SHALL be MaxMind’s official dummy Country fixture, not a live GeoLite download.
+When the MaxMind row's catalog `path` is empty, the MaxMind Lookup SHALL open the committed `GeoIP2-Country-Test.mmdb` snapshot named by that row's `defaultFile` (or the newest dated file for that catalog key). The shipped `default_maxmind` row SHALL set `defaultFile` to `GeoIP2-Country-Test.mmdb` and SHALL be disabled. Empty Config MUST NOT bind `default_geolite` unless the operator enables that row. Plugin creation MUST succeed without a dated file when the dummy seed exists and that row is enabled. The committed file SHALL be MaxMind's official dummy Country fixture, not a live GeoLite download.
 
-#### Scenario: Empty pointer binds default_geolite
-- **WHEN** `databaseProvider` is `maxmind` and `maxmind_source` is empty and no dated catalog file exists
-- **THEN** plugin creation binds `default_geolite`
-- **AND** opens the committed `GeoIP2-Country-Test.mmdb` until a dated file exists
+#### Scenario: Enabled dummy seed opens the fixture
+- **WHEN** `default_maxmind` is enabled and no dated catalog file exists
+- **THEN** plugin creation opens the committed `GeoIP2-Country-Test.mmdb`
 
 #### Scenario: Auto-update dir wins over seed
-- **WHEN** `maxmind_source` is `geolite` and `databaseAutoUpdateDir` contains a dated `YYYYMMDD_geolite` MMDB
+- **WHEN** catalog key `geolite` is an enabled MaxMind row and `databaseAutoUpdateDir` contains a dated `YYYYMMDD_geolite` MMDB
 - **THEN** plugin creation opens that dated file instead of the bundled dummy
 
 ### Requirement: GeoIP2 lookup maps nested country.iso_code
