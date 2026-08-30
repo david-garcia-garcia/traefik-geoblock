@@ -5,6 +5,11 @@ priority: normal
 local: core_geoblock_plugin_packages.md
 description: How the Traefik Yaegi plugin keeps entrypoints at module root and helpers under pkg/.
 
+## Request mode
+priority: normal
+local: core_geoblock_plugin_request-mode.md
+description: How Config mode splits GeoIP lookup from country allow/block on one ServeHTTP.
+
 ## Plugin instance
 priority: normal
 local: core_geoblock_plugin_instance.md
