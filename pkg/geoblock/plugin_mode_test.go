@@ -128,6 +128,78 @@ func TestMode_BlockCIDRWithoutDatabase(t *testing.T) {
 	}
 }
 
+func TestMode_BlockPrivateHeaderFollowsAllowPrivate(t *testing.T) {
+	t.Run("allowPrivate true", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeBlock,
+			CountryHeader:        "X-IPCountry",
+			AllowPrivate:         true,
+			DefaultAllow:         false,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		req.Header.Set("X-IPCountry", PrivateIpCountryAlias)
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if rr.Code != http.StatusTeapot {
+			t.Errorf("PRIVATE + allowPrivate status %d want pass", rr.Code)
+		}
+	})
+
+	t.Run("allowPrivate false", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeBlock,
+			CountryHeader:        "X-IPCountry",
+			AllowPrivate:         false,
+			DefaultAllow:         true,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		req.Header.Set("X-IPCountry", PrivateIpCountryAlias)
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("PRIVATE without allowPrivate status %d want block", rr.Code)
+		}
+	})
+
+	t.Run("CIDR still wins", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeBlock,
+			CountryHeader:        "X-IPCountry",
+			AllowPrivate:         true,
+			BlockedIPBlocks:      []string{"8.8.8.8/32"},
+			DefaultAllow:         true,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		req.Header.Set("X-IPCountry", PrivateIpCountryAlias)
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("CIDR vs PRIVATE status %d want block", rr.Code)
+		}
+	})
+}
+
 func TestMode_BlockMissingCountryUsesBanIfError(t *testing.T) {
 	plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 		Mode:                 ModeBlock,

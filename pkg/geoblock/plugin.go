@@ -601,6 +601,14 @@ func (p Plugin) decide(ip, country string) (allow bool, rec dbprovider.Record, p
 		}
 	}
 
+	if country == PrivateIpCountryAlias {
+		private := dbprovider.Record{Country: PrivateIpCountryAlias}
+		if p.allowPrivate {
+			return true, private, PhaseAllowPrivate, nil
+		}
+		return false, private, PhaseAllowPrivate, nil
+	}
+
 	if _, ok := p.allowedCountries[country]; ok {
 		return true, rec, PhaseAllowedCountry, nil
 	}
