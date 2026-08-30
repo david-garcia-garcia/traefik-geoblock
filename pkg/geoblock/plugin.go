@@ -47,9 +47,7 @@ const (
 )
 
 // Plugin is the shared policy for one middleware name and config, including the database provider.
-// next is only set on the ServeHTTP value copy for that call.
 type Plugin struct {
-	next                  http.Handler
 	name                  string
 	db                    dbprovider.Provider
 	lifeCancel            context.CancelFunc
@@ -274,10 +272,9 @@ func (p Plugin) setLogHeaders(req *http.Request, status, reason string) {
 
 // ServeHTTP applies this Plugin’s policy, then calls next.
 func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request, next http.Handler) {
-	p.next = next
 	if !p.enabled {
 		logging.Trace(p.logger, "plugin disabled, passing request through")
-		p.next.ServeHTTP(rw, req)
+		next.ServeHTTP(rw, req)
 		return
 	}
 
@@ -420,7 +417,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request, next http.H
 	// Set log headers for allowed request
 	p.setLogHeaders(req, LogStatusPass, passReason)
 
-	p.next.ServeHTTP(rw, req)
+	next.ServeHTTP(rw, req)
 }
 
 // GetRemoteIPs collects the remote IPs from the configured IP headers.

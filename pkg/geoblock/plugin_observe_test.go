@@ -500,7 +500,6 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("writes country region city", func(t *testing.T) {
 		plugin := &Plugin{
-			next:    &noopHandler{},
 			enabled: true,
 			db: stubGeoProvider{rec: dbprovider.Record{
 				Country: "US", Region: "California", City: "Mountain View",
@@ -525,7 +524,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Real-IP", "8.8.8.8")
 		rr := httptest.NewRecorder()
-		plugin.ServeHTTP(rr, req, plugin.next)
+		plugin.ServeHTTP(rr, req, &noopHandler{})
 		if rr.Code != http.StatusTeapot {
 			t.Fatalf("status %d", rr.Code)
 		}
@@ -551,7 +550,6 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("private IP writes PRIVATE country and null for other keys", func(t *testing.T) {
 		plugin := &Plugin{
-			next:             &noopHandler{},
 			enabled:          true,
 			db:               stubGeoProvider{},
 			defaultAllow:     true,
@@ -570,7 +568,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Real-IP", "127.0.0.1")
 		rr := httptest.NewRecorder()
-		plugin.ServeHTTP(rr, req, plugin.next)
+		plugin.ServeHTTP(rr, req, &noopHandler{})
 		if req.Header.Get("X-Geo-Country") != PrivateIpCountryAlias {
 			t.Errorf("country: got %q", req.Header.Get("X-Geo-Country"))
 		}
@@ -792,7 +790,6 @@ func TestEnrichNullSentinel(t *testing.T) {
 
 	t.Run("empty public lookup keeps PRIVATE and null", func(t *testing.T) {
 		plugin := &Plugin{
-			next:                &noopHandler{},
 			enabled:             true,
 			db:                  stubGeoProvider{},
 			defaultAllow:        true,
@@ -806,7 +803,7 @@ func TestEnrichNullSentinel(t *testing.T) {
 		}
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Real-IP", "8.8.8.8")
-		plugin.ServeHTTP(httptest.NewRecorder(), req, plugin.next)
+		plugin.ServeHTTP(httptest.NewRecorder(), req, &noopHandler{})
 		if got := req.Header.Get("X-Geo-Country"); got != PrivateIpCountryAlias {
 			t.Errorf("country: got %q want PRIVATE", got)
 		}
@@ -817,7 +814,6 @@ func TestEnrichNullSentinel(t *testing.T) {
 
 	t.Run("first public IP overwrites PRIVATE and null", func(t *testing.T) {
 		plugin := &Plugin{
-			next:    &noopHandler{},
 			enabled: true,
 			db: stubGeoProvider{rec: dbprovider.Record{
 				Country: "DE", Region: "Berlin",
@@ -833,7 +829,7 @@ func TestEnrichNullSentinel(t *testing.T) {
 		}
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Forwarded-For", "127.0.0.1, 8.8.8.8")
-		plugin.ServeHTTP(httptest.NewRecorder(), req, plugin.next)
+		plugin.ServeHTTP(httptest.NewRecorder(), req, &noopHandler{})
 		if got := req.Header.Get("X-Geo-Country"); got != "DE" {
 			t.Errorf("country: got %q want DE", got)
 		}
