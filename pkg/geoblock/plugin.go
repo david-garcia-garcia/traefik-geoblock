@@ -257,9 +257,6 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger
 		return dbwrappers.NewASNSource(bin), nil
 	case VendorIPinfo:
 		src := catalogSource(cfg, key, dbsource.TypeMMDB)
-		if src.DefaultFileName == "" {
-			src.DefaultFileName = DefaultIPinfoFile
-		}
 		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
 			Dir:             cfg.DatabaseAutoUpdateDir,
 			Source:          src,
@@ -272,9 +269,6 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger
 		return dbwrappers.NewIPinfo(mmdb), nil
 	case VendorMaxMind:
 		src := catalogSource(cfg, key, dbsource.TypeMMDB)
-		if src.DefaultFileName == "" {
-			src.DefaultFileName = DefaultMaxMindSeedFile
-		}
 		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
 			Dir:             cfg.DatabaseAutoUpdateDir,
 			Source:          src,

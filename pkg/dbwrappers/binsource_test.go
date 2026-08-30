@@ -12,6 +12,7 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
 func TestBINSource_LookupWithoutASN(t *testing.T) {
@@ -37,7 +38,7 @@ func TestBINSource_LookupWithoutASN(t *testing.T) {
 
 func TestBINSource_LookupDB8(t *testing.T) {
 	db8 := filepath.Join("..", "..", "testdata", "IP2LOCATION-DB8.BIN")
-	if !fileExists(db8) {
+	if !fileutils.Exists(db8) {
 		t.Skip("paid DB8 BIN not present; place testdata/IP2LOCATION-DB8.BIN")
 	}
 
@@ -162,7 +163,7 @@ func TestASNSource_LookupWithASNFile(t *testing.T) {
 			`D:\IP2LOCATION-LITE-ASN.IPV6.BIN`,
 			filepath.Join("..", "..", "IP-ASN.BIN"),
 		} {
-			if fileExists(candidate) {
+			if fileutils.Exists(candidate) {
 				asnPath = candidate
 				break
 			}
@@ -197,9 +198,4 @@ func TestASNSource_LookupWithASNFile(t *testing.T) {
 	if rec.Asn == "" {
 		t.Error("expected ASN from ASN BIN for 8.8.8.8")
 	}
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

@@ -90,7 +90,7 @@ func countryHeaderFromEnrich(enrich map[string]string) string {
 func seedCatalog(path string) map[string]DatabaseSource {
 	vendor, databaseType := vendorForSeedPath(path)
 	return map[string]DatabaseSource{
-		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: dbsourceTypeFor(vendor)},
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
 		"seed": {
 			Path:         path,
 			Vendor:       vendor,
@@ -100,14 +100,15 @@ func seedCatalog(path string) map[string]DatabaseSource {
 	}
 }
 
+// defaultFileForVendor is the shipped seed basename for a catalog vendor.
 func defaultFileForVendor(vendor string) string {
 	switch vendor {
 	case VendorIP2Location:
-		return "IP2LOCATION-LITE-DB1.IPV6.BIN"
+		return DefaultIP2LocationGeoFile
 	case VendorIPinfo:
-		return "ipinfo_lite.mmdb"
+		return DefaultIPinfoFile
 	case VendorMaxMind:
-		return "GeoIP2-Country-Test.mmdb"
+		return DefaultMaxMindSeedFile
 	default:
 		return ""
 	}
@@ -122,6 +123,7 @@ func seedCatalogPair(geo, asn string) map[string]DatabaseSource {
 	}
 }
 
+// vendorForSeedPath picks vendor and databaseType from a seed filename.
 func vendorForSeedPath(path string) (vendor, databaseType string) {
 	base := strings.ToLower(filepath.Base(path))
 	switch {
@@ -134,10 +136,7 @@ func vendorForSeedPath(path string) (vendor, databaseType string) {
 	}
 }
 
-func dbsourceTypeFor(vendor string) string {
-	return vendorDatabaseType(vendor)
-}
-
+// shippedIPinfoOnly enables the shipped IPinfo seed and disables the IP2Location default.
 func shippedIPinfoOnly() map[string]DatabaseSource {
 	return map[string]DatabaseSource{
 		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
@@ -145,11 +144,12 @@ func shippedIPinfoOnly() map[string]DatabaseSource {
 			Enabled:      boolPtr(true),
 			Vendor:       VendorIPinfo,
 			DatabaseType: "mmdb",
-			DefaultFile:  "ipinfo_lite.mmdb",
+			DefaultFile:  DefaultIPinfoFile,
 		},
 	}
 }
 
+// shippedMaxMindOnly enables the dummy Country seed and disables the IP2Location default.
 func shippedMaxMindOnly(path string) map[string]DatabaseSource {
 	return map[string]DatabaseSource{
 		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
@@ -158,7 +158,7 @@ func shippedMaxMindOnly(path string) map[string]DatabaseSource {
 			Vendor:       VendorMaxMind,
 			DatabaseType: "mmdb",
 			Path:         path,
-			DefaultFile:  "GeoIP2-Country-Test.mmdb",
+			DefaultFile:  DefaultMaxMindSeedFile,
 		},
 	}
 }
