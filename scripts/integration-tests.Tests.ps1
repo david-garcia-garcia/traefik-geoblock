@@ -623,6 +623,15 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         }
     }
 
+    Context "Merged BIN and IPinfo catalog sources" {
+        It "Should write country from BIN LITE and ASN plus continent from IPinfo on one request" {
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.US_Google_DNS)" "$script:BaseUrl/merged") -join "`n"
+            $response | Should -Match "X-Ipcountry:\s*US"
+            $response | Should -Match "X-Geo-Asn:\s*AS15169"
+            $response | Should -Match "X-Geo-Continent:\s*North America"
+        }
+    }
+
     Context "MaxMind dummy Country provider" {
         It "Should block dummy CN IP" {
             $headers = @{ "X-Real-IP" = $script:TestIPs.MaxMindDummyCN }

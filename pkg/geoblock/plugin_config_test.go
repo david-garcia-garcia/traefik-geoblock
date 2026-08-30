@@ -1026,3 +1026,32 @@ func TestNew_AutoUpdate(t *testing.T) {
 		}
 	})
 }
+
+func TestNew_MergedBINAndIPinfo(t *testing.T) {
+	dbwrappers.Reset()
+	t.Cleanup(dbwrappers.Reset)
+
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+		Mode:                 ModeEnrich,
+		DatabaseSources:      shippedBINAndIPinfo(),
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+	}, pluginName)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	rec, err := plugin.(*Route).Lookup("8.8.8.8")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if rec.Country != "US" {
+		t.Errorf("country: got %q want US (BIN LITE)", rec.Country)
+	}
+	if rec.Asn != "AS15169" {
+		t.Errorf("asn: got %q want AS15169 (IPinfo; BIN LITE cannot fill this)", rec.Asn)
+	}
+	if rec.Continent != "North America" {
+		t.Errorf("continent: got %q want North America (IPinfo)", rec.Continent)
+	}
+}

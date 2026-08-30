@@ -125,6 +125,23 @@ func seedCatalogPair(geo, asn string) map[string]DatabaseSource {
 	}
 }
 
+// shippedBINAndIPinfo enables LITE BIN and IPinfo Lite together (merge coverage).
+func shippedBINAndIPinfo() map[string]DatabaseSource {
+	return map[string]DatabaseSource{
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+		"bin": {
+			Path:                dbFilePath,
+			DatabaseType:        "bin",
+			FieldsPreconfigured: dbwrappers.PresetIP2LocationLite,
+		},
+		"lite": {
+			Path:                ipinfoFilePath,
+			DatabaseType:        "mmdb",
+			FieldsPreconfigured: dbwrappers.PresetIPinfoLite,
+		},
+	}
+}
+
 // shippedIPinfoOnly enables the shipped IPinfo seed and disables the IP2Location default.
 func shippedIPinfoOnly() map[string]DatabaseSource {
 	return map[string]DatabaseSource{

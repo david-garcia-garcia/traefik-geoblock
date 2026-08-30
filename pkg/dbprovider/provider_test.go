@@ -42,4 +42,3 @@ func TestRecordSet(t *testing.T) {
 		t.Errorf("Set: %+v", rec)
 	}
 }
-
