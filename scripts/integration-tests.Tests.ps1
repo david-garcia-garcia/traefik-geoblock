@@ -699,6 +699,38 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
         }
     }
 
+    Context "Enrich then block middleware chain" {
+        # /enrichthenblock lists geoblock-chain-enrich then geoblock-chain-block.
+        # Enrich writes X-Ipcountry; block reads it (US blocked, DE allowed).
+
+        It "Should block US IP after enrich writes the country header" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/enrichthenblock" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+
+        It "Should allow German IP after enrich writes the country header" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.German_IP }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/enrichthenblock" -Headers $headers
+            $result.StatusCode | Should -Be 200
+        }
+
+        It "Should show the enrich country header on an allowed request" {
+            $response = (curl -s -H "X-Real-IP: $($script:TestIPs.German_IP)" "$script:BaseUrl/enrichthenblock") -join "`n"
+            $response | Should -Match "X-Ipcountry:\s*DE"
+        }
+    }
+
+    Context "Block mode without prior enrich" {
+        # /blockonly is mode=block only. No lookup hop. Missing X-Ipcountry uses banIfError.
+
+        It "Should block a public IP when countryHeader was never written" {
+            $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+            $result = Invoke-TestRequest -Uri "$script:BaseUrl/blockonly" -Headers $headers
+            $result.StatusCode | Should -Be 403
+        }
+    }
+
     Context "Request header enrichment" {
         It "Should enrich country, region, and city request headers" {
             $headers = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
