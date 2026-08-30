@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
@@ -188,7 +189,7 @@ func TestNew(t *testing.T) {
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				"lite":                       {URL: "https://example.com/geo.mmdb", DatabaseType: "mmdb", Archive: "none", Vendor: VendorIPinfo, DefaultFile: "ipinfo_lite.mmdb"},
+				"lite":                       {URL: "https://example.com/geo.mmdb", DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, Vendor: VendorIPinfo, DefaultFile: "ipinfo_lite.mmdb"},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -299,7 +300,7 @@ func TestNew(t *testing.T) {
 		if row.URL != DefaultGeoliteURL {
 			t.Errorf("default URL: got %q", row.URL)
 		}
-		if row.DatabaseType != "mmdb" || row.Archive != "none" {
+		if row.DatabaseType != dbsource.TypeMMDB || row.Archive != dbsource.ArchiveNone {
 			t.Errorf("default type/archive: got %q %q", row.DatabaseType, row.Archive)
 		}
 		if sourceEnabled(row) {
@@ -316,7 +317,7 @@ func TestNew(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				DefaultGeoliteCatalogKey:     {URL: custom, DatabaseType: "mmdb", Archive: "none", Path: maxmindFilePath, Vendor: VendorMaxMind},
+				DefaultGeoliteCatalogKey:     {URL: custom, DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, Path: maxmindFilePath, Vendor: VendorMaxMind},
 			},
 		}
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
@@ -340,7 +341,7 @@ func TestNew(t *testing.T) {
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				"lite":                       {URL: "https://example.com/geo.mmdb", DatabaseType: "mmdb", Archive: "none", Vendor: VendorIP2Location},
+				"lite":                       {URL: "https://example.com/geo.mmdb", DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, Vendor: VendorIP2Location},
 			},
 		}, pluginName)
 		if err == nil {

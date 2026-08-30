@@ -409,8 +409,8 @@ const maxmindDummyIP = "81.2.69.142"
 func newMaxMindPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
-		Mode:             ModeEnrichAndBlock,
-		DatabaseSources: seedCatalog(maxmindFilePath),
+		Mode:                 ModeEnrichAndBlock,
+		DatabaseSources:      seedCatalog(maxmindFilePath),
 		AllowedCountries:     []string{"GB"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,
@@ -481,8 +481,8 @@ func BenchmarkPlugin_ServeHTTP_MaxMind(b *testing.B) {
 
 func BenchmarkPlugin_ServeHTTP_MaxMindEnrich(b *testing.B) {
 	handler, err := newRoute(holdCtx(b), &noopHandler{}, &Config{
-		Mode:             ModeEnrichAndBlock,
-		DatabaseSources: seedCatalog(maxmindFilePath),
+		Mode:                 ModeEnrichAndBlock,
+		DatabaseSources:      seedCatalog(maxmindFilePath),
 		AllowedCountries:     []string{"GB"},
 		DefaultAllow:         false,
 		AllowPrivate:         false,

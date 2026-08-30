@@ -644,8 +644,8 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("IPinfo Lite writes valued fields and null for empty region city", func(t *testing.T) {
 		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Mode:             ModeEnrichAndBlock,
-			DatabaseSources: seedCatalog(ipinfoFilePath),
+			Mode:                 ModeEnrichAndBlock,
+			DatabaseSources:      seedCatalog(ipinfoFilePath),
 			DefaultAllow:         true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
