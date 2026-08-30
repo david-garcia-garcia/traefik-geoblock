@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -164,6 +165,12 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 	}
 	key1 := binKey(cfg1)
 	key2 := binKey(cfg2)
+	if !strings.HasPrefix(key1, keyPrefixBIN+"h1:") {
+		t.Fatalf("BIN key must include catalog key: %s", key1)
+	}
+	if !strings.HasPrefix(key2, keyPrefixBIN+"h2:") {
+		t.Fatalf("BIN key must include catalog key: %s", key2)
+	}
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	h1, err := OpenBIN(ctx1, cfg1, testLogger())
 	if err != nil {
@@ -276,6 +283,12 @@ func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 	}
 	key1 := mmdbKey(cfg1)
 	key2 := mmdbKey(cfg2)
+	if !strings.HasPrefix(key1, keyPrefixMMDB+"h1:") {
+		t.Fatalf("MMDB key must include catalog key: %s", key1)
+	}
+	if !strings.HasPrefix(key2, keyPrefixMMDB+"h2:") {
+		t.Fatalf("MMDB key must include catalog key: %s", key2)
+	}
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	h1, err := OpenMMDB(ctx1, cfg1, testLogger())
 	if err != nil {

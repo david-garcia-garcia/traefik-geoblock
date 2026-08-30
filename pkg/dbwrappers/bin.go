@@ -49,8 +49,9 @@ type BIN struct {
 
 const keyPrefixBIN = "bin:"
 
+// binKey is the process-table key: bin, catalog map key, then config hash.
 func binKey(cfg BINConfig) string {
-	return keyPrefixBIN + configHash(cfg)
+	return keyPrefixBIN + cfg.Source.Key + ":" + configHash(cfg)
 }
 
 // OpenBIN returns the singleton BIN for cfg and binds ctx on the process table.

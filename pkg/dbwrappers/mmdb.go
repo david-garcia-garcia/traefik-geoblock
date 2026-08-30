@@ -40,8 +40,9 @@ type MMDB struct {
 
 const keyPrefixMMDB = "mmdb:"
 
+// mmdbKey is the process-table key: mmdb, catalog map key, then config hash.
 func mmdbKey(cfg MMDBConfig) string {
-	return keyPrefixMMDB + configHash(cfg)
+	return keyPrefixMMDB + cfg.Source.Key + ":" + configHash(cfg)
 }
 
 // OpenMMDB returns the singleton MMDB for cfg and binds ctx on the process table.

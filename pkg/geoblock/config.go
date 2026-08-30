@@ -402,7 +402,7 @@ func resolveSourceFields(entry DatabaseSource, databaseType string) (dbwrappers.
 		return fields, nil
 	}
 	if len(entry.Fields) == 0 {
-		return nil, fmt.Errorf("set fields or fieldsPreconfigured")
+		return nil, fmt.Errorf("set fields or fieldsPreconfigured; plugin does not start; this middleware is not applied")
 	}
 	parsed, err := dbwrappers.ParseFields(entry.Fields)
 	if err != nil {
