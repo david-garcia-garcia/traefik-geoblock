@@ -1,6 +1,9 @@
 package dbprovider
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Metadata keys a Provider may return. A BIN may leave fields empty
 // (IP2Location LITE DB1 is country-only; ISP/domain need DB8; ASN needs ASN LITE).
@@ -63,6 +66,38 @@ func (r Record) Field(key string) string {
 	}
 }
 
+// FillEmpty copies non-empty src fields into empty fields of r.
+func (r Record) FillEmpty(src Record) Record {
+	if r.Country == "" {
+		r.Country = src.Country
+	}
+	if r.CountryName == "" {
+		r.CountryName = src.CountryName
+	}
+	if r.Continent == "" {
+		r.Continent = src.Continent
+	}
+	if r.ContinentCode == "" {
+		r.ContinentCode = src.ContinentCode
+	}
+	if r.Region == "" {
+		r.Region = src.Region
+	}
+	if r.City == "" {
+		r.City = src.City
+	}
+	if r.Isp == "" {
+		r.Isp = src.Isp
+	}
+	if r.Domain == "" {
+		r.Domain = src.Domain
+	}
+	if r.Asn == "" {
+		r.Asn = src.Asn
+	}
+	return r
+}
+
 // Keep returns a copy with only the named keys. Empty keys keeps every field.
 func (r Record) Keep(keys []string) Record {
 	if len(keys) == 0 {
@@ -118,4 +153,27 @@ func KnownMetaKey(key string) bool {
 type Provider interface {
 	Lookup(ip string) (Record, error)
 	Close() error
+}
+
+// boundLookup is a Lookup function used as a Provider.
+type boundLookup struct {
+	lookup func(ip string) (Record, error)
+}
+
+// Bind returns a Provider that calls lookup. Close is a no-op.
+func Bind(lookup func(ip string) (Record, error)) Provider {
+	return boundLookup{lookup: lookup}
+}
+
+// Lookup calls the bound function.
+func (b boundLookup) Lookup(ip string) (Record, error) {
+	if b.lookup == nil {
+		return Record{}, fmt.Errorf("no lookup")
+	}
+	return b.lookup(ip)
+}
+
+// Close does not close a shared format wrapper.
+func (b boundLookup) Close() error {
+	return nil
 }

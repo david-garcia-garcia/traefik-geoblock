@@ -206,6 +206,47 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 	return nil
 }
 
+// LookupRecord fills BIN columns for ip, then Keep(fields).
+// Empty fields or any non-asn key calls Get_all. fields listing asn also calls Get_asn.
+// fields: [asn] only skips Get_all (ASN LITE is a different BIN schema).
+func (w *BIN) LookupRecord(ip string, fields []string) (dbprovider.Record, error) {
+	var rec dbprovider.Record
+	if binWantGeo(fields) {
+		geo, err := w.Lookup(ip)
+		if err != nil {
+			return dbprovider.Record{}, err
+		}
+		rec = geo
+	}
+	if binWantAsn(fields) {
+		rec.Asn = w.LookupASN(ip)
+	}
+	return rec.Keep(fields), nil
+}
+
+// binWantGeo is true when fields is empty or lists a non-asn key.
+func binWantGeo(fields []string) bool {
+	if len(fields) == 0 {
+		return true
+	}
+	for _, key := range fields {
+		if key != dbprovider.MetaAsn {
+			return true
+		}
+	}
+	return false
+}
+
+// binWantAsn is true when fields lists asn.
+func binWantAsn(fields []string) bool {
+	for _, key := range fields {
+		if key == dbprovider.MetaAsn {
+			return true
+		}
+	}
+	return false
+}
+
 // Lookup returns country/region/city/isp/domain for ip.
 func (w *BIN) Lookup(ip string) (dbprovider.Record, error) {
 	if w == nil || w.db == nil {

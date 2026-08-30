@@ -23,8 +23,7 @@ func TestBINSource_LookupWithoutASN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	src := NewBINSource(bin, nil)
-	rec, err := src.Lookup("8.8.8.8")
+	rec, err := bin.LookupRecord("8.8.8.8", nil)
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -49,7 +48,7 @@ func TestBINSource_LookupDB8(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	rec, err := NewBINSource(bin, nil).Lookup("8.8.8.8")
+	rec, err := bin.LookupRecord("8.8.8.8", nil)
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -77,10 +76,12 @@ func TestBINSource_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second OpenBIN: %v", err)
 	}
-	if err := NewBINSource(first, nil).Close(); err != nil {
+	if err := dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+		return first.LookupRecord(ip, nil)
+	}).Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	rec, err := NewBINSource(second, nil).Lookup("8.8.8.8")
+	rec, err := second.LookupRecord("8.8.8.8", nil)
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("shared lookup after Close: rec=%+v err=%v", rec, err)
 	}
@@ -138,7 +139,7 @@ func TestBINSource_DownloadThroughComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	rec, err := NewBINSource(bin, nil).Lookup("8.8.8.8")
+	rec, err := bin.LookupRecord("8.8.8.8", nil)
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
 	}
@@ -152,7 +153,7 @@ func TestBINSource_FieldsAsnOnlySkipsGeo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	rec, err := NewBINSource(bin, []string{dbprovider.MetaAsn}).Lookup("8.8.8.8")
+	rec, err := bin.LookupRecord("8.8.8.8", []string{dbprovider.MetaAsn})
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -192,8 +193,12 @@ func TestBINSource_LookupWithASNFile(t *testing.T) {
 		t.Fatalf("asn OpenBIN: %v", err)
 	}
 	merged := dbprovider.NewCombined([]dbprovider.Named{
-		{Key: "geo", Provider: NewBINSource(geo, nil)},
-		{Key: "asn", Provider: NewBINSource(asn, []string{dbprovider.MetaAsn})},
+		{Key: "geo", Provider: dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+			return geo.LookupRecord(ip, nil)
+		})},
+		{Key: "asn", Provider: dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+			return asn.LookupRecord(ip, []string{dbprovider.MetaAsn})
+		})},
 	})
 	rec, err := merged.Lookup("8.8.8.8")
 	if err != nil {

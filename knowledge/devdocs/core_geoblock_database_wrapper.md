@@ -7,19 +7,19 @@ One open geo database file of one format (BIN or MMDB): resolve, open, hot-swap,
 _Avoid_: Factory, vendor brand, slot
 
 **Format**:
-How the bytes are opened (`bin` / `mmdb`). IPinfo and MaxMind share MMDB; they differ only in field tags.
-_Avoid_: treating vendor as the share axis
+How the bytes are opened (`bin` / `mmdb`). Both MMDB layouts (flat tags and nested tags) decode onto the same Record columns.
+_Avoid_: treating a file brand as a wrapper type
 
 ## Overview
 
-`pkg/dbwrappers` owns BIN and MMDB open/hot-swap and the vendor field maps (`BINSource`, `IPinfo`, `GeoIP2`). The plugin never type-asserts a wrapper. Maps stay in code (BIN `Get_all` / `Get_asn`, IPinfo tags, GeoIP2 tags). Catalog `fields` is `Record.Keep` after Lookup.
+`pkg/dbwrappers` owns BIN and MMDB open/hot-swap and the format column maps. `BIN.LookupRecord` and `MMDB.LookupRecord` fill a `Record`, then `Keep(fields)`. The plugin never type-asserts a wrapper. Catalog `fields` is the allowlist after the map.
 
 ## How to use
 
 - Open through `OpenBIN` or `OpenMMDB` with the plugin `New` context. Same config hash shares one file and one Updater. The wrapper logger is scoped with `key` equal to the catalog map key.
-- Those opens go through `reclaim.Open` (`std_go_reclaim.md`) with `bin:` / `mmdb:` keys. Create watches the incarnation lifetime and calls `close` when it is canceled. Unreclaimed hash ends after grace. The caller asserts `*BIN` / `*MMDB`, then wraps with `NewBINSource` / `NewIPinfo` / `NewGeoIP2` and the row’s `fields`.
-- One catalog row is one wrapper. IP2Location geo and ASN LITE are two `ip2location` rows; the ASN row sets `fields: [asn]` so Lookup calls `Get_asn` only.
-- Source `Close` must not close the shared wrapper.
+- Those opens go through `reclaim.Open` (`std_go_reclaim.md`) with `bin:` / `mmdb:` keys. Create watches the incarnation lifetime and calls `close` when it is canceled. Unreclaimed hash ends after grace. The caller asserts `*BIN` / `*MMDB`, then `LookupRecord(ip, fields)` via `dbprovider.Bind`.
+- One catalog row is one wrapper. A BIN ASN LITE row sets `fields: [asn]` so Lookup calls `Get_asn` only.
+- `Provider.Close` must not close the shared wrapper.
 - Tests call `dbwrappers.Reset`. Short-grace plugin tests call `ResetWith`.
 
 ## Gotchas
@@ -30,12 +30,11 @@ _Avoid_: treating vendor as the share axis
 
 ```go
 w, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{Source: src}, logger)
-src := dbwrappers.NewIPinfo(w, nil)
-rec, err := src.Lookup(ip)
+rec, err := w.LookupRecord(ip, nil)
 ```
 
 ## Key files
 
-- `pkg/dbwrappers` — BIN, MMDB, field maps, `Reset`
+- `pkg/dbwrappers` — BIN, MMDB, column maps, `Reset`
 - `pkg/reclaim` — process table (`any`)
 - `pkg/dbsource` — Resolve and Updater used by both wrappers

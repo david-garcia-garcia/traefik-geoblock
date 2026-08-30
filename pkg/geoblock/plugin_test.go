@@ -88,61 +88,45 @@ func countryHeaderFromEnrich(enrich map[string]string) string {
 
 // seedCatalog is one enabled row at key seed plus a disabled shipped IP2Location default.
 func seedCatalog(path string) map[string]DatabaseSource {
-	vendor, databaseType := vendorForSeedPath(path)
+	databaseType, defaultFile := typeAndSeedForPath(path)
 	return map[string]DatabaseSource{
-		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
 		"seed": {
 			Path:         path,
-			Vendor:       vendor,
 			DatabaseType: databaseType,
-			DefaultFile:  defaultFileForVendor(vendor),
+			DefaultFile:  defaultFile,
 		},
 	}
 }
 
-// defaultFileForVendor is the shipped seed basename for a catalog vendor.
-func defaultFileForVendor(vendor string) string {
-	switch vendor {
-	case VendorIP2Location:
-		return DefaultIP2LocationGeoFile
-	case VendorIPinfo:
-		return DefaultIPinfoFile
-	case VendorMaxMind:
-		return DefaultMaxMindSeedFile
+// typeAndSeedForPath picks databaseType and shipped seed basename from a filename.
+func typeAndSeedForPath(path string) (databaseType, defaultFile string) {
+	base := strings.ToLower(filepath.Base(path))
+	switch {
+	case strings.Contains(base, "ipinfo"):
+		return "mmdb", DefaultIPinfoFile
+	case strings.HasSuffix(base, ".mmdb"):
+		return "mmdb", DefaultMaxMindSeedFile
 	default:
-		return ""
+		return "bin", DefaultIP2LocationGeoFile
 	}
 }
 
 // seedCatalogPair is geo + ASN rows for merge tests.
 func seedCatalogPair(geo, asn string) map[string]DatabaseSource {
 	return map[string]DatabaseSource{
-		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-		"geo":                        {Path: geo, Vendor: VendorIP2Location, DatabaseType: "bin"},
-		"asn":                        {Path: asn, Vendor: VendorIP2Location, DatabaseType: "bin", Fields: []string{dbprovider.MetaAsn}},
-	}
-}
-
-// vendorForSeedPath picks vendor and databaseType from a seed filename.
-func vendorForSeedPath(path string) (vendor, databaseType string) {
-	base := strings.ToLower(filepath.Base(path))
-	switch {
-	case strings.Contains(base, "ipinfo"):
-		return VendorIPinfo, "mmdb"
-	case strings.HasSuffix(base, ".mmdb"):
-		return VendorMaxMind, "mmdb"
-	default:
-		return VendorIP2Location, "bin"
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+		"geo":                        {Path: geo, DatabaseType: "bin"},
+		"asn":                        {Path: asn, DatabaseType: "bin", Fields: []string{dbprovider.MetaAsn}},
 	}
 }
 
 // shippedIPinfoOnly enables the shipped IPinfo seed and disables the IP2Location default.
 func shippedIPinfoOnly() map[string]DatabaseSource {
 	return map[string]DatabaseSource{
-		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
 		DefaultIPinfoCatalogKey: {
 			Enabled:      boolPtr(true),
-			Vendor:       VendorIPinfo,
 			DatabaseType: "mmdb",
 			DefaultFile:  DefaultIPinfoFile,
 		},
@@ -152,10 +136,9 @@ func shippedIPinfoOnly() map[string]DatabaseSource {
 // shippedMaxMindOnly enables the dummy Country seed and disables the IP2Location default.
 func shippedMaxMindOnly(path string) map[string]DatabaseSource {
 	return map[string]DatabaseSource{
-		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
+		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
 		DefaultMaxmindCatalogKey: {
 			Enabled:      boolPtr(true),
-			Vendor:       VendorMaxMind,
 			DatabaseType: "mmdb",
 			Path:         path,
 			DefaultFile:  DefaultMaxMindSeedFile,

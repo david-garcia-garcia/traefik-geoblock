@@ -59,31 +59,5 @@ func (c *Combined) Close() error {
 
 // mergeEmpty copies non-empty src fields into empty dst fields.
 func mergeEmpty(dst *Record, src Record) {
-	if dst.Country == "" {
-		dst.Country = src.Country
-	}
-	if dst.CountryName == "" {
-		dst.CountryName = src.CountryName
-	}
-	if dst.Continent == "" {
-		dst.Continent = src.Continent
-	}
-	if dst.ContinentCode == "" {
-		dst.ContinentCode = src.ContinentCode
-	}
-	if dst.Region == "" {
-		dst.Region = src.Region
-	}
-	if dst.City == "" {
-		dst.City = src.City
-	}
-	if dst.Isp == "" {
-		dst.Isp = src.Isp
-	}
-	if dst.Domain == "" {
-		dst.Domain = src.Domain
-	}
-	if dst.Asn == "" {
-		dst.Asn = src.Asn
-	}
+	*dst = dst.FillEmpty(src)
 }

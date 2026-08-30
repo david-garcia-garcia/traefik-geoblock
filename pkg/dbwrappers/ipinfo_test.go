@@ -20,9 +20,7 @@ func TestIPinfo_PublicAndPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	src := NewIPinfo(mmdb, nil)
-
-	rec, err := src.Lookup("8.8.8.8")
+	rec, err := mmdb.LookupRecord("8.8.8.8", nil)
 	if err != nil {
 		t.Fatalf("Lookup 8.8.8.8: %v", err)
 	}
@@ -48,7 +46,7 @@ func TestIPinfo_PublicAndPrivate(t *testing.T) {
 		t.Errorf("Lite has no region/city, got region=%q city=%q", rec.Region, rec.City)
 	}
 
-	au, err := src.Lookup("1.1.1.1")
+	au, err := mmdb.LookupRecord("1.1.1.1", nil)
 	if err != nil {
 		t.Fatalf("Lookup 1.1.1.1: %v", err)
 	}
@@ -56,7 +54,7 @@ func TestIPinfo_PublicAndPrivate(t *testing.T) {
 		t.Errorf("1.1.1.1 country: got %q want AU", au.Country)
 	}
 
-	de, err := src.Lookup("85.214.132.117")
+	de, err := mmdb.LookupRecord("85.214.132.117", nil)
 	if err != nil {
 		t.Fatalf("Lookup German test IP: %v", err)
 	}
@@ -64,7 +62,7 @@ func TestIPinfo_PublicAndPrivate(t *testing.T) {
 		t.Errorf("85.214.132.117 Lite fields: %+v", de)
 	}
 
-	priv, err := src.Lookup("127.0.0.1")
+	priv, err := mmdb.LookupRecord("127.0.0.1", nil)
 	if err != nil {
 		t.Fatalf("Lookup 127.0.0.1: %v", err)
 	}
@@ -72,7 +70,7 @@ func TestIPinfo_PublicAndPrivate(t *testing.T) {
 		t.Errorf("private IP should have empty country, got %q", priv.Country)
 	}
 
-	_, err = src.Lookup("not-an-ip")
+	_, err = mmdb.LookupRecord("not-an-ip", nil)
 	if err == nil {
 		t.Fatal("expected error for invalid IP")
 	}
@@ -86,7 +84,7 @@ func TestIPinfo_FieldsCountryOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	rec, err := NewIPinfo(mmdb, []string{dbprovider.MetaCountry}).Lookup("8.8.8.8")
+	rec, err := mmdb.LookupRecord("8.8.8.8", []string{dbprovider.MetaCountry})
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -108,7 +106,7 @@ func TestIPinfo_EmptyPathFindsBundled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB with empty path: %v", err)
 	}
-	rec, err := NewIPinfo(mmdb, nil).Lookup("8.8.8.8")
+	rec, err := mmdb.LookupRecord("8.8.8.8", nil)
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("bundled MMDB lookup: rec=%+v err=%v", rec, err)
 	}
@@ -125,7 +123,7 @@ func TestIPinfo_EmptyMapUsesSeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	rec, err := NewIPinfo(mmdb, nil).Lookup("8.8.8.8")
+	rec, err := mmdb.LookupRecord("8.8.8.8", nil)
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("seed lookup without download URL: rec=%+v err=%v", rec, err)
 	}
@@ -144,10 +142,12 @@ func TestIPinfo_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB b: %v", err)
 	}
-	if err := NewIPinfo(first, nil).Close(); err != nil {
+	if err := dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+		return first.LookupRecord(ip, nil)
+	}).Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	rec, err := NewIPinfo(second, nil).Lookup("8.8.8.8")
+	rec, err := second.LookupRecord("8.8.8.8", nil)
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("shared lookup after Close: rec=%+v err=%v", rec, err)
 	}
@@ -196,7 +196,7 @@ func TestIPinfo_DownloadThroughComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open downloaded: %v", err)
 	}
-	rec, err := NewIPinfo(mmdb, nil).Lookup("8.8.8.8")
+	rec, err := mmdb.LookupRecord("8.8.8.8", nil)
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
 	}

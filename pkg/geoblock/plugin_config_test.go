@@ -109,25 +109,25 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	t.Run("UnknownVendorFails", func(t *testing.T) {
+	t.Run("EmptyDatabaseTypeFails", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
-				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				"seed":                       {Path: dbFilePath, Vendor: "no-such-vendor", DatabaseType: "bin"},
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"seed":                       {Path: dbFilePath},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}, pluginName)
 		if err == nil {
-			t.Errorf("expected error about unknown vendor, but got none")
+			t.Errorf("expected error about empty databaseType, but got none")
 		}
 		if plugin != nil {
 			t.Error("expected plugin to be nil, but is not")
 		}
-		if err != nil && !strings.Contains(err.Error(), "vendor") {
-			t.Errorf("expected vendor error, got: %v", err)
+		if err != nil && !strings.Contains(err.Error(), "databaseType") {
+			t.Errorf("expected databaseType error, got: %v", err)
 		}
 	})
 
@@ -135,8 +135,8 @@ func TestNew(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
-				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				"seed":                       {Path: dbFilePath, Vendor: VendorIP2Location, DatabaseType: "bin", Fields: []string{"not-a-meta"}},
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"seed":                       {Path: dbFilePath, DatabaseType: "bin", Fields: []string{"not-a-meta"}},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -210,8 +210,8 @@ func TestNew(t *testing.T) {
 		cfg := &Config{
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
-				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				"lite":                       {URL: "https://example.com/geo.mmdb", DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, Vendor: VendorIPinfo, DefaultFile: "ipinfo_lite.mmdb"},
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"lite":                       {URL: "https://example.com/geo.mmdb", DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, DefaultFile: "ipinfo_lite.mmdb"},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -249,8 +249,8 @@ func TestNew(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
-				"city":                       {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none", Vendor: VendorIP2Location, Enabled: boolPtr(false)},
-				DefaultIP2LocationCatalogKey: {Path: dbFilePath, DatabaseType: "bin", Vendor: VendorIP2Location},
+				"city":                       {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none", Enabled: boolPtr(false)},
+				DefaultIP2LocationCatalogKey: {Path: dbFilePath, DatabaseType: "bin"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -278,8 +278,8 @@ func TestNew(t *testing.T) {
 		if row.DatabaseType != "bin" || row.Archive != "zip" {
 			t.Errorf("default type/archive: got %q %q", row.DatabaseType, row.Archive)
 		}
-		if row.Vendor != VendorIP2Location || row.DefaultFile != DefaultIP2LocationGeoFile {
-			t.Errorf("vendor/defaultFile: got %q %q", row.Vendor, row.DefaultFile)
+		if row.DefaultFile != DefaultIP2LocationGeoFile {
+			t.Errorf("defaultFile: got %q", row.DefaultFile)
 		}
 		if _, ok := cfg.DatabaseSources[DefaultIPinfoCatalogKey]; !ok {
 			t.Error("expected default_ipinfo")
@@ -297,7 +297,7 @@ func TestNew(t *testing.T) {
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 			DatabaseSources: map[string]DatabaseSource{
-				DefaultIP2LocationCatalogKey: {URL: custom, DatabaseType: "bin", Archive: "zip", Path: dbFilePath, Vendor: VendorIP2Location},
+				DefaultIP2LocationCatalogKey: {URL: custom, DatabaseType: "bin", Archive: "zip", Path: dbFilePath},
 			},
 		}
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
@@ -338,8 +338,8 @@ func TestNew(t *testing.T) {
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 			DatabaseSources: map[string]DatabaseSource{
-				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				DefaultGeoliteCatalogKey:     {URL: custom, DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, Path: maxmindFilePath, Vendor: VendorMaxMind},
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				DefaultGeoliteCatalogKey:     {URL: custom, DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, Path: maxmindFilePath},
 			},
 		}
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
@@ -351,26 +351,6 @@ func TestNew(t *testing.T) {
 		}
 		if got := cfg.DatabaseSources[DefaultGeoliteCatalogKey].URL; got != custom {
 			t.Errorf("operator row replaced: got %q", got)
-		}
-	})
-
-	t.Run("PointerTypeMismatchFails", func(t *testing.T) {
-		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Mode:                  ModeEnrichAndBlock,
-			DisallowedStatusCode:  http.StatusForbidden,
-			IPHeaders:             []string{"x-real-ip"},
-			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
-			DatabaseAutoUpdateDir: t.TempDir(),
-			DatabaseSources: map[string]DatabaseSource{
-				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				"lite":                       {URL: "https://example.com/geo.mmdb", DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, Vendor: VendorIP2Location},
-			},
-		}, pluginName)
-		if err == nil {
-			t.Fatal("expected New to fail when ip2location vendor is pointed at mmdb")
-		}
-		if plugin != nil {
-			t.Error("expected plugin to be nil")
 		}
 	})
 
@@ -439,8 +419,8 @@ func TestNew(t *testing.T) {
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				// Path only: a URL would GET into t.TempDir() and fail Linux cleanup.
-				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				"geo":                        {Path: dbFilePath, DatabaseType: "bin", Vendor: VendorIP2Location},
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"geo":                        {Path: dbFilePath, DatabaseType: "bin"},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -851,8 +831,8 @@ func TestNew_AutoUpdate(t *testing.T) {
 		cfg := &Config{
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
-				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				"geo":                        {Vendor: VendorIP2Location, DatabaseType: "bin"},
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"geo":                        {DatabaseType: "bin"},
 			},
 			DatabaseAutoUpdateDir: tmpDir,
 			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
@@ -883,8 +863,8 @@ func TestNew_AutoUpdate(t *testing.T) {
 		cfg := &Config{
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
-				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), Vendor: VendorIP2Location, DatabaseType: "bin"},
-				"litezip":                    {URL: "https://example.com/geo.ZIP", DatabaseType: "bin", Archive: "zip", Vendor: VendorIP2Location},
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"litezip":                    {URL: "https://example.com/geo.ZIP", DatabaseType: "bin", Archive: "zip"},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},

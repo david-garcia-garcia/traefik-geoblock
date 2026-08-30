@@ -15,11 +15,6 @@ import (
 )
 
 const (
-	// Vendor values on a catalog row. databaseType stays bin/mmdb.
-	VendorIP2Location = "ip2location"
-	VendorIPinfo      = "ipinfo"
-	VendorMaxMind     = "maxmind"
-
 	// DefaultIP2LocationCatalogKey is the reserved enabled geo LITE ZIP + seed.
 	DefaultIP2LocationCatalogKey = "default_ip2location"
 	// DefaultIPinfoCatalogKey is the reserved disabled IPinfo Lite seed.
@@ -68,7 +63,7 @@ type Config struct {
 	AllowPrivate bool   // Allow requests from private/internal networks
 	BanIfError   bool   // Ban requests if IP lookup fails
 
-	// DatabaseSources is the catalog of lookup sources (path, URL, vendor, defaultFile, enabled).
+	// DatabaseSources is the catalog of lookup sources (path, URL, databaseType, defaultFile, fields, enabled).
 	DatabaseSources map[string]DatabaseSource `json:"databaseSources,omitempty" mapstructure:"databaseSources"`
 	// DatabaseAutoUpdateDir is the shared dir for dated files. Empty with an enabled URL uses a temp dir.
 	DatabaseAutoUpdateDir string `json:"databaseAutoUpdateDir,omitempty" mapstructure:"databaseAutoUpdateDir"`
@@ -116,14 +111,13 @@ type Config struct {
 	ExcludedPathsRegex string
 }
 
-// DatabaseSource is one catalog row: file location, vendor schema, optional fields allowlist, and enabled.
+// DatabaseSource is one catalog row: file location, format, optional fields allowlist, and enabled.
 type DatabaseSource struct {
 	URL          string            `json:"url,omitempty" mapstructure:"url"`
 	Headers      map[string]string `json:"headers,omitempty" mapstructure:"headers"`
 	DatabaseType string            `json:"databaseType,omitempty" mapstructure:"databaseType"`
 	Archive      string            `json:"archive,omitempty" mapstructure:"archive"`
 	Path         string            `json:"path,omitempty" mapstructure:"path"`
-	Vendor       string            `json:"vendor,omitempty" mapstructure:"vendor"`
 	DefaultFile  string            `json:"defaultFile,omitempty" mapstructure:"defaultFile"`
 	Enabled      *bool             `json:"enabled,omitempty" mapstructure:"enabled"`
 	// Fields is the Record keys this row may fill (country, asn, …). Empty keeps every mapped key.
@@ -305,18 +299,15 @@ func insertReservedCatalog(cfg *Config) {
 		URL:          DefaultIP2LocationLiteURL,
 		DatabaseType: dbsource.TypeBIN,
 		Archive:      dbsource.ArchiveZIP,
-		Vendor:       VendorIP2Location,
 		DefaultFile:  DefaultIP2LocationGeoFile,
 	})
 	insertCatalogIfAbsent(cfg, DefaultIPinfoCatalogKey, DatabaseSource{
 		DatabaseType: dbsource.TypeMMDB,
-		Vendor:       VendorIPinfo,
 		DefaultFile:  DefaultIPinfoFile,
 		Enabled:      boolPtr(false),
 	})
 	insertCatalogIfAbsent(cfg, DefaultMaxmindCatalogKey, DatabaseSource{
 		DatabaseType: dbsource.TypeMMDB,
-		Vendor:       VendorMaxMind,
 		DefaultFile:  DefaultMaxMindSeedFile,
 		Enabled:      boolPtr(false),
 	})
@@ -324,7 +315,6 @@ func insertReservedCatalog(cfg *Config) {
 		URL:          DefaultGeoliteURL,
 		DatabaseType: dbsource.TypeMMDB,
 		Archive:      dbsource.ArchiveNone,
-		Vendor:       VendorMaxMind,
 		Enabled:      boolPtr(false),
 	})
 }
@@ -364,7 +354,7 @@ func enabledURLNeedsDir(cfg *Config) bool {
 	return false
 }
 
-// validateDatabaseSources normalizes rows and checks enabled vendor/format pairs.
+// validateDatabaseSources normalizes rows and checks enabled format/fields.
 func validateDatabaseSources(cfg *Config) error {
 	for name, entry := range cfg.DatabaseSources {
 		c := dbsource.Config{
@@ -383,19 +373,15 @@ func validateDatabaseSources(cfg *Config) error {
 	}
 	for _, key := range enabled {
 		entry := cfg.DatabaseSources[key]
-		vendor := strings.ToLower(strings.TrimSpace(entry.Vendor))
-		want := vendorDatabaseType(vendor)
-		if want == "" {
-			return fmt.Errorf("databaseSources.%s: unknown or empty vendor %q", key, entry.Vendor)
-		}
-		got := strings.ToLower(strings.TrimSpace(entry.DatabaseType))
-		if got != "" && got != want {
-			return fmt.Errorf("databaseSources.%s: databaseType %q; vendor %s requires %s", key, got, vendor, want)
+		databaseType := strings.ToLower(strings.TrimSpace(entry.DatabaseType))
+		if databaseType != dbsource.TypeBIN && databaseType != dbsource.TypeMMDB {
+			return fmt.Errorf("databaseSources.%s: unknown or empty databaseType %q", key, entry.DatabaseType)
 		}
 		fields, err := normalizeSourceFields(entry.Fields)
 		if err != nil {
 			return fmt.Errorf("databaseSources.%s: %w", key, err)
 		}
+		entry.DatabaseType = databaseType
 		entry.Fields = fields
 		cfg.DatabaseSources[key] = entry
 	}
@@ -420,18 +406,6 @@ func normalizeSourceFields(in []string) ([]string, error) {
 		out = append(out, key)
 	}
 	return out, nil
-}
-
-// vendorDatabaseType is the format a vendor can open. Empty vendor is unknown.
-func vendorDatabaseType(vendor string) string {
-	switch vendor {
-	case VendorIP2Location:
-		return dbsource.TypeBIN
-	case VendorIPinfo, VendorMaxMind:
-		return dbsource.TypeMMDB
-	default:
-		return ""
-	}
 }
 
 // normalizeRequestHeaderEnrich canonicalizes header names and checks metadata keys.

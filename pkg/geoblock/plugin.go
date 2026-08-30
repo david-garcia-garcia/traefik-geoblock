@@ -214,9 +214,7 @@ func (p *Plugin) bindDatabase(life context.Context, cfg *Config) error {
 func openCatalogSources(ctx context.Context, cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
 	var sources []dbprovider.Named
 	for _, key := range enabledSourceKeys(cfg) {
-		entry := cfg.DatabaseSources[key]
-		vendor := strings.ToLower(strings.TrimSpace(entry.Vendor))
-		lookup, err := openCatalogRow(ctx, cfg, key, vendor, logger)
+		lookup, err := openCatalogRow(ctx, cfg, key, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -228,11 +226,12 @@ func openCatalogSources(ctx context.Context, cfg *Config, logger *slog.Logger) (
 	return dbprovider.NewCombined(sources), nil
 }
 
-// openCatalogRow opens one wrapper Lookup for a catalog key.
-func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger *slog.Logger) (dbprovider.Provider, error) {
+// openCatalogRow opens one format wrapper Lookup for a catalog key.
+func openCatalogRow(ctx context.Context, cfg *Config, key string, logger *slog.Logger) (dbprovider.Provider, error) {
 	entry := cfg.DatabaseSources[key]
-	switch vendor {
-	case VendorIP2Location:
+	databaseType := strings.ToLower(strings.TrimSpace(entry.DatabaseType))
+	switch databaseType {
+	case dbsource.TypeBIN:
 		src := catalogSource(cfg, key, dbsource.TypeBIN)
 		bin, err := dbwrappers.OpenBIN(ctx, dbwrappers.BINConfig{
 			Dir:             cfg.DatabaseAutoUpdateDir,
@@ -244,8 +243,11 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger
 		if err != nil {
 			return nil, err
 		}
-		return dbwrappers.NewBINSource(bin, entry.Fields), nil
-	case VendorIPinfo:
+		fields := entry.Fields
+		return dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+			return bin.LookupRecord(ip, fields)
+		}), nil
+	case dbsource.TypeMMDB:
 		src := catalogSource(cfg, key, dbsource.TypeMMDB)
 		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
 			Dir:             cfg.DatabaseAutoUpdateDir,
@@ -256,21 +258,12 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, vendor string, logger
 		if err != nil {
 			return nil, err
 		}
-		return dbwrappers.NewIPinfo(mmdb, entry.Fields), nil
-	case VendorMaxMind:
-		src := catalogSource(cfg, key, dbsource.TypeMMDB)
-		mmdb, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{
-			Dir:             cfg.DatabaseAutoUpdateDir,
-			Source:          src,
-			DefaultFileName: src.DefaultFileName,
-			MinAge:          dbsource.DefaultMinAge,
-		}, logger)
-		if err != nil {
-			return nil, err
-		}
-		return dbwrappers.NewGeoIP2(mmdb, entry.Fields), nil
+		fields := entry.Fields
+		return dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+			return mmdb.LookupRecord(ip, fields)
+		}), nil
 	default:
-		return nil, fmt.Errorf("unknown vendor %q", vendor)
+		return nil, fmt.Errorf("unknown databaseType %q", entry.DatabaseType)
 	}
 }
 

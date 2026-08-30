@@ -15,6 +15,7 @@ import (
 
 	"github.com/oschwald/maxminddb-golang"
 
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
@@ -123,7 +124,26 @@ func (w *MMDB) Path() string {
 	return w.path
 }
 
-// Lookup decodes ip into dest (vendor schema tags).
+// LookupRecord fills normalized columns from whichever MMDB layouts decode, then Keep(fields).
+func (w *MMDB) LookupRecord(ip string, fields []string) (dbprovider.Record, error) {
+	var flat flatMMDB
+	flatErr := w.Lookup(ip, &flat)
+	var nested nestedMMDB
+	nestedErr := w.Lookup(ip, &nested)
+	if flatErr != nil && nestedErr != nil {
+		return dbprovider.Record{}, flatErr
+	}
+	var rec dbprovider.Record
+	if flatErr == nil {
+		rec = recordFromFlat(flat)
+	}
+	if nestedErr == nil {
+		rec = rec.FillEmpty(recordFromNested(nested))
+	}
+	return rec.Keep(fields), nil
+}
+
+// Lookup decodes ip into dest (raw MMDB tags).
 func (w *MMDB) Lookup(ip string, dest any) error {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
