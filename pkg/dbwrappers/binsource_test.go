@@ -23,7 +23,7 @@ func TestBINSource_LookupWithoutASN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	rec, err := bin.LookupRecord("8.8.8.8", nil)
+	rec, err := bin.LookupRecord("8.8.8.8", mustFields(t, PresetIP2Location))
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestBINSource_LookupDB8(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	rec, err := bin.LookupRecord("8.8.8.8", nil)
+	rec, err := bin.LookupRecord("8.8.8.8", mustFields(t, PresetIP2Location))
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -77,11 +77,11 @@ func TestBINSource_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 		t.Fatalf("second OpenBIN: %v", err)
 	}
 	if err := dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
-		return first.LookupRecord(ip, nil)
+		return first.LookupRecord(ip, mustFields(t, PresetIP2Location))
 	}).Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	rec, err := second.LookupRecord("8.8.8.8", nil)
+	rec, err := second.LookupRecord("8.8.8.8", mustFields(t, PresetIP2Location))
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("shared lookup after Close: rec=%+v err=%v", rec, err)
 	}
@@ -139,7 +139,7 @@ func TestBINSource_DownloadThroughComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	rec, err := bin.LookupRecord("8.8.8.8", nil)
+	rec, err := bin.LookupRecord("8.8.8.8", mustFields(t, PresetIP2Location))
 	if err != nil || rec.Country != "US" {
 		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
 	}
@@ -153,7 +153,7 @@ func TestBINSource_FieldsAsnOnlySkipsGeo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	rec, err := bin.LookupRecord("8.8.8.8", []string{dbprovider.MetaAsn})
+	rec, err := bin.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationASN))
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -194,10 +194,10 @@ func TestBINSource_LookupWithASNFile(t *testing.T) {
 	}
 	merged := dbprovider.NewCombined([]dbprovider.Named{
 		{Key: "geo", Provider: dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
-			return geo.LookupRecord(ip, nil)
+			return geo.LookupRecord(ip, mustFields(t, PresetIP2Location))
 		})},
 		{Key: "asn", Provider: dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
-			return asn.LookupRecord(ip, []string{dbprovider.MetaAsn})
+			return asn.LookupRecord(ip, mustFields(t, PresetIP2LocationASN))
 		})},
 	})
 	rec, err := merged.Lookup("8.8.8.8")

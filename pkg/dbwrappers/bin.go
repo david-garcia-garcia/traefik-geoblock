@@ -206,45 +206,71 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 	return nil
 }
 
-// LookupRecord fills BIN columns for ip, then Keep(fields).
-// Empty fields or any non-asn key calls Get_all. fields listing asn also calls Get_asn.
-// fields: [asn] only skips Get_all (ASN LITE is a different BIN schema).
-func (w *BIN) LookupRecord(ip string, fields []string) (dbprovider.Record, error) {
+// LookupRecord fills Record from the BIN using fields (path → Record key).
+// Paths other than asn call Get_all. Path asn calls Get_asn when Get_all has no ASN.
+func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error) {
 	var rec dbprovider.Record
-	if binWantGeo(fields) {
-		geo, err := w.Lookup(ip)
+	wantAll := false
+	for path := range fields {
+		if path != "asn" {
+			wantAll = true
+			break
+		}
+	}
+	var all ip2loc.IP2Locationrecord
+	if wantAll {
+		if w == nil || w.db == nil {
+			return dbprovider.Record{}, fmt.Errorf("BIN is not open")
+		}
+		record, err := w.db.Get_all(ip)
 		if err != nil {
 			return dbprovider.Record{}, err
 		}
-		rec = geo
+		country := record.Country_short
+		if len(country) >= 7 && strings.EqualFold(country[:7], "invalid") {
+			return dbprovider.Record{}, fmt.Errorf("%s", country)
+		}
+		all = record
+		fields.apply(&rec, func(path string) string {
+			if path == "asn" {
+				return ""
+			}
+			return binColumn(all, path)
+		})
 	}
-	if binWantAsn(fields) {
-		rec.Asn = w.LookupASN(ip)
+	if fields.hasPath("asn") {
+		asn := ""
+		if wantAll {
+			asn = usableMeta(all.Asn)
+		}
+		if asn == "" {
+			asn = w.LookupASN(ip)
+		}
+		rec.Set(dbprovider.MetaAsn, asn)
 	}
-	return rec.Keep(fields), nil
+	return rec, nil
 }
 
-// binWantGeo is true when fields is empty or lists a non-asn key.
-func binWantGeo(fields []string) bool {
-	if len(fields) == 0 {
-		return true
+// binColumn is one IP2Location Get_all column.
+func binColumn(rec ip2loc.IP2Locationrecord, path string) string {
+	switch path {
+	case "country_short":
+		return rec.Country_short
+	case "country_long":
+		return usableMeta(rec.Country_long)
+	case "region":
+		return usableMeta(rec.Region)
+	case "city":
+		return usableMeta(rec.City)
+	case "isp":
+		return usableMeta(rec.Isp)
+	case "domain":
+		return usableMeta(rec.Domain)
+	case "asn":
+		return usableMeta(rec.Asn)
+	default:
+		return ""
 	}
-	for _, key := range fields {
-		if key != dbprovider.MetaAsn {
-			return true
-		}
-	}
-	return false
-}
-
-// binWantAsn is true when fields lists asn.
-func binWantAsn(fields []string) bool {
-	for _, key := range fields {
-		if key == dbprovider.MetaAsn {
-			return true
-		}
-	}
-	return false
 }
 
 // Lookup returns country/region/city/isp/domain for ip.

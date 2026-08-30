@@ -114,7 +114,7 @@ func lifecycleBIN(path, url, dir string) *Config {
 		Mode: ModeEnrichAndBlock,
 		DatabaseSources: map[string]DatabaseSource{
 			DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
-			"seed":                       {Path: path, URL: url, DatabaseType: dbsource.TypeBIN},
+			"seed":                       {Path: path, URL: url, DatabaseType: dbsource.TypeBIN, FieldsPreconfigured: dbwrappers.PresetIP2LocationLite},
 		},
 		DatabaseAutoUpdateDir: dir,
 		AllowedCountries:      []string{"US"},
@@ -130,7 +130,7 @@ func lifecycleIPinfo(path, url, dir string) *Config {
 		Mode: ModeEnrichAndBlock,
 		DatabaseSources: map[string]DatabaseSource{
 			DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
-			"seed":                       {Path: path, URL: url, DatabaseType: dbsource.TypeMMDB},
+			"seed":                       {Path: path, URL: url, DatabaseType: dbsource.TypeMMDB, FieldsPreconfigured: dbwrappers.PresetIPinfoLite},
 		},
 		DatabaseAutoUpdateDir: dir,
 		AllowedCountries:      []string{"US"},

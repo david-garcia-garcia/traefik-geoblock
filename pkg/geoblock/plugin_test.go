@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 )
 
 // newTestPlugin is NewCore plus Close when ctx is done. Tests that do not use the reclaim table.
@@ -88,27 +89,30 @@ func countryHeaderFromEnrich(enrich map[string]string) string {
 
 // seedCatalog is one enabled row at key seed plus a disabled shipped IP2Location default.
 func seedCatalog(path string) map[string]DatabaseSource {
-	databaseType, defaultFile := typeAndSeedForPath(path)
+	databaseType, defaultFile, preset := typeAndSeedForPath(path)
 	return map[string]DatabaseSource{
 		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
 		"seed": {
-			Path:         path,
-			DatabaseType: databaseType,
-			DefaultFile:  defaultFile,
+			Path:                path,
+			DatabaseType:        databaseType,
+			DefaultFile:         defaultFile,
+			FieldsPreconfigured: preset,
 		},
 	}
 }
 
-// typeAndSeedForPath picks databaseType and shipped seed basename from a filename.
-func typeAndSeedForPath(path string) (databaseType, defaultFile string) {
+// typeAndSeedForPath picks databaseType, seed basename, and preset from a filename.
+func typeAndSeedForPath(path string) (databaseType, defaultFile, preset string) {
 	base := strings.ToLower(filepath.Base(path))
 	switch {
 	case strings.Contains(base, "ipinfo"):
-		return "mmdb", DefaultIPinfoFile
+		return "mmdb", DefaultIPinfoFile, dbwrappers.PresetIPinfoLite
 	case strings.HasSuffix(base, ".mmdb"):
-		return "mmdb", DefaultMaxMindSeedFile
+		return "mmdb", DefaultMaxMindSeedFile, dbwrappers.PresetMaxMindCountry
+	case strings.Contains(base, "asn"):
+		return "bin", "", dbwrappers.PresetIP2LocationASN
 	default:
-		return "bin", DefaultIP2LocationGeoFile
+		return "bin", DefaultIP2LocationGeoFile, dbwrappers.PresetIP2Location
 	}
 }
 
@@ -116,8 +120,8 @@ func typeAndSeedForPath(path string) (databaseType, defaultFile string) {
 func seedCatalogPair(geo, asn string) map[string]DatabaseSource {
 	return map[string]DatabaseSource{
 		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
-		"geo":                        {Path: geo, DatabaseType: "bin"},
-		"asn":                        {Path: asn, DatabaseType: "bin", Fields: []string{dbprovider.MetaAsn}},
+		"geo":                        {Path: geo, DatabaseType: "bin", FieldsPreconfigured: dbwrappers.PresetIP2Location},
+		"asn":                        {Path: asn, DatabaseType: "bin", FieldsPreconfigured: dbwrappers.PresetIP2LocationASN},
 	}
 }
 
@@ -126,9 +130,10 @@ func shippedIPinfoOnly() map[string]DatabaseSource {
 	return map[string]DatabaseSource{
 		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
 		DefaultIPinfoCatalogKey: {
-			Enabled:      boolPtr(true),
-			DatabaseType: "mmdb",
-			DefaultFile:  DefaultIPinfoFile,
+			Enabled:             boolPtr(true),
+			DatabaseType:        "mmdb",
+			DefaultFile:         DefaultIPinfoFile,
+			FieldsPreconfigured: dbwrappers.PresetIPinfoLite,
 		},
 	}
 }
@@ -138,10 +143,11 @@ func shippedMaxMindOnly(path string) map[string]DatabaseSource {
 	return map[string]DatabaseSource{
 		DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
 		DefaultMaxmindCatalogKey: {
-			Enabled:      boolPtr(true),
-			DatabaseType: "mmdb",
-			Path:         path,
-			DefaultFile:  DefaultMaxMindSeedFile,
+			Enabled:             boolPtr(true),
+			DatabaseType:        "mmdb",
+			Path:                path,
+			DefaultFile:         DefaultMaxMindSeedFile,
+			FieldsPreconfigured: dbwrappers.PresetMaxMindCountry,
 		},
 	}
 }

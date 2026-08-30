@@ -7,12 +7,16 @@ The file-location and keep-current owner (`pkg/dbsource`): Resolve, GET, unpack,
 _Avoid_: download, slot, dbdownload, dbmanager
 
 **Catalog**:
-Named map `databaseSources`. Each row has format (`databaseType`), optional `path` / `url` / `defaultFile` / `fields`, and `enabled`. Operator-chosen keys plus reserved `default_ip2location`, `default_ipinfo`, `default_maxmind`, and `default_geolite`.
+Named map `databaseSources`. Each row has format (`databaseType`), optional `path` / `url` / `defaultFile`, a column map (`fields` or `fieldsPreconfigured`), and `enabled`. Operator-chosen keys plus reserved `default_ip2location`, `default_ipinfo`, `default_maxmind`, and `default_geolite`.
 _Avoid_: `databaseProvider`, `vendor`, vendor pointers (`*_source_*`), `databaseDownloads`
 
 **fields**:
-Allowlist of normalized Record keys this row may fill (`country`, `asn`, …). Empty keeps every key that format’s column map produces. Not raw DB column names.
-_Avoid_: YAML maps of on-disk column names; a `vendor` key
+Operator map of on-disk path → Record key (`country_short` → `country`, `country.iso_code` → `country`). Do not set with `fieldsPreconfigured`.
+_Avoid_: allowlist of Record keys; combining with a preset
+
+**fieldsPreconfigured**:
+Named vendor map (`ip2location_db8`, `ipinfo_lite`, `maxmind_country`, …). Prepare expands it into `fields`. Format must match `databaseType`.
+_Avoid_: inventing a `vendor` key; combining with `fields`
 
 **Updater**:
 Keep-current loop for one source (ticker + GET).
@@ -24,10 +28,10 @@ Each enabled catalog row is one wrapper plus one source. Merge happens after Loo
 
 ## How to use
 
-- Put seed `path` and/or `url` on a catalog entry. Set `databaseType` (`bin` / `mmdb`). Optional `fields` is an allowlist of Record keys (`country`, `asn`, …). Empty keeps every key the format map can fill. Unknown names fail `Prepare`.
+- Put seed `path` and/or `url` on a catalog entry. Set `databaseType` (`bin` / `mmdb`). Set `fieldsPreconfigured` or `fields` (path → Record key), not both. Empty both fails `Prepare`. Unknown Record keys or preset names fail `Prepare`. Preset format must match the row.
 - Lookup modes insert reserved rows when the key is absent: `default_ip2location` (enabled; free LITE ZIP + `IP2LOCATION-LITE-DB1.IPV6.BIN`), `default_ipinfo` (disabled; `ipinfo_lite.mmdb`), `default_maxmind` (disabled; dummy `GeoIP2-Country-Test.mmdb`), `default_geolite` (disabled; unofficial P3TERX Country GET). Keep an operator-defined reserved row. Do not commit a live GeoLite file.
 - Omitted `enabled` means on. Zero enabled rows in a lookup mode fails `Prepare`. Unknown or empty `databaseType` on an enabled row fails `Prepare`. Unknown `databaseType`/`archive` fails `New`. A bound URL with empty `databaseAutoUpdateDir` WARNs and uses `os.TempDir()`/`traefik-geoblock`.
-- Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path). A set `path` that is not a file WARNs `seed was specified but not found`. Else `{TRAEFIK_PLUGIN_GEOBLOCK_PATH}/seeds/<defaultFile>` then `{env}/<defaultFile>`. Empty `defaultFile` skips bundled search. No directory walk. An ASN LITE row (`databaseType: bin`, `fields: [asn]`) ships no `defaultFile`; BIN open allows a missing file when both `path` and `defaultFile` are empty. There is no `*_databaseFilePath`.
+- Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path). A set `path` that is not a file WARNs `seed was specified but not found`. Else `{TRAEFIK_PLUGIN_GEOBLOCK_PATH}/seeds/<defaultFile>` then `{env}/<defaultFile>`. Empty `defaultFile` skips bundled search. No directory walk. An ASN LITE row (`databaseType: bin`, `fieldsPreconfigured: ip2location_asn`) ships no `defaultFile`; BIN open allows a missing file when both `path` and `defaultFile` are empty. There is no `*_databaseFilePath`.
 - Wrapper and source logs include `key` (the `databaseSources` map key).
 - `Start` returns a nil Updater when the URL is empty.
 

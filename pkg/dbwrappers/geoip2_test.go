@@ -43,7 +43,7 @@ func TestGeoIP2_DummyCountry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	gb, err := mmdb.LookupRecord(dummyGB, nil)
+	gb, err := mmdb.LookupRecord(dummyGB, mustFields(t, PresetMaxMindCountry))
 	if err != nil {
 		t.Fatalf("Lookup %s: %v", dummyGB, err)
 	}
@@ -60,7 +60,7 @@ func TestGeoIP2_DummyCountry(t *testing.T) {
 		t.Errorf("Country dummy has no ASN/ISP, got asn=%q isp=%q", gb.Asn, gb.Isp)
 	}
 
-	cn, err := mmdb.LookupRecord(dummyCN, nil)
+	cn, err := mmdb.LookupRecord(dummyCN, mustFields(t, PresetMaxMindCountry))
 	if err != nil {
 		t.Fatalf("Lookup %s: %v", dummyCN, err)
 	}
@@ -68,7 +68,7 @@ func TestGeoIP2_DummyCountry(t *testing.T) {
 		t.Errorf("175.16.199.1 country: got %q want CN", cn.Country)
 	}
 
-	priv, err := mmdb.LookupRecord("127.0.0.1", nil)
+	priv, err := mmdb.LookupRecord("127.0.0.1", mustFields(t, PresetMaxMindCountry))
 	if err != nil {
 		t.Fatalf("Lookup 127.0.0.1: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestGeoIP2_DummyCountry(t *testing.T) {
 		t.Errorf("private IP should have empty country, got %q", priv.Country)
 	}
 
-	_, err = mmdb.LookupRecord("not-an-ip", nil)
+	_, err = mmdb.LookupRecord("not-an-ip", mustFields(t, PresetMaxMindCountry))
 	if err == nil {
 		t.Fatal("expected error for invalid IP")
 	}
@@ -92,7 +92,7 @@ func TestGeoIP2_EmptyPathFindsBundled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB with empty path: %v", err)
 	}
-	rec, err := mmdb.LookupRecord(dummyGB, nil)
+	rec, err := mmdb.LookupRecord(dummyGB, mustFields(t, PresetMaxMindCountry))
 	if err != nil || rec.Country != "GB" {
 		t.Fatalf("bundled MMDB lookup: rec=%+v err=%v", rec, err)
 	}
@@ -109,7 +109,7 @@ func TestGeoIP2_EmptyMapUsesSeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	rec, err := mmdb.LookupRecord(dummyGB, nil)
+	rec, err := mmdb.LookupRecord(dummyGB, mustFields(t, PresetMaxMindCountry))
 	if err != nil || rec.Country != "GB" {
 		t.Fatalf("seed lookup without download URL: rec=%+v err=%v", rec, err)
 	}
@@ -129,11 +129,11 @@ func TestGeoIP2_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 		t.Fatalf("OpenMMDB b: %v", err)
 	}
 	if err := dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
-		return first.LookupRecord(ip, nil)
+		return first.LookupRecord(ip, mustFields(t, PresetMaxMindCountry))
 	}).Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	rec, err := second.LookupRecord(dummyGB, nil)
+	rec, err := second.LookupRecord(dummyGB, mustFields(t, PresetMaxMindCountry))
 	if err != nil || rec.Country != "GB" {
 		t.Fatalf("shared lookup after Close: rec=%+v err=%v", rec, err)
 	}
@@ -201,7 +201,7 @@ func TestGeoIP2_DownloadThroughComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open downloaded: %v", err)
 	}
-	rec, err := mmdb.LookupRecord(dummyGB, nil)
+	rec, err := mmdb.LookupRecord(dummyGB, mustFields(t, PresetMaxMindCountry))
 	if err != nil || rec.Country != "GB" {
 		t.Fatalf("downloaded lookup: rec=%+v err=%v", rec, err)
 	}

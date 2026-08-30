@@ -11,6 +11,7 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
@@ -111,7 +112,7 @@ type Config struct {
 	ExcludedPathsRegex string
 }
 
-// DatabaseSource is one catalog row: file location, format, optional fields allowlist, and enabled.
+// DatabaseSource is one catalog row: file location, format, column map, and enabled.
 type DatabaseSource struct {
 	URL          string            `json:"url,omitempty" mapstructure:"url"`
 	Headers      map[string]string `json:"headers,omitempty" mapstructure:"headers"`
@@ -120,8 +121,10 @@ type DatabaseSource struct {
 	Path         string            `json:"path,omitempty" mapstructure:"path"`
 	DefaultFile  string            `json:"defaultFile,omitempty" mapstructure:"defaultFile"`
 	Enabled      *bool             `json:"enabled,omitempty" mapstructure:"enabled"`
-	// Fields is the Record keys this row may fill (country, asn, …). Empty keeps every mapped key.
-	Fields []string `json:"fields,omitempty" mapstructure:"fields"`
+	// Fields maps on-disk path → Record key. Do not set with FieldsPreconfigured.
+	Fields dbwrappers.FieldMap `json:"fields,omitempty" mapstructure:"fields"`
+	// FieldsPreconfigured is a named vendor map (ip2location_db8, ipinfo_lite, …).
+	FieldsPreconfigured string `json:"fieldsPreconfigured,omitempty" mapstructure:"fieldsPreconfigured"`
 }
 
 // CreateConfig creates the default plugin configuration.
@@ -296,26 +299,30 @@ func insertReservedCatalog(cfg *Config) {
 		cfg.DatabaseSources = make(map[string]DatabaseSource)
 	}
 	insertCatalogIfAbsent(cfg, DefaultIP2LocationCatalogKey, DatabaseSource{
-		URL:          DefaultIP2LocationLiteURL,
-		DatabaseType: dbsource.TypeBIN,
-		Archive:      dbsource.ArchiveZIP,
-		DefaultFile:  DefaultIP2LocationGeoFile,
+		URL:                 DefaultIP2LocationLiteURL,
+		DatabaseType:        dbsource.TypeBIN,
+		Archive:             dbsource.ArchiveZIP,
+		DefaultFile:         DefaultIP2LocationGeoFile,
+		FieldsPreconfigured: dbwrappers.PresetIP2LocationLite,
 	})
 	insertCatalogIfAbsent(cfg, DefaultIPinfoCatalogKey, DatabaseSource{
-		DatabaseType: dbsource.TypeMMDB,
-		DefaultFile:  DefaultIPinfoFile,
-		Enabled:      boolPtr(false),
+		DatabaseType:        dbsource.TypeMMDB,
+		DefaultFile:         DefaultIPinfoFile,
+		Enabled:             boolPtr(false),
+		FieldsPreconfigured: dbwrappers.PresetIPinfoLite,
 	})
 	insertCatalogIfAbsent(cfg, DefaultMaxmindCatalogKey, DatabaseSource{
-		DatabaseType: dbsource.TypeMMDB,
-		DefaultFile:  DefaultMaxMindSeedFile,
-		Enabled:      boolPtr(false),
+		DatabaseType:        dbsource.TypeMMDB,
+		DefaultFile:         DefaultMaxMindSeedFile,
+		Enabled:             boolPtr(false),
+		FieldsPreconfigured: dbwrappers.PresetMaxMindCountry,
 	})
 	insertCatalogIfAbsent(cfg, DefaultGeoliteCatalogKey, DatabaseSource{
-		URL:          DefaultGeoliteURL,
-		DatabaseType: dbsource.TypeMMDB,
-		Archive:      dbsource.ArchiveNone,
-		Enabled:      boolPtr(false),
+		URL:                 DefaultGeoliteURL,
+		DatabaseType:        dbsource.TypeMMDB,
+		Archive:             dbsource.ArchiveNone,
+		Enabled:             boolPtr(false),
+		FieldsPreconfigured: dbwrappers.PresetMaxMindCountry,
 	})
 }
 
@@ -377,33 +384,51 @@ func validateDatabaseSources(cfg *Config) error {
 		if databaseType != dbsource.TypeBIN && databaseType != dbsource.TypeMMDB {
 			return fmt.Errorf("databaseSources.%s: unknown or empty databaseType %q", key, entry.DatabaseType)
 		}
-		fields, err := normalizeSourceFields(entry.Fields)
+		fields, err := resolveSourceFields(entry, databaseType)
 		if err != nil {
 			return fmt.Errorf("databaseSources.%s: %w", key, err)
 		}
+		// Expand the preset into Fields. Clear the name so a later Prepare is not both-set.
 		entry.DatabaseType = databaseType
 		entry.Fields = fields
+		entry.FieldsPreconfigured = ""
 		cfg.DatabaseSources[key] = entry
 	}
 	return nil
 }
 
-// normalizeSourceFields lowercases Record keys and rejects unknown names.
-func normalizeSourceFields(in []string) ([]string, error) {
-	if len(in) == 0 {
-		return nil, nil
+// resolveSourceFields expands a preset or validates an operator map. Both set is an error.
+func resolveSourceFields(entry DatabaseSource, databaseType string) (dbwrappers.FieldMap, error) {
+	preset := strings.ToLower(strings.TrimSpace(entry.FieldsPreconfigured))
+	if len(entry.Fields) > 0 && preset != "" {
+		return nil, fmt.Errorf("set fields or fieldsPreconfigured, not both")
 	}
-	out := make([]string, 0, len(in))
-	for _, raw := range in {
-		key := strings.ToLower(strings.TrimSpace(raw))
-		if key == "" {
-			continue
+	if preset != "" {
+		format, fields, ok := dbwrappers.Preset(preset)
+		if !ok {
+			return nil, fmt.Errorf("unknown fieldsPreconfigured %q (see dbwrappers.PresetNames)",
+				entry.FieldsPreconfigured)
+		}
+		if format != databaseType {
+			return nil, fmt.Errorf("fieldsPreconfigured %s is %s; row is %s", preset, format, databaseType)
+		}
+		return fields, nil
+	}
+	if len(entry.Fields) == 0 {
+		return nil, fmt.Errorf("set fields or fieldsPreconfigured")
+	}
+	out := make(dbwrappers.FieldMap, len(entry.Fields))
+	for path, key := range entry.Fields {
+		path = strings.TrimSpace(path)
+		key = strings.ToLower(strings.TrimSpace(key))
+		if path == "" {
+			return nil, fmt.Errorf("fields has an empty path")
 		}
 		if !dbprovider.KnownMetaKey(key) {
-			return nil, fmt.Errorf("unknown fields value %q (supported: %s)",
-				raw, strings.Join(dbprovider.MetaKeys(), ", "))
+			return nil, fmt.Errorf("unknown fields value %q for path %q (supported: %s)",
+				key, path, strings.Join(dbprovider.MetaKeys(), ", "))
 		}
-		out = append(out, key)
+		out[path] = key
 	}
 	return out, nil
 }

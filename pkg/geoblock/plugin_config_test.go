@@ -136,7 +136,7 @@ func TestNew(t *testing.T) {
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
-				"seed":                       {Path: dbFilePath, DatabaseType: "bin", Fields: []string{"not-a-meta"}},
+				"seed":                       {Path: dbFilePath, DatabaseType: "bin", Fields: dbwrappers.FieldMap{"country_short": "not-a-meta"}},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -150,6 +150,96 @@ func TestNew(t *testing.T) {
 		}
 		if err != nil && !strings.Contains(err.Error(), "fields") {
 			t.Errorf("expected fields error, got: %v", err)
+		}
+	})
+
+	t.Run("FieldsAndPresetTogetherFails", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode: ModeEnrichAndBlock,
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"seed": {
+					Path:                dbFilePath,
+					DatabaseType:        "bin",
+					Fields:              dbwrappers.FieldMap{"country_short": dbprovider.MetaCountry},
+					FieldsPreconfigured: dbwrappers.PresetIP2LocationLite,
+				},
+			},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err == nil {
+			t.Fatal("expected error when fields and fieldsPreconfigured are both set")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil")
+		}
+		if !strings.Contains(err.Error(), "not both") {
+			t.Errorf("expected combine error, got: %v", err)
+		}
+	})
+
+	t.Run("NeitherFieldsNorPresetFails", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode: ModeEnrichAndBlock,
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"seed":                       {Path: dbFilePath, DatabaseType: "bin"},
+			},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err == nil {
+			t.Fatal("expected error when fields and fieldsPreconfigured are both empty")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil")
+		}
+	})
+
+	t.Run("UnknownPresetFails", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode: ModeEnrichAndBlock,
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"seed":                       {Path: dbFilePath, DatabaseType: "bin", FieldsPreconfigured: "not-a-preset"},
+			},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err == nil {
+			t.Fatal("expected error for unknown fieldsPreconfigured")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil")
+		}
+		if !strings.Contains(err.Error(), "fieldsPreconfigured") {
+			t.Errorf("expected preset error, got: %v", err)
+		}
+	})
+
+	t.Run("PresetFormatMismatchFails", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode: ModeEnrichAndBlock,
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
+				"seed":                       {Path: dbFilePath, DatabaseType: "bin", FieldsPreconfigured: dbwrappers.PresetIPinfoLite},
+			},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err == nil {
+			t.Fatal("expected error when preset format does not match databaseType")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil")
+		}
+		if !strings.Contains(err.Error(), "fieldsPreconfigured") {
+			t.Errorf("expected format mismatch error, got: %v", err)
 		}
 	})
 
@@ -211,7 +301,7 @@ func TestNew(t *testing.T) {
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
-				"lite":                       {URL: "https://example.com/geo.mmdb", DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, DefaultFile: "ipinfo_lite.mmdb"},
+				"lite":                       {URL: "https://example.com/geo.mmdb", DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, DefaultFile: "ipinfo_lite.mmdb", FieldsPreconfigured: dbwrappers.PresetIPinfoLite},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -250,7 +340,7 @@ func TestNew(t *testing.T) {
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				"city":                       {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none", Enabled: boolPtr(false)},
-				DefaultIP2LocationCatalogKey: {Path: dbFilePath, DatabaseType: "bin"},
+				DefaultIP2LocationCatalogKey: {Path: dbFilePath, DatabaseType: "bin", FieldsPreconfigured: dbwrappers.PresetIP2LocationLite},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -281,6 +371,9 @@ func TestNew(t *testing.T) {
 		if row.DefaultFile != DefaultIP2LocationGeoFile {
 			t.Errorf("defaultFile: got %q", row.DefaultFile)
 		}
+		if row.FieldsPreconfigured != dbwrappers.PresetIP2LocationLite {
+			t.Errorf("default preset: got %q", row.FieldsPreconfigured)
+		}
 		if _, ok := cfg.DatabaseSources[DefaultIPinfoCatalogKey]; !ok {
 			t.Error("expected default_ipinfo")
 		}
@@ -297,7 +390,7 @@ func TestNew(t *testing.T) {
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 			DatabaseSources: map[string]DatabaseSource{
-				DefaultIP2LocationCatalogKey: {URL: custom, DatabaseType: "bin", Archive: "zip", Path: dbFilePath},
+				DefaultIP2LocationCatalogKey: {URL: custom, DatabaseType: "bin", Archive: "zip", Path: dbFilePath, FieldsPreconfigured: dbwrappers.PresetIP2LocationLite},
 			},
 		}
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
@@ -339,7 +432,7 @@ func TestNew(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
-				DefaultGeoliteCatalogKey:     {URL: custom, DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, Path: maxmindFilePath},
+				DefaultGeoliteCatalogKey:     {URL: custom, DatabaseType: dbsource.TypeMMDB, Archive: dbsource.ArchiveNone, Path: maxmindFilePath, FieldsPreconfigured: dbwrappers.PresetMaxMindCountry},
 			},
 		}
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
@@ -420,7 +513,7 @@ func TestNew(t *testing.T) {
 			DatabaseSources: map[string]DatabaseSource{
 				// Path only: a URL would GET into t.TempDir() and fail Linux cleanup.
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
-				"geo":                        {Path: dbFilePath, DatabaseType: "bin"},
+				"geo":                        {Path: dbFilePath, DatabaseType: "bin", FieldsPreconfigured: dbwrappers.PresetIP2LocationLite},
 			},
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -832,7 +925,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
-				"geo":                        {DatabaseType: "bin"},
+				"geo":                        {DatabaseType: "bin", FieldsPreconfigured: dbwrappers.PresetIP2LocationLite},
 			},
 			DatabaseAutoUpdateDir: tmpDir,
 			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
@@ -864,7 +957,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: "bin"},
-				"litezip":                    {URL: "https://example.com/geo.ZIP", DatabaseType: "bin", Archive: "zip"},
+				"litezip":                    {URL: "https://example.com/geo.ZIP", DatabaseType: "bin", Archive: "zip", FieldsPreconfigured: dbwrappers.PresetIP2LocationLite},
 			},
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-forwarded-for", "x-real-ip"},

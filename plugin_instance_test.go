@@ -122,7 +122,7 @@ func instanceBIN(path string) *Config {
 		CountryHeader: "X-Country",
 		DatabaseSources: map[string]geoblock.DatabaseSource{
 			geoblock.DefaultIP2LocationCatalogKey: {Enabled: boolPtrFalse(), DatabaseType: dbsource.TypeBIN},
-			"seed":                                {Path: path, DatabaseType: dbsource.TypeBIN},
+			"seed":                                {Path: path, DatabaseType: dbsource.TypeBIN, FieldsPreconfigured: dbwrappers.PresetIP2LocationLite},
 		},
 		AllowedCountries:     []string{"US"},
 		DisallowedStatusCode: http.StatusForbidden,
@@ -139,7 +139,7 @@ func instanceMaxMind(path string) *Config {
 		CountryHeader: "X-Country",
 		DatabaseSources: map[string]geoblock.DatabaseSource{
 			geoblock.DefaultIP2LocationCatalogKey: {Enabled: boolPtrFalse(), DatabaseType: dbsource.TypeBIN},
-			"seed":                                {Path: path, DatabaseType: dbsource.TypeMMDB},
+			"seed":                                {Path: path, DatabaseType: dbsource.TypeMMDB, FieldsPreconfigured: dbwrappers.PresetMaxMindCountry},
 		},
 		AllowedCountries:     []string{"GB"},
 		DisallowedStatusCode: http.StatusForbidden,

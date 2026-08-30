@@ -124,23 +124,17 @@ func (w *MMDB) Path() string {
 	return w.path
 }
 
-// LookupRecord fills normalized columns from whichever MMDB layouts decode, then Keep(fields).
-func (w *MMDB) LookupRecord(ip string, fields []string) (dbprovider.Record, error) {
-	var flat flatMMDB
-	flatErr := w.Lookup(ip, &flat)
-	var nested nestedMMDB
-	nestedErr := w.Lookup(ip, &nested)
-	if flatErr != nil && nestedErr != nil {
-		return dbprovider.Record{}, flatErr
+// LookupRecord fills Record from the MMDB using fields (dotted path → Record key).
+func (w *MMDB) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error) {
+	var decoded map[string]any
+	if err := w.Lookup(ip, &decoded); err != nil {
+		return dbprovider.Record{}, err
 	}
 	var rec dbprovider.Record
-	if flatErr == nil {
-		rec = recordFromFlat(flat)
-	}
-	if nestedErr == nil {
-		rec = rec.FillEmpty(recordFromNested(nested))
-	}
-	return rec.Keep(fields), nil
+	fields.apply(&rec, func(path string) string {
+		return stringifyMMDB(fields[path], walkPath(decoded, path))
+	})
+	return rec, nil
 }
 
 // Lookup decodes ip into dest (raw MMDB tags).

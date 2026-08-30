@@ -66,6 +66,30 @@ func (r Record) Field(key string) string {
 	}
 }
 
+// Set writes value onto the named Record key. Unknown keys are ignored.
+func (r *Record) Set(key, value string) {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case MetaCountry:
+		r.Country = value
+	case MetaCountryName:
+		r.CountryName = value
+	case MetaContinent:
+		r.Continent = value
+	case MetaContinentCode:
+		r.ContinentCode = value
+	case MetaRegion:
+		r.Region = value
+	case MetaCity:
+		r.City = value
+	case MetaIsp:
+		r.Isp = value
+	case MetaDomain:
+		r.Domain = value
+	case MetaAsn:
+		r.Asn = value
+	}
+}
+
 // FillEmpty copies non-empty src fields into empty fields of r.
 func (r Record) FillEmpty(src Record) Record {
 	if r.Country == "" {
