@@ -20,18 +20,18 @@ const (
 
 // Table stores one value per key and keeps it while any bound context is live or grace has not elapsed.
 //
-//	                   Open (first create)
-//	                          |
-//	                          v
-//	     Open (bind) -----> LIVE <---- Open same key before timer fires
-//	                          |              ^
-//	              last holder Done           | stop timer, keep value
-//	                          v              |
-//	                       ORPHAN -----------+
-//	                          |
-//	             grace elapsed / Reset / grace==0
-//	                          v
-//	                        GONE    cancel(life), delete key
+//	              Open (first create)
+//	                     |
+//	                     v
+//	Open (bind) -----> LIVE <---- Open same key before timer fires
+//	                     |              ^
+//	         last holder Done           | stop timer, keep value
+//	                     v              |
+//	                  ORPHAN -----------+
+//	                     |
+//	        grace elapsed / Reset / grace==0
+//	                     v
+//	                   GONE    cancel(life), delete key
 //
 // drop and fire take the *slot pointer. If items[key] is a different slot
 // (Reset, or a later incarnation), they no-op. fire also no-ops unless
