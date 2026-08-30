@@ -120,14 +120,14 @@ func instanceBIN(path string) *Config {
 	}
 }
 
-// mustRootPlugin calls root New and type-asserts *geoblock.Plugin.
-func mustRootPlugin(t *testing.T, ctx context.Context, cfg *Config, name string) *geoblock.Plugin {
+// mustRootPlugin calls root New and type-asserts *geoblock.Route.
+func mustRootPlugin(t *testing.T, ctx context.Context, cfg *Config, name string) *geoblock.Route {
 	t.Helper()
 	h, err := New(ctx, noopNext{}, cfg, name)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	p, ok := h.(*geoblock.Plugin)
+	p, ok := h.(*geoblock.Route)
 	if !ok {
 		t.Fatalf("handler type %T", h)
 	}
@@ -152,7 +152,7 @@ func usPassRequest() *http.Request {
 }
 
 // requireLookupUS fails unless Lookup(8.8.8.8) returns country US.
-func requireLookupUS(t *testing.T, p *geoblock.Plugin) {
+func requireLookupUS(t *testing.T, p *geoblock.Route) {
 	t.Helper()
 	rec, err := p.Lookup("8.8.8.8")
 	if err != nil || rec.Country != "US" {
@@ -163,7 +163,8 @@ func requireLookupUS(t *testing.T, p *geoblock.Plugin) {
 func TestNew_SameNameConfigSharesIncarnation(t *testing.T) {
 	shortInstanceLeases(t)
 	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"))
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	var n1, n2 int
 	a, err := New(ctx, countHandler{&n1}, cfg, "geoblock")
 	if err != nil {
@@ -173,7 +174,7 @@ func TestNew_SameNameConfigSharesIncarnation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pa, pb := a.(*geoblock.Plugin), b.(*geoblock.Plugin)
+	pa, pb := a.(*geoblock.Route), b.(*geoblock.Route)
 	if !pa.SameCore(pb) {
 		t.Fatal("expected shared incarnation")
 	}
@@ -190,7 +191,8 @@ func TestNew_SameNameConfigSharesIncarnation(t *testing.T) {
 func TestNew_NameMissSeparateIncarnation(t *testing.T) {
 	shortInstanceLeases(t)
 	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"))
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	a := mustRootPlugin(t, ctx, cfg, "geoblock")
 	b := mustRootPlugin(t, ctx, cfg, "geoblock-b")
 	if a.SameCore(b) {
@@ -200,7 +202,8 @@ func TestNew_NameMissSeparateIncarnation(t *testing.T) {
 
 func TestNew_ConfigMissSeparateIncarnation(t *testing.T) {
 	shortInstanceLeases(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	seed := filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
 	a := mustRootPlugin(t, ctx, instanceBIN(seed), "geoblock")
 	cfgB := instanceBIN(seed)

@@ -52,17 +52,8 @@ func binKey(cfg BINConfig) string {
 // OpenBIN returns the singleton BIN for cfg and binds ctx on the process table.
 func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	key := binKey(cfg)
-	v, err := reclaim.Open(ctx, key, func(life context.Context) (any, error) {
-		w, err := newBIN(cfg, logger)
-		if err != nil {
-			return nil, err
-		}
-		// Stop the updater and close the file when this incarnation ends.
-		go func() {
-			<-life.Done()
-			w.close()
-		}()
-		return w, nil
+	v, err := reclaim.Open(ctx, key, func() (any, error) {
+		return newBIN(cfg, logger)
 	})
 	if err != nil {
 		return nil, err
@@ -267,6 +258,11 @@ func (w *BIN) Path() string {
 // SourcePath is the dated or seed file the live handle was copied from.
 func (w *BIN) SourcePath() string {
 	return w.sourceDbPath
+}
+
+// Close stops the updater and the file handle. The reclaim table calls this when the incarnation ends.
+func (w *BIN) Close() {
+	w.close()
 }
 
 func (w *BIN) close() {

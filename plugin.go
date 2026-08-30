@@ -24,7 +24,7 @@ func CreateConfig() *Config {
 	return geoblock.CreateConfig()
 }
 
-// New is the Traefik Yaegi constructor. It reuses one Plugin per name+config on the process table.
+// New is the Traefik Yaegi constructor. It reuses one Plugin per name+config and returns a Route.
 func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http.Handler, error) {
 	if next == nil {
 		return nil, fmt.Errorf("%s: no next handler provided", name)
@@ -39,23 +39,19 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 	return bindPlugin(ctx, next, name, cfg)
 }
 
-// bindPlugin stores or reclaims the Plugin for name+config, then attaches this route.
+// bindPlugin stores or reclaims the NewCore Plugin, then ForRoutes this next.
 func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config) (http.Handler, error) {
-	v, err := reclaim.Open(ctx, pluginKey(name, cfg), func(context.Context) (any, error) {
+	stored, err := reclaim.Open(ctx, pluginKey(name, cfg), func() (any, error) {
 		return geoblock.NewCore(name, cfg)
 	})
 	if err != nil {
 		return nil, err
 	}
-	core, ok := v.(*geoblock.Plugin)
+	pluginInstance, ok := stored.(*geoblock.Plugin)
 	if !ok {
-		return nil, fmt.Errorf("%s: reclaim: want *geoblock.Plugin, got %T", name, v)
+		return nil, fmt.Errorf("%s: reclaim: want *geoblock.Plugin, got %T", name, stored)
 	}
-	h, err := core.ForRoute(ctx, next, cfg)
-	if err != nil {
-		return nil, err
-	}
-	return h, nil
+	return pluginInstance.ForRoute(next)
 }
 
 // pluginKey is the process-table key for one Plugin incarnation.

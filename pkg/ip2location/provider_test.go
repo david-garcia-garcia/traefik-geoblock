@@ -19,6 +19,14 @@ import (
 
 var testDBFile = filepath.Join("..", "..", "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
 
+// holdCtx is a cancelable Open context. Background and TODO panic in reclaim.Open.
+func holdCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func TestNew_LookupWithoutASNFile(t *testing.T) {
 	dbwrappers.Reset()
 	defer dbwrappers.Reset()
@@ -27,7 +35,7 @@ func TestNew_LookupWithoutASNFile(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(context.Background(), DatabaseConfig{Source: dbsource.Config{Path: testDBFile}}, logger)
+	p, err := New(holdCtx(t), DatabaseConfig{Source: dbsource.Config{Path: testDBFile}}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -57,7 +65,7 @@ func TestNew_LookupDB8(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(context.Background(), DatabaseConfig{Source: dbsource.Config{Path: db8}}, logger)
+	p, err := New(holdCtx(t), DatabaseConfig{Source: dbsource.Config{Path: db8}}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -103,7 +111,7 @@ func TestNew_LookupWithASNFile(t *testing.T) {
 		Level: slog.LevelError,
 	}))
 
-	p, err := New(context.Background(), DatabaseConfig{
+	p, err := New(holdCtx(t), DatabaseConfig{
 		Source:    dbsource.Config{Path: testDBFile},
 		AsnSource: dbsource.Config{Path: asnPath},
 	}, logger)
@@ -186,11 +194,11 @@ func TestNew_CloseDoesNotBreakSharedWrapper(t *testing.T) {
 	t.Cleanup(dbwrappers.Reset)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := DatabaseConfig{Source: dbsource.Config{Path: testDBFile}}
-	a, err := New(context.Background(), cfg, logger)
+	a, err := New(holdCtx(t), cfg, logger)
 	if err != nil {
 		t.Fatalf("first New: %v", err)
 	}
-	b, err := New(context.Background(), cfg, logger)
+	b, err := New(holdCtx(t), cfg, logger)
 	if err != nil {
 		t.Fatalf("second New: %v", err)
 	}
@@ -250,7 +258,7 @@ func TestNew_DownloadThroughComponent(t *testing.T) {
 		t.Errorf("dated name: %s", path)
 	}
 
-	p, err := New(context.Background(), DatabaseConfig{
+	p, err := New(holdCtx(t), DatabaseConfig{
 		DatabaseAutoUpdateDir: dir,
 		Source: dbsource.Config{
 			Key:          "litezip",

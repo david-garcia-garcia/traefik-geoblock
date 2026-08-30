@@ -46,17 +46,8 @@ func mmdbKey(cfg MMDBConfig) string {
 // OpenMMDB returns the singleton MMDB for cfg and binds ctx on the process table.
 func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	key := mmdbKey(cfg)
-	v, err := reclaim.Open(ctx, key, func(life context.Context) (any, error) {
-		w, err := newMMDB(cfg, logger)
-		if err != nil {
-			return nil, err
-		}
-		// Stop the updater and close the file when this incarnation ends.
-		go func() {
-			<-life.Done()
-			w.close()
-		}()
-		return w, nil
+	v, err := reclaim.Open(ctx, key, func() (any, error) {
+		return newMMDB(cfg, logger)
 	})
 	if err != nil {
 		return nil, err
@@ -145,6 +136,11 @@ func (w *MMDB) Lookup(ip string, dest any) error {
 		return fmt.Errorf("MMDB is not open")
 	}
 	return db.Lookup(parsed, dest)
+}
+
+// Close stops the updater and the reader. The reclaim table calls this when the incarnation ends.
+func (w *MMDB) Close() {
+	w.close()
 }
 
 func (w *MMDB) close() {

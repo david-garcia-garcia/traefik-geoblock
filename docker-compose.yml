@@ -321,6 +321,49 @@ services:
       - "traefik.http.routers.router-shared3.middlewares=geoblock2@docker"  # SHARES geoblock2 middleware
       - "traefik.http.services.service-shared3.loadbalancer.server.port=80"
 
+  # Three routes, one middleware. Pester recreates this service with RECLAIM_BLOCKED / RECLAIM_ALLOWED.
+  whoami-reclaim:
+    image: traefik/whoami
+    container_name: "simple-service-reclaim"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-reclaima.rule=PathPrefix(`/reclaima`)"
+      - "traefik.http.routers.router-reclaima.entrypoints=web"
+      - "traefik.http.routers.router-reclaima.middlewares=geoblock-reclaim@docker"
+      - "traefik.http.services.service-reclaima.loadbalancer.server.port=80"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.enabled=true"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.logLevel=INFO"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.logFormat=JSON"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.databaseSources.seed.path=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/seeds/IP2LOCATION-LITE-DB1.IPV6.BIN"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.ip2location_source_geo=seed"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.allowPrivate=true"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.blockedCountries=${RECLAIM_BLOCKED:-US}"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.allowedCountries=${RECLAIM_ALLOWED:-DE}"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.defaultAllow=false"
+
+  whoami-reclaim-b:
+    image: traefik/whoami
+    container_name: "simple-service-reclaim-b"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-reclaimb.rule=PathPrefix(`/reclaimb`)"
+      - "traefik.http.routers.router-reclaimb.entrypoints=web"
+      - "traefik.http.routers.router-reclaimb.middlewares=geoblock-reclaim@docker"
+      - "traefik.http.services.service-reclaimb.loadbalancer.server.port=80"
+
+  whoami-reclaim-c:
+    image: traefik/whoami
+    container_name: "simple-service-reclaim-c"
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.router-reclaimc.rule=PathPrefix(`/reclaimc`)"
+      - "traefik.http.routers.router-reclaimc.entrypoints=web"
+      - "traefik.http.routers.router-reclaimc.middlewares=geoblock-reclaim@docker"
+      - "traefik.http.services.service-reclaimc.loadbalancer.server.port=80"
+
   # Service for testing log status headers
   whoami-logheaders:
     image: traefik/whoami

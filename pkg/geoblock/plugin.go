@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
@@ -157,11 +158,14 @@ func CreateConfig() *Config {
 	}
 }
 
-// Update the Plugin struct to store the ban HTML content instead of template
+// Plugin is the shared policy for one middleware name and config, including the database provider.
+// next is only set on the ServeHTTP value copy for that call.
 type Plugin struct {
 	next                  http.Handler
 	name                  string
 	db                    dbprovider.Provider
+	lifeCancel            context.CancelFunc
+	closeOnce             sync.Once
 	enabled               bool
 	allowedCountries      map[string]struct{} // Instead of []string to improve lookup performance
 	blockedCountries      map[string]struct{} // Instead of []string to improve lookup performance
@@ -181,28 +185,6 @@ type Plugin struct {
 	excludedPathsRegex    *regexp.Regexp      // Matching {host}{path} skip blocking (after include)
 	logStatusDetailHeader string
 	requestHeaderEnrich   map[string]string // header name -> metadata key
-}
-
-// New constructs one Plugin for this config. It does not reuse instances.
-func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http.Handler, error) {
-	if next == nil {
-		return nil, fmt.Errorf("%s: no next handler provided", name)
-	}
-	if cfg == nil {
-		return nil, fmt.Errorf("%s: no config provided", name)
-	}
-	if err := Prepare(cfg, name); err != nil {
-		return nil, err
-	}
-	core, err := NewCore(name, cfg)
-	if err != nil {
-		return nil, err
-	}
-	h, err := core.ForRoute(ctx, next, cfg)
-	if err != nil {
-		return nil, err
-	}
-	return h, nil
 }
 
 // Prepare normalizes and validates cfg. Mutates cfg. Call before hashing or NewCore.
@@ -251,38 +233,7 @@ func pluginLogger(name string, cfg *Config) *slog.Logger {
 	return logging.New(name, cfg.LogLevel, cfg.LogFormat, bootstrap)
 }
 
-// ForRoute returns a copy that serves next and binds wrappers to ctx.
-func (p Plugin) ForRoute(ctx context.Context, next http.Handler, cfg *Config) (*Plugin, error) {
-	p.next = next
-	if !p.enabled {
-		p.db = nil
-		return &p, nil
-	}
-	db, err := openDatabaseProvider(ctx, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to get database provider: %w", p.name, err)
-	}
-	p.db = db
-	return &p, nil
-}
-
-// SameCore reports whether a and b share stored incarnation fields (maps, IP helpers).
-func (p *Plugin) SameCore(q *Plugin) bool {
-	if p == nil || q == nil {
-		return false
-	}
-	return p.allowedIPBlocks == q.allowedIPBlocks
-}
-
-// Next is the per-router handler this copy serves.
-func (p *Plugin) Next() http.Handler {
-	if p == nil {
-		return nil
-	}
-	return p.next
-}
-
-// NewCore builds the Plugin fields (no next, no provider). cfg must already be Prepare'd.
+// NewCore builds the Plugin and opens the database provider on this incarnation’s lifetime. cfg must already be Prepare'd.
 func NewCore(name string, cfg *Config) (*Plugin, error) {
 	logger := pluginLogger(name, cfg)
 	logger.Debug("initializing plugin",
@@ -348,8 +299,10 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		logger.Debug("compiled excludedPathsRegex", "pattern", cfg.ExcludedPathsRegex)
 	}
 
-	return &Plugin{
+	life, lifeCancel := context.WithCancel(context.Background())
+	pluginInstance := &Plugin{
 		name:                  name,
+		lifeCancel:            lifeCancel,
 		enabled:               cfg.Enabled,
 		allowedCountries:      allowedCountries,
 		blockedCountries:      blockedCountries,
@@ -369,7 +322,37 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		logger:                logger,
 		logStatusDetailHeader: cfg.LogStatusDetailHeader,
 		requestHeaderEnrich:   requestHeaderEnrich,
-	}, nil
+	}
+	if err := pluginInstance.bindDatabase(life, cfg); err != nil {
+		lifeCancel()
+		return nil, err
+	}
+	return pluginInstance, nil
+}
+
+// Close ends this incarnation’s lifetime so format wrappers drop this holder.
+func (p *Plugin) Close() {
+	if p == nil {
+		return
+	}
+	p.closeOnce.Do(func() {
+		if p.lifeCancel != nil {
+			p.lifeCancel()
+		}
+	})
+}
+
+// bindDatabase opens the provider bound to this incarnation’s lifetime.
+func (p *Plugin) bindDatabase(life context.Context, cfg *Config) error {
+	if !p.enabled {
+		return nil
+	}
+	db, err := openDatabaseProvider(life, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
+	if err != nil {
+		return fmt.Errorf("%s: failed to get database provider: %w", p.name, err)
+	}
+	p.db = db
+	return nil
 }
 
 const mmdbSourceMinAge = dbsource.DefaultMinAge
@@ -652,8 +635,9 @@ func (p Plugin) setLogHeaders(req *http.Request, status, reason string) {
 	}
 }
 
-// ServeHTTP implements the http.Handler interface.
-func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+// ServeHTTP applies this Plugin’s policy, then calls next.
+func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request, next http.Handler) {
+	p.next = next
 	if !p.enabled {
 		logging.Trace(p.logger, "plugin disabled, passing request through")
 		p.next.ServeHTTP(rw, req)

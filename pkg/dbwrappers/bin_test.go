@@ -12,6 +12,14 @@ import (
 
 var testBIN = filepath.Join("..", "..", "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
 
+// holdCtx is a cancelable Open context. Background and TODO panic in reclaim.Open.
+func holdCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 }
@@ -20,11 +28,11 @@ func TestOpenBIN_LookupAndSingleton(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
 	cfg := BINConfig{Source: dbsource.Config{Path: testBIN}}
-	a, err := OpenBIN(context.Background(), cfg, testLogger())
+	a, err := OpenBIN(holdCtx(t), cfg, testLogger())
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	b, err := OpenBIN(context.Background(), cfg, testLogger())
+	b, err := OpenBIN(holdCtx(t), cfg, testLogger())
 	if err != nil {
 		t.Fatalf("OpenBIN 2: %v", err)
 	}
@@ -43,7 +51,7 @@ func TestOpenBIN_LookupAndSingleton(t *testing.T) {
 func TestOpenBIN_AllowMissing(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	w, err := OpenBIN(context.Background(), BINConfig{AllowMissing: true}, testLogger())
+	w, err := OpenBIN(holdCtx(t), BINConfig{AllowMissing: true}, testLogger())
 	if err != nil {
 		t.Fatalf("AllowMissing: %v", err)
 	}
@@ -64,7 +72,7 @@ func TestOpenBIN_EnvFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", envDir)
-	w, err := OpenBIN(context.Background(), BINConfig{
+	w, err := OpenBIN(holdCtx(t), BINConfig{
 		Source:          dbsource.Config{Path: "/nonexistent/bad.bin"},
 		DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
 	}, testLogger())
@@ -80,7 +88,7 @@ func TestOpenBIN_EnvFallback(t *testing.T) {
 func TestOpenBIN_HotSwap(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	w, err := OpenBIN(context.Background(), BINConfig{Source: dbsource.Config{Path: testBIN}}, testLogger())
+	w, err := OpenBIN(holdCtx(t), BINConfig{Source: dbsource.Config{Path: testBIN}}, testLogger())
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}

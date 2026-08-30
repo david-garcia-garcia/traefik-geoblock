@@ -1,7 +1,6 @@
 package geoblock
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,9 +15,9 @@ const (
 	throughputWarmup       = 2000
 )
 
-func newThroughputPlugin(tb testing.TB) *Plugin {
+func newThroughputPlugin(tb testing.TB) *Route {
 	tb.Helper()
-	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Enabled:              true,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
@@ -35,9 +34,9 @@ func newThroughputPlugin(tb testing.TB) *Plugin {
 	if err != nil {
 		tb.Fatalf("failed to create plugin: %v", err)
 	}
-	plugin, ok := handler.(*Plugin)
+	plugin, ok := handler.(*Route)
 	if !ok {
-		tb.Fatalf("expected *Plugin, got %T", handler)
+		tb.Fatalf("expected *Route, got %T", handler)
 	}
 	return plugin
 }
@@ -117,7 +116,7 @@ func BenchmarkPlugin_ServeHTTP(b *testing.B) {
 
 // Plugin-only allocs: request and recorder are reused (Traefik does this).
 func BenchmarkPlugin_ServeHTTP_Enrich(b *testing.B) {
-	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+	handler, err := newRoute(holdCtx(b), &noopHandler{}, &Config{
 		Enabled:              true,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
@@ -139,7 +138,7 @@ func BenchmarkPlugin_ServeHTTP_Enrich(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	plugin := handler.(*Plugin)
+	plugin := handler.(*Route)
 	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 	req.Header.Set("X-Real-IP", "8.8.8.8")
 	rr := httptest.NewRecorder()
@@ -151,10 +150,10 @@ func BenchmarkPlugin_ServeHTTP_Enrich(b *testing.B) {
 	}
 }
 
-func newLITEASNPlugin(tb testing.TB) *Plugin {
+func newLITEASNPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	asn := requireASN(tb)
-	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Enabled:              true,
 		DatabaseSources:      seedCatalogPair(dbFilePath, asn),
 		Ip2locationSourceGeo: "geo",
@@ -172,14 +171,14 @@ func newLITEASNPlugin(tb testing.TB) *Plugin {
 	if err != nil {
 		tb.Fatalf("failed to create LITE+ASN plugin: %v", err)
 	}
-	return handler.(*Plugin)
+	return handler.(*Route)
 }
 
-func newDB8ASNPlugin(tb testing.TB) *Plugin {
+func newDB8ASNPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	path := requireDB8(tb)
 	asn := requireASN(tb)
-	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Enabled:              true,
 		DatabaseSources:      seedCatalogPair(path, asn),
 		Ip2locationSourceGeo: "geo",
@@ -198,13 +197,13 @@ func newDB8ASNPlugin(tb testing.TB) *Plugin {
 	if err != nil {
 		tb.Fatalf("failed to create DB8+ASN plugin: %v", err)
 	}
-	return handler.(*Plugin)
+	return handler.(*Route)
 }
 
-func newDB8CountryPlugin(tb testing.TB) *Plugin {
+func newDB8CountryPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	path := requireDB8(tb)
-	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Enabled:              true,
 		DatabaseSources:      seedCatalog(path),
 		Ip2locationSourceGeo: "seed",
@@ -221,17 +220,17 @@ func newDB8CountryPlugin(tb testing.TB) *Plugin {
 	if err != nil {
 		tb.Fatalf("failed to create DB8 country plugin: %v", err)
 	}
-	plugin, ok := handler.(*Plugin)
+	plugin, ok := handler.(*Route)
 	if !ok {
-		tb.Fatalf("expected *Plugin, got %T", handler)
+		tb.Fatalf("expected *Route, got %T", handler)
 	}
 	return plugin
 }
 
-func newDB8FullEnrichPlugin(tb testing.TB) *Plugin {
+func newDB8FullEnrichPlugin(tb testing.TB) *Route {
 	tb.Helper()
 	path := requireDB8(tb)
-	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Enabled:              true,
 		DatabaseSources:      seedCatalog(path),
 		Ip2locationSourceGeo: "seed",
@@ -249,9 +248,9 @@ func newDB8FullEnrichPlugin(tb testing.TB) *Plugin {
 	if err != nil {
 		tb.Fatalf("failed to create DB8 enrich plugin: %v", err)
 	}
-	plugin, ok := handler.(*Plugin)
+	plugin, ok := handler.(*Route)
 	if !ok {
-		tb.Fatalf("expected *Plugin, got %T", handler)
+		tb.Fatalf("expected *Route, got %T", handler)
 	}
 	return plugin
 }
@@ -415,9 +414,9 @@ func BenchmarkPlugin_ServeHTTP_Reuse(b *testing.B) {
 
 const maxmindDummyIP = "81.2.69.142"
 
-func newMaxMindPlugin(tb testing.TB) *Plugin {
+func newMaxMindPlugin(tb testing.TB) *Route {
 	tb.Helper()
-	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+	handler, err := newRoute(holdCtx(tb), &noopHandler{}, &Config{
 		Enabled:          true,
 		DatabaseProvider: DatabaseProviderMaxMind,
 		DatabaseSources:  seedCatalog(maxmindFilePath), MaxmindSource: "seed",
@@ -434,9 +433,9 @@ func newMaxMindPlugin(tb testing.TB) *Plugin {
 	if err != nil {
 		tb.Fatalf("failed to create MaxMind plugin: %v", err)
 	}
-	plugin, ok := handler.(*Plugin)
+	plugin, ok := handler.(*Route)
 	if !ok {
-		tb.Fatalf("expected *Plugin, got %T", handler)
+		tb.Fatalf("expected *Route, got %T", handler)
 	}
 	return plugin
 }
@@ -490,7 +489,7 @@ func BenchmarkPlugin_ServeHTTP_MaxMind(b *testing.B) {
 }
 
 func BenchmarkPlugin_ServeHTTP_MaxMindEnrich(b *testing.B) {
-	handler, err := New(context.TODO(), &noopHandler{}, &Config{
+	handler, err := newRoute(holdCtx(b), &noopHandler{}, &Config{
 		Enabled:          true,
 		DatabaseProvider: DatabaseProviderMaxMind,
 		DatabaseSources:  seedCatalog(maxmindFilePath), MaxmindSource: "seed",
@@ -512,7 +511,7 @@ func BenchmarkPlugin_ServeHTTP_MaxMindEnrich(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	plugin := handler.(*Plugin)
+	plugin := handler.(*Route)
 	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 	req.Header.Set("X-Real-IP", maxmindDummyIP)
 	rr := httptest.NewRecorder()

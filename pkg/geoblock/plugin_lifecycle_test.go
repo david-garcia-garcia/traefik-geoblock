@@ -138,20 +138,20 @@ func lifecycleIPinfo(path, url, dir string) *Config {
 	}
 }
 
-func mustPlugin(t *testing.T, ctx context.Context, cfg *Config) *Plugin {
+func mustPlugin(t *testing.T, ctx context.Context, cfg *Config) *Route {
 	t.Helper()
-	h, err := New(ctx, &noopHandler{}, cfg, pluginName)
+	h, err := newRoute(ctx, &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	p, ok := h.(*Plugin)
+	p, ok := h.(*Route)
 	if !ok {
 		t.Fatalf("handler type %T", h)
 	}
 	return p
 }
 
-func requireLookupUS(t *testing.T, p *Plugin) {
+func requireLookupUS(t *testing.T, p *Route) {
 	t.Helper()
 	rec, err := p.Lookup("8.8.8.8")
 	if err != nil || rec.Country != "US" {
@@ -159,7 +159,7 @@ func requireLookupUS(t *testing.T, p *Plugin) {
 	}
 }
 
-func requireLookupClosed(t *testing.T, p *Plugin) {
+func requireLookupClosed(t *testing.T, p *Route) {
 	t.Helper()
 	if _, err := p.Lookup("8.8.8.8"); err == nil {
 		t.Fatal("expected lookup to fail after dispose")

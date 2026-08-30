@@ -1,7 +1,6 @@
 package geoblock
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,7 +85,7 @@ func TestIPHeaderStrategy_Integration(t *testing.T) {
 			testCfg := *cfg
 			testCfg.IPHeaderStrategy = tt.strategy
 
-			plugin, err := New(context.TODO(), &noopHandler{}, &testCfg, pluginName)
+			plugin, err := newRoute(holdCtx(t), &noopHandler{}, &testCfg, pluginName)
 			if err != nil {
 				t.Fatalf("Failed to create plugin: %v", err)
 			}
@@ -125,7 +124,7 @@ func TestIPHeaderStrategy_CountryHeaderPriority(t *testing.T) {
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}
@@ -190,7 +189,7 @@ func TestIPHeaderStrategy_InvalidStrategy(t *testing.T) {
 		DisallowedStatusCode: http.StatusForbidden,
 	}
 
-	_, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	_, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err == nil {
 		t.Error("Expected error for invalid IP header strategy, but got none")
 	}
@@ -215,7 +214,7 @@ func TestIPHeaderStrategy_PrivateIPDoesNotOverridePublicCountry(t *testing.T) {
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll, // Check all IPs to test override scenario
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}
@@ -301,7 +300,7 @@ func TestIPHeaderStrategy_CountryHeaderOverrideEdgeCases(t *testing.T) {
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}
@@ -449,7 +448,7 @@ func TestIPHeaderStrategy_HeaderOrderRespected(t *testing.T) {
 			testCfg := *cfg
 			testCfg.IPHeaders = tt.ipHeaders
 
-			plugin, err := New(context.TODO(), &noopHandler{}, &testCfg, pluginName)
+			plugin, err := newRoute(holdCtx(t), &noopHandler{}, &testCfg, pluginName)
 			if err != nil {
 				t.Fatalf("Failed to create plugin: %v", err)
 			}
@@ -462,7 +461,7 @@ func TestIPHeaderStrategy_HeaderOrderRespected(t *testing.T) {
 			}
 
 			// Test GetRemoteIPs order
-			p := plugin.(*Plugin)
+			p := plugin.(*Route)
 			actualIPs := p.GetRemoteIPs(req)
 
 			if len(actualIPs) != len(tt.expectedOrder) {
@@ -564,7 +563,7 @@ func TestIPHeaderStrategy_HeaderOrderWithStrategies(t *testing.T) {
 				CountryHeader:        "x-country-code",
 			}
 
-			plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+			plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 			if err != nil {
 				t.Fatalf("Failed to create plugin: %v", err)
 			}
@@ -791,7 +790,7 @@ func TestRemoteAddress_IntegrationWithStrategies(t *testing.T) {
 			testCfg.IPHeaders = tt.ipHeaders
 			testCfg.IPHeaderStrategy = tt.strategy
 
-			plugin, err := New(context.TODO(), &noopHandler{}, &testCfg, pluginName)
+			plugin, err := newRoute(holdCtx(t), &noopHandler{}, &testCfg, pluginName)
 			if err != nil {
 				t.Fatalf("Failed to create plugin: %v", err)
 			}

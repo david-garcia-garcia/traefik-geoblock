@@ -1,7 +1,6 @@
 package geoblock
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,7 +28,7 @@ func pluginRootDir(t *testing.T) string {
 func TestNew(t *testing.T) {
 	t.Setenv(fileutils.PluginPathEnv, pluginRootDir(t))
 	t.Run("Disabled", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: false, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Enabled: false, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -45,7 +44,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("NoNextHandler", func(t *testing.T) {
-		plugin, err := New(context.TODO(), nil, &Config{Enabled: true, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
+		plugin, err := newRoute(holdCtx(t), nil, &Config{Enabled: true, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -55,7 +54,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("Nogeoblock.Config", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, nil, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, nil, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -65,7 +64,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("InvalidDisallowedStatusCode", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: -1, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: -1, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -84,7 +83,7 @@ func TestNew(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = os.Chdir(wd) })
 		t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", "")
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: http.StatusForbidden, DatabaseSources: seedCatalog(""), Ip2locationSourceGeo: "seed", IPHeaders: []string{"x-real-ip"}}, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Enabled: true, DisallowedStatusCode: http.StatusForbidden, DatabaseSources: seedCatalog(""), Ip2locationSourceGeo: "seed", IPHeaders: []string{"x-real-ip"}}, pluginName)
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -98,7 +97,7 @@ func TestNew(t *testing.T) {
 		if err := os.WriteFile(bad, []byte("not a bin"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseSources:      seedCatalog(bad),
 			Ip2locationSourceGeo: "seed",
@@ -113,7 +112,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("UnsupportedDatabaseProvider", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseProvider:     "no-such-vendor",
 			DisallowedStatusCode: http.StatusForbidden,
@@ -132,7 +131,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("ExplicitMaxMindProvider", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseProvider:     DatabaseProviderMaxMind,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -152,7 +151,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("ExplicitIPinfoProvider", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseProvider:     DatabaseProviderIPinfo,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -168,7 +167,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("IPinfoEmptyPathUsesBundledMMDB", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseProvider:     DatabaseProviderIPinfo,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -200,7 +199,7 @@ func TestNew(t *testing.T) {
 			IPHeaders:            []string{"x-real-ip"},
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("empty dir should WARN and use temp: %v", err)
 		}
@@ -213,7 +212,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("IPinfoEmptyMapUsesSeed", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseProvider:     DatabaseProviderIPinfo,
 			DatabaseSources:      map[string]DatabaseSource{},
@@ -230,7 +229,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("FreeCatalogKeySucceeds", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled: true,
 			DatabaseSources: map[string]DatabaseSource{
 				"city":                       {URL: "https://example.com/city.BIN", DatabaseType: "bin", Archive: "none"},
@@ -250,7 +249,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("MissingPointerKeyWarnsAndStarts", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseProvider:     DatabaseProviderIPinfo,
 			IpinfoSource:         "lite",
@@ -297,7 +296,7 @@ func TestNew(t *testing.T) {
 				DefaultIP2LocationCatalogKey: {URL: custom, DatabaseType: "bin", Archive: "zip", Path: dbFilePath},
 			},
 		}
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
@@ -340,7 +339,7 @@ func TestNew(t *testing.T) {
 				DefaultGeoliteCatalogKey: {URL: custom, DatabaseType: "mmdb", Archive: "none", Path: maxmindFilePath},
 			},
 		}
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
@@ -353,7 +352,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("PointerTypeMismatchFails", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:               true,
 			DisallowedStatusCode:  http.StatusForbidden,
 			IPHeaders:             []string{"x-real-ip"},
@@ -373,7 +372,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("UnknownDatabaseTypeFails", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled: true,
 			DatabaseSources: map[string]DatabaseSource{
 				"litezip": {URL: "https://example.com/db.zip", DatabaseType: "csv", Archive: "zip"},
@@ -392,7 +391,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("UnknownArchiveFails", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled: true,
 			DatabaseSources: map[string]DatabaseSource{
 				"litezip": {URL: "https://example.com/db.zip", DatabaseType: "bin", Archive: "rar"},
@@ -411,7 +410,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("ExtensionlessURLWithoutArchiveFails", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled: true,
 			DatabaseSources: map[string]DatabaseSource{
 				"tok": {URL: "https://example.com/download", DatabaseType: "bin"},
@@ -433,7 +432,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("GeoNamedKeyIsOrdinary", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			Ip2locationSourceGeo: "geo",
 			DatabaseSources: map[string]DatabaseSource{
@@ -454,7 +453,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("ExplicitIP2LocationProvider", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseProvider:     DatabaseProviderIP2Location,
 			DisallowedStatusCode: http.StatusForbidden,
@@ -470,7 +469,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("EmptyMapLeavesASNEmpty", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseSources:      map[string]DatabaseSource{},
 			DisallowedStatusCode: http.StatusForbidden,
@@ -483,7 +482,7 @@ func TestNew(t *testing.T) {
 		if plugin == nil {
 			t.Error("expected plugin not to be nil")
 		}
-		rec, err := plugin.(*Plugin).Lookup("8.8.8.8")
+		rec, err := plugin.(*Route).Lookup("8.8.8.8")
 		if err != nil {
 			t.Errorf("Lookup: %v", err)
 		}
@@ -493,7 +492,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("RequestHeaderEnrichIspDomainKeysAllowed", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -512,7 +511,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("RequestHeaderEnrichAsnKeyAllowed", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -528,7 +527,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("CountryHeaderFoldsIntoRequestHeaderEnrich", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			CountryHeader:        "X-IPCountry",
 			DisallowedStatusCode: http.StatusForbidden,
@@ -538,14 +537,14 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		p := plugin.(*Plugin)
+		p := plugin.(*Route)
 		if got := p.requestHeaderEnrich[http.CanonicalHeaderKey("X-IPCountry")]; got != dbprovider.MetaCountry {
 			t.Errorf("folded countryHeader: got %q want %s", got, dbprovider.MetaCountry)
 		}
 	})
 
 	t.Run("RequestHeaderEnrichWinsOverCountryHeader", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			CountryHeader:        "X-Geo-Country",
 			RequestHeaderEnrich:  map[string]string{"X-Geo-Country": "city"},
@@ -556,14 +555,14 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		p := plugin.(*Plugin)
+		p := plugin.(*Route)
 		if got := p.requestHeaderEnrich[http.CanonicalHeaderKey("X-Geo-Country")]; got != dbprovider.MetaCity {
 			t.Errorf("explicit enrich should win: got %q want %s", got, dbprovider.MetaCity)
 		}
 	})
 
 	t.Run("UnknownRequestHeaderEnrichKey", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -582,7 +581,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("EmptyIPHeaders", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{}, // Empty slice should be rejected
@@ -597,7 +596,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("CustomIPHeaders", func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"custom-ip-header", "another-ip-header"},
@@ -667,7 +666,7 @@ func TestNew(t *testing.T) {
 		}()
 
 		// Try to create plugin with empty DatabaseFilePath - should use environment variable
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DisallowedStatusCode: http.StatusForbidden,
 			IPHeaders:            []string{"x-real-ip"},
@@ -683,7 +682,7 @@ func TestNew(t *testing.T) {
 
 		// Verify the plugin works by testing a lookup
 		if plugin != nil {
-			rec, err := plugin.(*Plugin).Lookup("8.8.8.8")
+			rec, err := plugin.(*Route).Lookup("8.8.8.8")
 			if err != nil {
 				t.Errorf("expected successful lookup with env var database, but got: %v", err)
 			}
@@ -723,7 +722,7 @@ func TestNew(t *testing.T) {
 			}
 		}()
 
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseSources:      seedCatalog("/nonexistent/path/bad-database.bin"),
 			Ip2locationSourceGeo: "seed",
@@ -740,7 +739,7 @@ func TestNew(t *testing.T) {
 		}
 
 		if plugin != nil {
-			rec, err := plugin.(*Plugin).Lookup("8.8.8.8")
+			rec, err := plugin.(*Route).Lookup("8.8.8.8")
 			if err != nil {
 				t.Errorf("expected successful lookup with env var database, but got: %v", err)
 			}
@@ -771,7 +770,7 @@ func TestNew(t *testing.T) {
 		if err := os.WriteFile(bad, []byte("not a bin"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseSources:      seedCatalog(bad),
 			Ip2locationSourceGeo: "seed",
@@ -803,7 +802,7 @@ func TestNew(t *testing.T) {
 			}
 		}()
 
-		plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:               true,
 			DatabaseAutoUpdateDir: t.TempDir(),
 			DisallowedStatusCode:  http.StatusForbidden,
@@ -859,7 +858,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 			IPHeaders:             []string{"x-forwarded-for", "x-real-ip"},
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -868,7 +867,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 		}
 
 		// Verify that the database is working by testing a lookup
-		p := plugin.(*Plugin)
+		p := plugin.(*Route)
 		rec, err := p.Lookup("8.8.8.8")
 		if err != nil {
 			t.Errorf("expected database to be initialized and working, but lookup failed: %v", err)
@@ -890,7 +889,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 			// Deliberately omit DatabaseAutoUpdateDir AND DatabaseFilePath
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err == nil {
 			t.Error("expected error about missing database path, but got none")
 		}
@@ -915,7 +914,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error when falling back to default database, but got: %v", err)
 		}
