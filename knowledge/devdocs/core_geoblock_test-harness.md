@@ -34,7 +34,7 @@ Unit and bench tests live next to the owner package. Traefik behavior is proven 
 
 ```go
 func TestRequestHeaderEnrich(t *testing.T) {
-	handler, err := New(context.TODO(), &noopHandler{}, &Config{Enabled: true, /* ... */}, pluginName)
+	handler, err := New(context.TODO(), &noopHandler{}, &Config{Mode: geoblock.ModeEnrichAndBlock, CountryHeader: "X-Country", /* ... */}, pluginName)
 	req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 	req.Header.Set("X-Real-IP", "8.8.8.8")
 	handler.ServeHTTP(httptest.NewRecorder(), req)

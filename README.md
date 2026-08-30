@@ -58,7 +58,9 @@ Every request that reaches the plugin gets a local GeoIP lookup. The result is w
 - **Traefik access logs** can `keep` those names so every line is geo-aware (dashboards, SIEM, compliance).
 - Headers are **not** copied onto the response, so browsers and other clients do not see them.
 
-Blocking is optional. You can run the middleware with `defaultAllow: true` and empty country lists and still enrich.
+Use `mode` to choose lookup, block, or both. Empty `mode` is `disabled` (pass through, no database). `enrich` and `enrichandblock` open the GeoIP database; `block` does not. `countryHeader` is required whenever `mode` is not `disabled`: lookup writes the country there, and the block stage reads that same header.
+
+To share one download/token config across routes, put `mode: enrich` on a shared middleware and `mode: block` (country lists only) on each route. Chain enrich before block. `block` must not run first or `countryHeader` is missing and `banIfError` applies.
 
 > **Recommended**: map the fields you need with `requestHeaderEnrich`, and set `logStatusDetailHeader` if you also want the allow/block reason (`pass:{reason}` / `block:{reason}`). Keep those header names in Traefik access logs.
 
@@ -67,7 +69,7 @@ Blocking is optional. You can run the middleware with `defaultAllow: true` and e
 | Config Setting | Purpose | Example Values |
 |----------------|---------|----------------|
 | `requestHeaderEnrich` | Geo metadata on the request. Every mapped header is written. Missing values are `null`. Country on a private IP is `PRIVATE`. | `X-Geo-Country: US`, `X-Geo-Region: null` |
-| `countryHeader` | **Deprecated.** Use `requestHeaderEnrich` with key `country` | `US`, `DE`, `PRIVATE` |
+| `countryHeader` | **Required** when `mode` is not `disabled`. Lookup writes the country here; block reads it. | `US`, `DE`, `PRIVATE` |
 | `logStatusDetailHeader` | Decision with reason | `pass:allowed_country`, `block:blocked_country` |
 
 ### logStatusDetailHeader Values
@@ -390,7 +392,7 @@ http:
           #-------------------------------
           # Core Settings
           #-------------------------------
-          enabled: true                   # Enable/disable the plugin entirely
+          mode: enrichandblock            # disabled | enrich | block | enrichandblock (empty = disabled)
           defaultAllow: false             # Default behavior when no rules match (false = block)
           
           #-------------------------------
@@ -586,12 +588,13 @@ http:
           # Request header settings
           #-------------------------------  
           countryHeader: "X-IPCountry"
-          # Deprecated. Prefer requestHeaderEnrich (below) with metadata key country.
-          # If set, the plugin copies this header name onto requestHeaderEnrich as country
-          # unless that header is already mapped. An explicit enrich mapping wins.
+          # Required when mode is not disabled. Enrich/enrichandblock write the ISO
+          # country (or PRIVATE) here. Block/enrichandblock read this header for
+          # country allow/block. If requestHeaderEnrich also maps country, it must
+          # use this same header name.
 
           requestHeaderEnrich:
-            X-Geo-Country: country
+            X-IPCountry: country            # must be the same header as countryHeader
             X-Geo-Country-Name: country_name
             X-Geo-Continent: continent
             X-Geo-Continent-Code: continent_code
@@ -620,31 +623,68 @@ http:
 
 ```
 
+Share one catalog across routes by chaining `enrich` then `block`. Put download and tokens on the shared enrich middleware. Put country lists on each route’s block middleware. Order matters: enrich must run first so `countryHeader` is present.
+
+```yaml
+http:
+  middlewares:
+    geo-enrich:
+      plugin:
+        geoblock:
+          mode: enrich
+          countryHeader: X-IPCountry
+          ipHeaders:
+            - x-forwarded-for
+            - x-real-ip
+          databaseProvider: ip2location
+          ip2location_source_geo: litezip
+          databaseSources:
+            litezip:
+              url: "https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
+              databaseType: bin
+              archive: zip
+    geo-block-us:
+      plugin:
+        geoblock:
+          mode: block
+          countryHeader: X-IPCountry
+          ipHeaders:
+            - x-forwarded-for
+            - x-real-ip
+          allowedCountries:
+            - US
+          defaultAllow: false
+  routers:
+    app:
+      rule: Host(`app.example`)
+      middlewares:
+        - geo-enrich
+        - geo-block-us
+```
+
 ### Processing Order
 
 The plugin processes requests in the following order:
 
-1. Check if plugin is enabled
+1. If `mode` is `disabled`, pass through
 2. Check bypass headers
 3. Check if HTTP verb is in ignoreVerbs list (skip blocking but continue enrichment)
 4. If includedPathsRegex is set and the request does not match, skip blocking but continue enrichment
 5. Check if request matches excludedPathsRegex (skip blocking but continue enrichment; still applies after include)
 6. Extract IP addresses from configured IP headers (ipHeaders) in the order they are defined
 7. Apply IP header strategy (ipHeaderStrategy) to determine which IPs to process:
-   - **CheckAll**: Process all found IP addresses (original behavior)
+   - **CheckAll**: Process all found IP addresses for CIDR and private rules
    - **CheckFirst**: Process only the first IP address found
    - **CheckFirstNonePrivate**: Process first non-private IP, fallback to first private IP if no public IPs found
-8. For each selected IP:
-   - Check if it's in private network range [allowPrivate]
-   - Check allowed/blocked IP blocks [allowedIPBlocks + allowedIPBlocksDir, blockedIPBlocks + blockedIPBlocksDir] (most specific match wins)
-   - Look up country code 
-   - Check allowed/blocked countries [allowedCountries, blockedCountries]
-   - Apply default allow/deny if no rules match [defaultAllow]
+8. If `mode` is `enrich` or `enrichandblock`: look up each selected IP and write `countryHeader` plus `requestHeaderEnrich` (first public country wins)
+9. If `mode` is `block` or `enrichandblock`: apply private and CIDR rules per selected IP, then country allow/block from `countryHeader` only
+10. Apply default allow/deny if no country rule matches [defaultAllow]
 
 **Important Notes:**
-- With `CheckAll` strategy: If any IP in the chain is blocked, the request is denied
-- With `CheckFirst` or `CheckFirstNonePrivate` strategies: Only the selected IP(s) are evaluated; the request is denied only if the selected IP is blocked
-- Country header behavior: Header is initially set to "PRIVATE" and only overridden by the first real country found, preventing private IPs from overriding legitimate geolocation information
+- Country allow/block uses the single `countryHeader` value (first public IP written). A later hop’s country is **not** checked. `CheckAll` still applies CIDR and private rules to every selected IP.
+- If a public proxy appears later in `X-Forwarded-For` and you previously relied on `CheckAll` to country-block that hop, use `ipHeaderStrategy` (`CheckFirst` / `CheckFirstNonePrivate`) to choose which IP’s country is written, `allowedIPBlocks` / `blockedIPBlocks` for that hop’s address, or omit that hop from `ipHeaders`. There is no setting that country-checks every hop.
+- With `CheckFirst` or `CheckFirstNonePrivate`: only the selected IP(s) are evaluated for CIDR and private rules.
+- On lookup modes, `countryHeader` is initially set to `PRIVATE` and only overridden by the first real country found.
 - Ignored HTTP verbs: Requests using verbs in `ignoreVerbs` skip all blocking logic but still receive GeoIP enrichment
 - Included paths: When `includedPathsRegex` is set, only matching requests can be blocked. Other requests skip blocking but still receive GeoIP enrichment. The regex is a public URL match, not a secret — `bypassHeaders` is stronger for health checks
 - Excluded paths: Requests matching `excludedPathsRegex` skip all blocking logic but still receive GeoIP enrichment. Exclude is evaluated after include and still wins. Same as include: a public URL is not a secret; `bypassHeaders` is stronger for health checks

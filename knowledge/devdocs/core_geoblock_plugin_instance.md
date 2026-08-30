@@ -16,7 +16,7 @@ Root `New` builds the Plugin once per name+config and reuses it for later router
 
 ## How to use
 
-- Do not construct maps, regexes, IP helpers, or ban HTML outside `geoblock.NewCore`. That create runs once per incarnation and opens the database on the incarnation lifetime.
+- Do not construct maps, regexes, IP helpers, or ban HTML outside `geoblock.NewCore`. That create runs once per incarnation and opens the database only when `mode` is `enrich` or `enrichandblock`.
 - Do not bind wrappers to a Traefik `New` context. The table calls `Plugin.Close` when the incarnation ends.
 - Key prefix is `plugin:`. Same process table as `bin:` / `mmdb:` (`std_go_reclaim.md`).
 - After grace the table drops the slot and `Close`s the Plugin.
