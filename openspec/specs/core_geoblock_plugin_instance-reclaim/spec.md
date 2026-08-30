@@ -23,12 +23,16 @@ When plugin `New` is invoked more than once with the same middleware name and th
 - **THEN** each call constructs its own plugin incarnation
 
 ### Requirement: New still binds wrappers to this context
-Every enabled `New` SHALL open the DatabaseProvider with the context passed to that `New`, so format wrappers stay bound to this generation even when the plugin incarnation is reused.
+When `mode` is `enrich` or `enrichandblock`, `NewCore` SHALL open the DatabaseProvider on the incarnation lifetime so format wrappers stay bound even when the plugin incarnation is reused. When `mode` is `disabled` or `block`, `NewCore` MUST NOT open a DatabaseProvider.
 
 #### Scenario: Reused plugin still binds wrappers
-- **WHEN** a plugin incarnation is reused for a later `New` with a new live context
+- **WHEN** `mode` is `enrichandblock` and a plugin incarnation is reused for a later `New` with a new live context
 - **THEN** lookups on the returned handler still succeed
 - **AND** that context is a holder on the format wrapper
+
+#### Scenario: Block incarnation has no provider
+- **WHEN** `mode` is `block` and `New` constructs or reuses a plugin incarnation
+- **THEN** that incarnation has no DatabaseProvider
 
 ### Requirement: Same name and config reclaim across reload
 When every bound `New` context for a name+config key is cancelled and a later `New` uses the same name and configuration with a new live context before grace ends, the plugin MUST reuse the same incarnation and MUST NOT construct a new one.
