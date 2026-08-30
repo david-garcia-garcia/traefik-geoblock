@@ -12,14 +12,14 @@ _Avoid_: treating vendor as the share axis
 
 ## Overview
 
-`pkg/dbwrappers` owns BIN and MMDB. A vendor provider holds one or more wrappers and maps Lookup onto Record. The plugin never type-asserts a wrapper.
+`pkg/dbwrappers` owns BIN and MMDB open/hot-swap and the vendor field maps (`BINSource`, `ASNSource`, `IPinfo`, `GeoIP2`). The plugin never type-asserts a wrapper.
 
 ## How to use
 
 - Open through `OpenBIN` or `OpenMMDB` with the plugin `New` context. Same config hash shares one file and one Updater. The wrapper logger is scoped with `key` equal to the catalog map key.
-- Those opens go through `reclaim.Open` (`std_go_reclaim.md`) with `bin:` / `mmdb:` keys. Create watches the incarnation lifetime and calls `close` when it is canceled. Unreclaimed hash ends after grace. The caller asserts `*BIN` / `*MMDB`.
-- IP2Location holds two BIN wrappers (geo + ASN). IPinfo and MaxMind each hold one MMDB wrapper.
-- `provider.Close` must not close the shared wrapper.
+- Those opens go through `reclaim.Open` (`std_go_reclaim.md`) with `bin:` / `mmdb:` keys. Create watches the incarnation lifetime and calls `close` when it is canceled. Unreclaimed hash ends after grace. The caller asserts `*BIN` / `*MMDB`, then wraps with `NewBINSource` / `NewASNSource` / `NewIPinfo` / `NewGeoIP2`.
+- One catalog row is one wrapper. IP2Location geo and ASN are two rows.
+- Source `Close` must not close the shared wrapper.
 - Tests call `dbwrappers.Reset`. Short-grace plugin tests call `ResetWith`.
 
 ## Gotchas
@@ -30,11 +30,12 @@ _Avoid_: treating vendor as the share axis
 
 ```go
 w, err := dbwrappers.OpenMMDB(ctx, dbwrappers.MMDBConfig{Source: src}, logger)
-err = w.Lookup(ip, &rec)
+src := dbwrappers.NewIPinfo(w)
+rec, err := src.Lookup(ip)
 ```
 
 ## Key files
 
-- `pkg/dbwrappers` — BIN, MMDB, `Reset`
+- `pkg/dbwrappers` — BIN, MMDB, field maps, `Reset`
 - `pkg/reclaim` — process table (`any`)
 - `pkg/dbsource` — Resolve and Updater used by both wrappers
