@@ -139,6 +139,79 @@ BeforeAll {
         
         return $allLogEntries
     }
+
+    # Get-ReclaimLogEvents parses reclaim_put / reclaim_dispose lines from Traefik stdout.
+    function Get-ReclaimLogEvents {
+        $events = @()
+        $lines = docker logs traefik 2>&1
+        foreach ($line in $lines) {
+            $text = "$line"
+            if ($text -notmatch 'reclaim_(put|dispose|bind|orphan|reclaim)') {
+                continue
+            }
+            $msg = $null
+            $key = $null
+            if ($text -match 'msg=([^\s]+)') {
+                $msg = $Matches[1].Trim('"')
+            }
+            if ($text -match '"msg"\s*:\s*"(reclaim_[a-z]+)"') {
+                $msg = $Matches[1]
+            }
+            if ($text -match 'key=([^\s]+)') {
+                $key = $Matches[1].Trim('"')
+            }
+            if ($text -match '"key"\s*:\s*"([^"]+)"') {
+                $key = $Matches[1]
+            }
+            if ($msg -and $key) {
+                $events += [pscustomobject]@{ Msg = $msg; Key = $key }
+            }
+        }
+        return $events
+    }
+
+    # Get-ReclaimPluginPuts is reclaim_put lines whose key is this middleware's plugin incarnation.
+    function Get-ReclaimPluginPuts {
+        return @(Get-ReclaimLogEvents | Where-Object {
+            $_.Msg -eq 'reclaim_put' -and $_.Key -like 'plugin:geoblock-reclaim*'
+        })
+    }
+
+    # Wait-ReclaimPluginPutCount waits until at least $Count plugin puts exist for geoblock-reclaim.
+    function Wait-ReclaimPluginPutCount {
+        param(
+            [int]$Count,
+            [int]$TimeoutSeconds = 30
+        )
+        $elapsed = 0
+        do {
+            $puts = Get-ReclaimPluginPuts
+            if ($puts.Count -ge $Count) {
+                return $puts
+            }
+            Start-Sleep 1
+            $elapsed += 1
+        } while ($elapsed -lt $TimeoutSeconds)
+        return @(Get-ReclaimPluginPuts)
+    }
+
+    # Wait-ReclaimDispose waits until reclaim_dispose is logged for $Key.
+    function Wait-ReclaimDispose {
+        param(
+            [string]$Key,
+            [int]$TimeoutSeconds = 20
+        )
+        $elapsed = 0
+        do {
+            $hit = @(Get-ReclaimLogEvents | Where-Object { $_.Msg -eq 'reclaim_dispose' -and $_.Key -eq $Key })
+            if ($hit.Count -gt 0) {
+                return $true
+            }
+            Start-Sleep 1
+            $elapsed += 1
+        } while ($elapsed -lt $TimeoutSeconds)
+        return $false
+    }
     
     # Helper function to find access log entry matching a specific request path
     # Helper function to get the last access log entry
@@ -769,6 +842,78 @@ Describe "Traefik Geoblock Plugin Integration Tests" {
             $logEntry = Get-LastAccessLogEntry
             $logEntry | Should -Not -BeNullOrEmpty
             $logEntry.'request_X-Geoblock-Decision' | Should -Be "block:blocked_country"
+        }
+    }
+
+    Context "Shared middleware incarnation and config change" {
+        # /reclaima /reclaimb /reclaimc share geoblock-reclaim. One plugin: key until
+        # whoami-reclaim is recreated with a new country list (new hash, new put).
+        # Default grace is 10s; the old key's reclaim_dispose must wait that long.
+
+        It "Should put once for three routes, put again after config change, then dispose the old key after grace" {
+            $repoRoot = Split-Path $PSScriptRoot -Parent
+            $us = @{ "X-Real-IP" = $script:TestIPs.US_Google_DNS }
+
+            foreach ($path in @("reclaima", "reclaimb", "reclaimc")) {
+                $blocked = Invoke-TestRequest -Uri "$script:BaseUrl/$path" -Headers $us
+                $blocked.StatusCode | Should -Be 403 -Because "$path should block US before the config change"
+            }
+
+            $firstPuts = Wait-ReclaimPluginPutCount -Count 1 -TimeoutSeconds 20
+            $firstPuts.Count | Should -Be 1 -Because "three routes must share one plugin incarnation (one reclaim_put)"
+            $oldKey = $firstPuts[0].Key
+            $oldKey | Should -BeLike "plugin:geoblock-reclaim*"
+
+            $env:RECLAIM_BLOCKED = "DE"
+            $env:RECLAIM_ALLOWED = "US"
+            Push-Location $repoRoot
+            try {
+                docker compose up -d --no-deps --force-recreate whoami-reclaim
+                if ($LASTEXITCODE -ne 0) {
+                    throw "docker compose failed to recreate whoami-reclaim"
+                }
+            }
+            finally {
+                Pop-Location
+            }
+
+            # Second put is the clock start: Traefik canceled the old New ctx in the same reload.
+            $afterPuts = Wait-ReclaimPluginPutCount -Count 2 -TimeoutSeconds 30
+            $afterPuts.Count | Should -Be 2 -Because "the new config hash must create a second plugin incarnation"
+            $put2At = Get-Date
+            $newKeys = @($afterPuts | ForEach-Object { $_.Key } | Select-Object -Unique)
+            $newKeys.Count | Should -Be 2
+            $newKey = @($newKeys | Where-Object { $_ -ne $oldKey })[0]
+            $newKey | Should -Not -BeNullOrEmpty
+
+            $earlyDispose = @(Get-ReclaimLogEvents | Where-Object { $_.Msg -eq 'reclaim_dispose' -and $_.Key -eq $oldKey })
+            $earlyDispose.Count | Should -Be 0 -Because "grace is 10s; dispose must not run in the same reload as the new put"
+
+            $switched = $false
+            $elapsed = 0
+            do {
+                $probe = Invoke-TestRequest -Uri "$script:BaseUrl/reclaima" -Headers $us
+                if ($probe.StatusCode -eq 200) {
+                    $switched = $true
+                    break
+                }
+                Start-Sleep 1
+                $elapsed += 1
+            } while ($elapsed -lt 20)
+            $switched | Should -BeTrue -Because "after the label change, US must be allowed on /reclaima"
+
+            foreach ($path in @("reclaimb", "reclaimc")) {
+                $allowed = Invoke-TestRequest -Uri "$script:BaseUrl/$path" -Headers $us
+                $allowed.StatusCode | Should -Be 200 -Because "$path shares the new middleware config"
+            }
+
+            $disposed = Wait-ReclaimDispose -Key $oldKey -TimeoutSeconds 15
+            $disposed | Should -BeTrue -Because "reclaim_dispose for $oldKey should appear about 10s after the old holders were dropped"
+            $graceSeconds = ((Get-Date) - $put2At).TotalSeconds
+            $graceSeconds | Should -BeGreaterThan 8 -Because "default grace is 10s (saw dispose after $graceSeconds s)"
+
+            $newStillLive = @(Get-ReclaimLogEvents | Where-Object { $_.Msg -eq 'reclaim_dispose' -and $_.Key -eq $newKey })
+            $newStillLive.Count | Should -Be 0 -Because "the new incarnation must stay live"
         }
     }
 } 

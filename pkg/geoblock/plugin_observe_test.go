@@ -1,7 +1,6 @@
 package geoblock
 
 import (
-	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -37,7 +36,7 @@ func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
 		LogStatusDetailHeader: "X-Geoblock-Decision",
 	}
 
-	plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), captureHandler, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}
@@ -134,7 +133,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 			IgnoreVerbs:           []string{"OPTIONS"},
 		}
 
-		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), captureHandler, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("Failed to create plugin: %v", err)
 		}
@@ -174,7 +173,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 			ExcludedPathsRegex:    "^[^/]*/api/.*",
 		}
 
-		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), captureHandler, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("Failed to create plugin: %v", err)
 		}
@@ -202,7 +201,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 	})
 
 	t.Run("NotIncludedRegex_should_set_pass_not_included_regex", func(t *testing.T) {
-		handler, err := New(context.TODO(), captureHandler, &Config{
+		handler, err := newRoute(holdCtx(t), captureHandler, &Config{
 			Enabled:               true,
 			DatabaseSources:       seedCatalog(dbFilePath),
 			Ip2locationSourceGeo:  "seed",
@@ -243,7 +242,7 @@ func TestLogHeader_SkipReasons(t *testing.T) {
 			BypassHeaders:         map[string]string{"X-Bypass": "secret123"},
 		}
 
-		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), captureHandler, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("Failed to create plugin: %v", err)
 		}
@@ -295,7 +294,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
-		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), captureHandler, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("Failed to create plugin: %v", err)
 		}
@@ -335,7 +334,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
-		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), captureHandler, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("Failed to create plugin: %v", err)
 		}
@@ -373,7 +372,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
-		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), captureHandler, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("Failed to create plugin: %v", err)
 		}
@@ -413,7 +412,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
-		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), captureHandler, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("Failed to create plugin: %v", err)
 		}
@@ -449,7 +448,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 			LogStatusDetailHeader: "X-Geoblock-Decision",
 		}
 
-		plugin, err := New(context.TODO(), captureHandler, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), captureHandler, cfg, pluginName)
 		if err != nil {
 			t.Fatalf("Failed to create plugin: %v", err)
 		}
@@ -501,7 +500,6 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("writes country region city", func(t *testing.T) {
 		plugin := &Plugin{
-			next:    &noopHandler{},
 			enabled: true,
 			db: stubGeoProvider{rec: dbprovider.Record{
 				Country: "US", Region: "California", City: "Mountain View",
@@ -526,7 +524,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Real-IP", "8.8.8.8")
 		rr := httptest.NewRecorder()
-		plugin.ServeHTTP(rr, req)
+		plugin.ServeHTTP(rr, req, &noopHandler{})
 		if rr.Code != http.StatusTeapot {
 			t.Fatalf("status %d", rr.Code)
 		}
@@ -552,7 +550,6 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("private IP writes PRIVATE country and null for other keys", func(t *testing.T) {
 		plugin := &Plugin{
-			next:             &noopHandler{},
 			enabled:          true,
 			db:               stubGeoProvider{},
 			defaultAllow:     true,
@@ -571,7 +568,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Real-IP", "127.0.0.1")
 		rr := httptest.NewRecorder()
-		plugin.ServeHTTP(rr, req)
+		plugin.ServeHTTP(rr, req, &noopHandler{})
 		if req.Header.Get("X-Geo-Country") != PrivateIpCountryAlias {
 			t.Errorf("country: got %q", req.Header.Get("X-Geo-Country"))
 		}
@@ -584,7 +581,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 	})
 
 	t.Run("real BIN writes country and null for missing region city", func(t *testing.T) {
-		handler, err := New(context.TODO(), &noopHandler{}, &Config{
+		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseSources:      seedCatalog(dbFilePath),
 			Ip2locationSourceGeo: "seed",
@@ -618,7 +615,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 	t.Run("DB8 writes region city isp domain", func(t *testing.T) {
 		path := requireDB8(t)
-		handler, err := New(context.TODO(), &noopHandler{}, &Config{
+		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:              true,
 			DatabaseSources:      seedCatalog(path),
 			Ip2locationSourceGeo: "seed",
@@ -656,7 +653,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 	})
 
 	t.Run("IPinfo Lite writes valued fields and null for empty region city", func(t *testing.T) {
-		handler, err := New(context.TODO(), &noopHandler{}, &Config{
+		handler, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Enabled:          true,
 			DatabaseProvider: DatabaseProviderIPinfo,
 			DatabaseSources:  seedCatalog(ipinfoFilePath), IpinfoSource: "seed",
@@ -793,7 +790,6 @@ func TestEnrichNullSentinel(t *testing.T) {
 
 	t.Run("empty public lookup keeps PRIVATE and null", func(t *testing.T) {
 		plugin := &Plugin{
-			next:                &noopHandler{},
 			enabled:             true,
 			db:                  stubGeoProvider{},
 			defaultAllow:        true,
@@ -807,7 +803,7 @@ func TestEnrichNullSentinel(t *testing.T) {
 		}
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Real-IP", "8.8.8.8")
-		plugin.ServeHTTP(httptest.NewRecorder(), req)
+		plugin.ServeHTTP(httptest.NewRecorder(), req, &noopHandler{})
 		if got := req.Header.Get("X-Geo-Country"); got != PrivateIpCountryAlias {
 			t.Errorf("country: got %q want PRIVATE", got)
 		}
@@ -818,7 +814,6 @@ func TestEnrichNullSentinel(t *testing.T) {
 
 	t.Run("first public IP overwrites PRIVATE and null", func(t *testing.T) {
 		plugin := &Plugin{
-			next:    &noopHandler{},
 			enabled: true,
 			db: stubGeoProvider{rec: dbprovider.Record{
 				Country: "DE", Region: "Berlin",
@@ -834,7 +829,7 @@ func TestEnrichNullSentinel(t *testing.T) {
 		}
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Forwarded-For", "127.0.0.1, 8.8.8.8")
-		plugin.ServeHTTP(httptest.NewRecorder(), req)
+		plugin.ServeHTTP(httptest.NewRecorder(), req, &noopHandler{})
 		if got := req.Header.Get("X-Geo-Country"); got != "DE" {
 			t.Errorf("country: got %q want DE", got)
 		}

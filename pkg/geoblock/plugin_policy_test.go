@@ -1,7 +1,6 @@
 package geoblock
 
 import (
-	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +21,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -50,7 +49,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -78,7 +77,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -106,7 +105,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -141,7 +140,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -278,7 +277,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+				plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 				if err != nil {
 					t.Fatalf("expected no error, but got: %v", err)
 				}
@@ -344,7 +343,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+				plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 				if err != nil {
 					t.Fatalf("expected no error, but got: %v", err)
 				}
@@ -370,7 +369,7 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 
 func testRequest(t *testing.T, testName string, cfg *Config, ip string, expectedStatus int) {
 	t.Run(testName, func(t *testing.T) {
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -400,12 +399,12 @@ func TestPlugin_Lookup(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
 
-		rec, err := plugin.(*Plugin).Lookup("8.8.8.8")
+		rec, err := plugin.(*Route).Lookup("8.8.8.8")
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
@@ -429,12 +428,12 @@ func TestPlugin_Lookup(t *testing.T) {
 			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 		}
 
-		plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 		if err != nil {
 			t.Errorf("expected no error, but got: %v", err)
 		}
 
-		rec, err := plugin.(*Plugin).Lookup("foobar")
+		rec, err := plugin.(*Route).Lookup("foobar")
 		if err == nil {
 			t.Errorf("expected error, but got none")
 		}
@@ -494,7 +493,7 @@ func TestPlugin_ServeHTTP_MalformedIP(t *testing.T) {
 			}
 
 			// Initialize plugin
-			plugin, err := New(context.Background(), next, cfg, "test")
+			plugin, err := newRoute(holdCtx(t), next, cfg, "test")
 			if err != nil {
 				t.Fatalf("Failed to create plugin: %v", err)
 			}
@@ -559,12 +558,12 @@ func TestCheckAllowed_Localhost(t *testing.T) {
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}
 
-	p := plugin.(*Plugin)
+	p := plugin.(*Route)
 
 	// Test various loopback IPs (IPv4 and IPv6)
 	testIPs := []string{"127.0.0.1", "127.0.0.2", "127.1.1.1", "::1"}
@@ -611,7 +610,7 @@ func TestServeHTTP_LocalhostWithAllowPrivate(t *testing.T) {
 		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}

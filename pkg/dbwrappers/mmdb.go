@@ -48,10 +48,6 @@ func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, 
 	key := mmdbKey(cfg)
 	v, err := reclaim.Open(ctx, key, func() (any, error) {
 		return newMMDB(cfg, logger)
-	}, func(v any) {
-		if w, ok := v.(*MMDB); ok {
-			w.close()
-		}
 	})
 	if err != nil {
 		return nil, err
@@ -140,6 +136,11 @@ func (w *MMDB) Lookup(ip string, dest any) error {
 		return fmt.Errorf("MMDB is not open")
 	}
 	return db.Lookup(parsed, dest)
+}
+
+// Close stops the updater and the reader. The reclaim table calls this when the incarnation ends.
+func (w *MMDB) Close() {
+	w.close()
 }
 
 func (w *MMDB) close() {

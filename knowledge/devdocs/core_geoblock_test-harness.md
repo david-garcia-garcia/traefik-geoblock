@@ -21,10 +21,10 @@ Unit and bench tests live next to the owner package. Traefik behavior is proven 
 ## How to use
 
 - Change `pkg/geoblock` policy or config → add or extend a package test in `pkg/geoblock/plugin_*_test.go` (config, policy, ipheaders, filters, observe). Shared fixtures stay in `pkg/geoblock/plugin_test.go`.
-- Change instance reclaim (name+config key, grace) → add or extend `plugin_instance_test.go` at module root. That file calls root `New`, not `geoblock.New`.
+- Change instance reclaim (name+config key, grace) → add or extend `plugin_instance_test.go` at module root. That file calls root `New`, not `newTestPlugin`.
 - Change a helper in `pkg/<name>` → add or extend `pkg/<name>/*_test.go`.
 - Change lookup or `ServeHTTP` cost → run `go test -bench=BenchmarkPlugin -benchmem`. MaxMind benches (`BenchmarkPlugin_*MaxMind`) use dummy IP `81.2.69.142`, not 8.8.8.8. Keep `TestThroughput_*` floors conservative; raise them only after CI samples.
-- Change Traefik-visible behavior (headers, labels, blocking) → add a `whoami-*` service in `docker-compose.yml` with a unique `PathPrefix` and matching plugin labels, then a Pester `Context` / `It` in `scripts/integration-tests.Tests.ps1`.
+- Change Traefik-visible behavior (headers, labels, blocking) → add a `whoami-*` service in `docker-compose.yml` with a unique `PathPrefix` and matching plugin labels, then a Pester `Context` / `It` in `scripts/integration-tests.Tests.ps1`. Shared-middleware incarnation + config-change grace is `/reclaima` `/reclaimb` `/reclaimc` and the Pester Context `Shared middleware incarnation and config change`.
 - HTTP from Pester: `Invoke-TestRequest`. Access-log asserts: keep the header on the Traefik `accesslog.fields.headers.names.*` command, then `Get-TraefikAccessLogEntries`.
 - whoami echoes forwarded request headers in the body (`X-Geo-Country: US`).
 - Local: `go test ./...`, `golangci-lint run` (CI is action v6 / golangci-lint v1 — `docker run --rm -v "${PWD}:/app" -w /app golangci/golangci-lint:v1.64.8 golangci-lint run --timeout 5m`), and `./Test-Integration.ps1`. Do not treat a fast desktop `go test` as CI: `TestThroughput_*` floors must also pass on linux/Go 1.21 (CI image). CI runs Lint, `go test -v ./...` (gates included), and the Pester job.

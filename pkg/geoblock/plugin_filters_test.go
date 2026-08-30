@@ -1,7 +1,6 @@
 package geoblock
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,7 +25,7 @@ func TestBypassHeaders_ShouldStillEnrichWithGeoIP(t *testing.T) {
 		},
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}
@@ -137,7 +136,7 @@ func TestIgnoreVerbs_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 		IgnoreVerbs:          []string{"OPTIONS", "HEAD"}, // Ignore these verbs
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}
@@ -251,7 +250,7 @@ func TestExcludedPathsRegex_ShouldSkipBlockingButStillEnrich(t *testing.T) {
 		ExcludedPathsRegex: "^[^/]*/(api/.*|health|metrics)$",
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}
@@ -379,7 +378,7 @@ func TestIncludedPathsRegex_OnlyMatchingPathsAreBlocked(t *testing.T) {
 		IncludedPathsRegex:   "^[^/]*/secure/.*",
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -427,7 +426,7 @@ func TestIncludedPathsRegex_ExcludeStillWinsAfterInclude(t *testing.T) {
 		ExcludedPathsRegex:   "^[^/]*/secure/health$",
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -457,7 +456,7 @@ func TestIncludedPathsRegex_ExcludeStillWinsAfterInclude(t *testing.T) {
 }
 
 func TestIncludedPathsRegex_InvalidRegex(t *testing.T) {
-	_, err := New(context.TODO(), &noopHandler{}, &Config{
+	_, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 		Enabled:              true,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
@@ -475,7 +474,7 @@ func TestIncludedPathsRegex_InvalidRegex(t *testing.T) {
 }
 
 func TestIncludedPathsRegex_EmptyRegex(t *testing.T) {
-	plugin, err := New(context.TODO(), &noopHandler{}, &Config{
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 		Enabled:              true,
 		DatabaseSources:      seedCatalog(dbFilePath),
 		Ip2locationSourceGeo: "seed",
@@ -509,7 +508,7 @@ func TestExcludedPathsRegex_InvalidRegex(t *testing.T) {
 		ExcludedPathsRegex:   "[invalid(regex", // Invalid regex pattern
 	}
 
-	_, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	_, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err == nil {
 		t.Error("Expected error for invalid regex, but got none")
 	}
@@ -531,7 +530,7 @@ func TestExcludedPathsRegex_EmptyRegex(t *testing.T) {
 		ExcludedPathsRegex:   "", // Empty regex - should not affect blocking
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}
@@ -564,7 +563,7 @@ func TestExcludedPathsRegex_DomainBasedMatching(t *testing.T) {
 		ExcludedPathsRegex: "^api\\.example\\.com/api/.*",
 	}
 
-	plugin, err := New(context.TODO(), &noopHandler{}, cfg, pluginName)
+	plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
 	if err != nil {
 		t.Fatalf("Failed to create plugin: %v", err)
 	}

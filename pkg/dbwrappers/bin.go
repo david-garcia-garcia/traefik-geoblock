@@ -54,10 +54,6 @@ func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, err
 	key := binKey(cfg)
 	v, err := reclaim.Open(ctx, key, func() (any, error) {
 		return newBIN(cfg, logger)
-	}, func(v any) {
-		if w, ok := v.(*BIN); ok {
-			w.close()
-		}
 	})
 	if err != nil {
 		return nil, err
@@ -262,6 +258,11 @@ func (w *BIN) Path() string {
 // SourcePath is the dated or seed file the live handle was copied from.
 func (w *BIN) SourcePath() string {
 	return w.sourceDbPath
+}
+
+// Close stops the updater and the file handle. The reclaim table calls this when the incarnation ends.
+func (w *BIN) Close() {
+	w.close()
 }
 
 func (w *BIN) close() {

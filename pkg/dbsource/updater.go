@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// DefaultMinAge is used when Config.MinAge is unset (IPinfo / MaxMind cadence).
-const DefaultMinAge = 24 * time.Hour
+// DefaultMinAge is used when Config.MinAge is unset.
+const DefaultMinAge = 30 * 24 * time.Hour
 
 // WithDefaults fills Dir, DatabaseType, and MinAge when they are empty.
 func WithDefaults(cfg Config, dir, databaseType string, minAge time.Duration) Config {

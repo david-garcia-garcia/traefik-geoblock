@@ -1,8 +1,4 @@
-## Purpose
-
-Binds each format-wrapper singleton (one open BIN or MMDB file and its keep-current loop) to the Traefik `New` context through the reclaim lease, so a same-hash reload reclaims the wrapper and an unreclaimed hash is disposed after grace.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Wrapper open receives the New context
 Opening a BIN or MMDB wrapper SHALL take the context passed to plugin `New`. The plugin MUST pass that context through the provider constructor into the wrapper open. The wrapper MUST open that hash on the process `reclaim` table (`any`, caller asserts `*BIN` / `*MMDB`) with a create that watches the incarnation lifetime and, when that lifetime is canceled, stops the keep-current loop and closes the open file. BIN and MMDB keys SHALL be prefixed so they do not collide.
@@ -10,15 +6,6 @@ Opening a BIN or MMDB wrapper SHALL take the context passed to plugin `New`. The
 #### Scenario: New context reaches the wrapper
 - **WHEN** plugin `New` is invoked with a context
 - **THEN** the format wrapper opened for that instance is stored and bound to that context on the format table
-
-### Requirement: Same hash shares one wrapper and reclaims across reload
-Two opens with the same wrapper configuration SHALL share one file and one keep-current loop. When the bound contexts are cancelled and a later open uses the same configuration with a new live context before grace ends, the wrapper MUST stay open and the keep-current loop MUST keep running.
-
-#### Scenario: Same-hash New after generation cancel
-- **WHEN** two plugin instances share one wrapper configuration
-- **AND** Traefik cancels their `New` contexts and calls `New` again with the same configuration before grace ends
-- **THEN** lookups on the shared wrapper still succeed
-- **AND** a second keep-current loop is not started
 
 ### Requirement: Unreclaimed hash is disposed after grace
 When no live `New` context remains for a wrapper configuration and grace elapses without a same-hash open, the wrapper SHALL stop its keep-current loop, close its file, and leave the singleton map. A later open with that configuration SHALL create a new wrapper. Closing a DatabaseProvider MUST still not end a wrapper that other instances (or a pending reclaim) still need.

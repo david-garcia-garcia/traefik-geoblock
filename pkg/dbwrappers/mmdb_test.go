@@ -1,7 +1,6 @@
 package dbwrappers
 
 import (
-	"context"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -27,11 +26,11 @@ func TestOpenMMDB_LookupAndSingleton(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
 	cfg := MMDBConfig{Source: dbsource.Config{Path: testLiteMMDB(t)}}
-	a, err := OpenMMDB(context.Background(), cfg, testLogger())
+	a, err := OpenMMDB(holdCtx(t), cfg, testLogger())
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	b, err := OpenMMDB(context.Background(), cfg, testLogger())
+	b, err := OpenMMDB(holdCtx(t), cfg, testLogger())
 	if err != nil {
 		t.Fatalf("OpenMMDB 2: %v", err)
 	}
@@ -53,7 +52,7 @@ func TestOpenMMDB_OpenIsHotSwap(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
 	path := testLiteMMDB(t)
-	w, err := OpenMMDB(context.Background(), MMDBConfig{Source: dbsource.Config{Path: path}}, testLogger())
+	w, err := OpenMMDB(holdCtx(t), MMDBConfig{Source: dbsource.Config{Path: path}}, testLogger())
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}

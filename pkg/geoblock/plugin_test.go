@@ -1,6 +1,8 @@
 package geoblock
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,6 +10,39 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 )
+
+// newTestPlugin is NewCore plus Close when ctx is done. Tests that do not use the reclaim table.
+func newTestPlugin(ctx context.Context, cfg *Config, name string) (*Plugin, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("%s: no config provided", name)
+	}
+	if err := Prepare(cfg, name); err != nil {
+		return nil, err
+	}
+	pluginInstance, err := NewCore(name, cfg)
+	if err != nil {
+		return nil, err
+	}
+	context.AfterFunc(ctx, pluginInstance.Close)
+	return pluginInstance, nil
+}
+
+// newRoute creates one test incarnation and attaches next.
+func newRoute(ctx context.Context, next http.Handler, cfg *Config, name string) (http.Handler, error) {
+	pluginInstance, err := newTestPlugin(ctx, cfg, name)
+	if err != nil {
+		return nil, err
+	}
+	return pluginInstance.ForRoute(next)
+}
+
+// holdCtx is a cancelable New context for tests. Background and TODO panic in reclaim.Open.
+func holdCtx(tb testing.TB) context.Context {
+	tb.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	tb.Cleanup(cancel)
+	return ctx
+}
 
 func moduleRoot() string {
 	dir, err := os.Getwd()

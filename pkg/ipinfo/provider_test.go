@@ -17,6 +17,14 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
+// holdCtx is a cancelable Open context. Background and TODO panic in reclaim.Open.
+func holdCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func testMMDB(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -38,7 +46,7 @@ func TestLookup_PublicAndPrivate(t *testing.T) {
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
 
-	p, err := New(context.Background(), DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}, testLogger())
+	p, err := New(holdCtx(t), DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}, testLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -105,7 +113,7 @@ func TestNew_EmptyPathFindsBundled(t *testing.T) {
 
 	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", filepath.Dir(testMMDB(t)))
 
-	p, err := New(context.Background(), DatabaseConfig{}, testLogger())
+	p, err := New(holdCtx(t), DatabaseConfig{}, testLogger())
 	if err != nil {
 		t.Fatalf("New with empty path: %v", err)
 	}
@@ -119,7 +127,7 @@ func TestNew_EmptyMapUsesSeed(t *testing.T) {
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
 
-	p, err := New(context.Background(), DatabaseConfig{
+	p, err := New(holdCtx(t), DatabaseConfig{
 		Source:                dbsource.Config{Path: testMMDB(t)},
 		DatabaseAutoUpdateDir: t.TempDir(),
 	}, testLogger())
@@ -137,11 +145,11 @@ func TestNew_Singleton(t *testing.T) {
 	t.Cleanup(dbwrappers.Reset)
 
 	cfg := DatabaseConfig{Source: dbsource.Config{Path: testMMDB(t)}}
-	a, err := New(context.Background(), cfg, testLogger())
+	a, err := New(holdCtx(t), cfg, testLogger())
 	if err != nil {
 		t.Fatalf("New a: %v", err)
 	}
-	b, err := New(context.Background(), cfg, testLogger())
+	b, err := New(holdCtx(t), cfg, testLogger())
 	if err != nil {
 		t.Fatalf("New b: %v", err)
 	}
@@ -187,7 +195,7 @@ func TestDownloadThroughComponent_HTTP(t *testing.T) {
 
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
-	p, err := New(context.Background(), DatabaseConfig{
+	p, err := New(holdCtx(t), DatabaseConfig{
 		DatabaseAutoUpdateDir: dir,
 		Source: dbsource.Config{
 			Key:          "lite",

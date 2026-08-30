@@ -9,6 +9,9 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 )
 
+// DownloadMinAge is how long a dated MMDB stays current before GET.
+const DownloadMinAge = dbsource.DefaultMinAge
+
 // DatabaseConfig is MaxMind source plus shared auto-update dir.
 type DatabaseConfig struct {
 	DatabaseAutoUpdateDir string
@@ -54,7 +57,7 @@ func New(ctx context.Context, config DatabaseConfig, logger *slog.Logger) (dbpro
 		Dir:             config.DatabaseAutoUpdateDir,
 		Source:          config.Source,
 		DefaultFileName: DefaultSeedFileName,
-		MinAge:          dbsource.DefaultMinAge,
+		MinAge:          DownloadMinAge,
 	}, logger)
 	if err != nil {
 		return nil, err

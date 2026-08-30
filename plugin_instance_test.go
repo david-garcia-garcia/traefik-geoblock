@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -56,9 +57,14 @@ func (h *instanceLog) events() [][2]string {
 
 // countPluginPuts counts reclaim_put events for plugin: keys.
 func countPluginPuts(ev [][2]string) int {
+	return countPrefixedMsg(ev, reclaim.MsgPut, keyPrefixPlugin)
+}
+
+// countPrefixedMsg counts events with msg whose key starts with prefix.
+func countPrefixedMsg(ev [][2]string, msg, prefix string) int {
 	n := 0
 	for _, e := range ev {
-		if e[0] == reclaim.MsgPut && len(e[1]) >= len(keyPrefixPlugin) && e[1][:len(keyPrefixPlugin)] == keyPrefixPlugin {
+		if e[0] == msg && strings.HasPrefix(e[1], prefix) {
 			n++
 		}
 	}
@@ -120,14 +126,47 @@ func instanceBIN(path string) *Config {
 	}
 }
 
-// mustRootPlugin calls root New and type-asserts *geoblock.Plugin.
-func mustRootPlugin(t *testing.T, ctx context.Context, cfg *Config, name string) *geoblock.Plugin {
+// instanceMaxMind is an enabled MaxMind config that points at a seed MMDB.
+func instanceMaxMind(path string) *Config {
+	return &Config{
+		Enabled:          true,
+		DatabaseProvider: geoblock.DatabaseProviderMaxMind,
+		DatabaseSources: map[string]geoblock.DatabaseSource{
+			"seed": {Path: path, DatabaseType: dbsource.TypeMMDB},
+		},
+		MaxmindSource:        "seed",
+		AllowedCountries:     []string{"GB"},
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     geoblock.IPHeaderStrategyCheckAll,
+		BanIfError:           true,
+	}
+}
+
+// waitReclaimEvents waits until pred is true or timeout.
+func waitReclaimEvents(t *testing.T, h *instanceLog, timeout time.Duration, pred func([][2]string) bool) [][2]string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		ev := h.events()
+		if pred(ev) {
+			return ev
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout waiting for reclaim events, ev=%+v", ev)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// mustRootPlugin calls root New and type-asserts *geoblock.Route.
+func mustRootPlugin(t *testing.T, ctx context.Context, cfg *Config, name string) *geoblock.Route {
 	t.Helper()
 	h, err := New(ctx, noopNext{}, cfg, name)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	p, ok := h.(*geoblock.Plugin)
+	p, ok := h.(*geoblock.Route)
 	if !ok {
 		t.Fatalf("handler type %T", h)
 	}
@@ -152,7 +191,7 @@ func usPassRequest() *http.Request {
 }
 
 // requireLookupUS fails unless Lookup(8.8.8.8) returns country US.
-func requireLookupUS(t *testing.T, p *geoblock.Plugin) {
+func requireLookupUS(t *testing.T, p *geoblock.Route) {
 	t.Helper()
 	rec, err := p.Lookup("8.8.8.8")
 	if err != nil || rec.Country != "US" {
@@ -163,7 +202,8 @@ func requireLookupUS(t *testing.T, p *geoblock.Plugin) {
 func TestNew_SameNameConfigSharesIncarnation(t *testing.T) {
 	shortInstanceLeases(t)
 	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"))
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	var n1, n2 int
 	a, err := New(ctx, countHandler{&n1}, cfg, "geoblock")
 	if err != nil {
@@ -173,7 +213,7 @@ func TestNew_SameNameConfigSharesIncarnation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pa, pb := a.(*geoblock.Plugin), b.(*geoblock.Plugin)
+	pa, pb := a.(*geoblock.Route), b.(*geoblock.Route)
 	if !pa.SameCore(pb) {
 		t.Fatal("expected shared incarnation")
 	}
@@ -190,7 +230,8 @@ func TestNew_SameNameConfigSharesIncarnation(t *testing.T) {
 func TestNew_NameMissSeparateIncarnation(t *testing.T) {
 	shortInstanceLeases(t)
 	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"))
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	a := mustRootPlugin(t, ctx, cfg, "geoblock")
 	b := mustRootPlugin(t, ctx, cfg, "geoblock-b")
 	if a.SameCore(b) {
@@ -200,7 +241,8 @@ func TestNew_NameMissSeparateIncarnation(t *testing.T) {
 
 func TestNew_ConfigMissSeparateIncarnation(t *testing.T) {
 	shortInstanceLeases(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	seed := filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
 	a := mustRootPlugin(t, ctx, instanceBIN(seed), "geoblock")
 	cfgB := instanceBIN(seed)
@@ -249,5 +291,94 @@ func TestNew_PluginDisposeAfterGrace(t *testing.T) {
 	requireLookupUS(t, again)
 	if countPluginPuts(h.events()) <= puts {
 		t.Fatalf("later New must create a new plugin incarnation, ev=%+v", h.events())
+	}
+}
+
+const (
+	testPrefixBIN  = "bin:"
+	testPrefixMMDB = "mmdb:"
+)
+
+// TestNew_DifferentConfigSharesBINWrappers checks two policy configs share one geo BIN and one ASN wrapper.
+func TestNew_DifferentConfigSharesBINWrappers(t *testing.T) {
+	h := shortInstanceLeases(t)
+	seed := filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
+	ctx, cancel := context.WithCancel(context.Background())
+	a := mustRootPlugin(t, ctx, instanceBIN(seed), "geoblock")
+	cfgB := instanceBIN(seed)
+	cfgB.AllowedCountries = []string{"DE"}
+	b := mustRootPlugin(t, ctx, cfgB, "geoblock")
+	if a.SameCore(b) {
+		t.Fatal("different config must not share plugin incarnation")
+	}
+	ev := h.events()
+	if got := countPluginPuts(ev); got != 2 {
+		t.Fatalf("plugin puts: got %d want 2 ev=%+v", got, ev)
+	}
+	// IP2Location always opens geo plus allow-missing ASN. Two plugins must not double those.
+	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixBIN); got != 2 {
+		t.Fatalf("bin puts: got %d want 2 (geo+asn) ev=%+v", got, ev)
+	}
+
+	cancel()
+	ev = waitReclaimEvents(t, h, time.Second, func(ev [][2]string) bool {
+		return countPrefixedMsg(ev, reclaim.MsgDispose, keyPrefixPlugin) == 2 &&
+			countPrefixedMsg(ev, reclaim.MsgDispose, testPrefixBIN) == 2
+	})
+	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixBIN); got != 2 {
+		t.Fatalf("bin must not put again during dispose ev=%+v", ev)
+	}
+
+	again, cancelAgain := context.WithCancel(context.Background())
+	defer cancelAgain()
+	_ = mustRootPlugin(t, again, instanceBIN(seed), "geoblock")
+	ev = h.events()
+	if got := countPluginPuts(ev); got != 3 {
+		t.Fatalf("later New must put a new plugin, got %d ev=%+v", got, ev)
+	}
+	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixBIN); got != 4 {
+		t.Fatalf("later New must put new BIN wrappers, got %d ev=%+v", got, ev)
+	}
+}
+
+// TestNew_DifferentConfigSharesMMDBWrapper checks two policy configs share one MMDB wrapper.
+func TestNew_DifferentConfigSharesMMDBWrapper(t *testing.T) {
+	h := shortInstanceLeases(t)
+	seed := filepath.Join(instanceModuleRoot(), "seeds", "GeoIP2-Country-Test.mmdb")
+	ctx, cancel := context.WithCancel(context.Background())
+	cfgA := instanceMaxMind(seed)
+	a := mustRootPlugin(t, ctx, cfgA, "geoblock")
+	cfgB := instanceMaxMind(seed)
+	cfgB.AllowedCountries = []string{"DE"}
+	b := mustRootPlugin(t, ctx, cfgB, "geoblock")
+	if a.SameCore(b) {
+		t.Fatal("different config must not share plugin incarnation")
+	}
+	ev := h.events()
+	if got := countPluginPuts(ev); got != 2 {
+		t.Fatalf("plugin puts: got %d want 2 ev=%+v", got, ev)
+	}
+	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixMMDB); got != 1 {
+		t.Fatalf("mmdb puts: got %d want 1 ev=%+v", got, ev)
+	}
+
+	cancel()
+	ev = waitReclaimEvents(t, h, time.Second, func(ev [][2]string) bool {
+		return countPrefixedMsg(ev, reclaim.MsgDispose, keyPrefixPlugin) == 2 &&
+			countPrefixedMsg(ev, reclaim.MsgDispose, testPrefixMMDB) == 1
+	})
+	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixMMDB); got != 1 {
+		t.Fatalf("mmdb must not put again during dispose ev=%+v", ev)
+	}
+
+	again, cancelAgain := context.WithCancel(context.Background())
+	defer cancelAgain()
+	_ = mustRootPlugin(t, again, instanceMaxMind(seed), "geoblock")
+	ev = h.events()
+	if got := countPluginPuts(ev); got != 3 {
+		t.Fatalf("later New must put a new plugin, got %d ev=%+v", got, ev)
+	}
+	if got := countPrefixedMsg(ev, reclaim.MsgPut, testPrefixMMDB); got != 2 {
+		t.Fatalf("later New must put a new MMDB wrapper, got %d ev=%+v", got, ev)
 	}
 }
