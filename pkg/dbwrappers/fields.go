@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 )
@@ -45,14 +46,19 @@ type fieldPreset struct {
 	fields FieldMap
 }
 
-var fieldPresets = map[string]fieldPreset{}
+var (
+	fieldPresets = map[string]fieldPreset{}
+	presetsOnce  sync.Once
+)
 
-func init() {
-	registerPresets()
+// ensurePresets registers named vendor maps on first use.
+func ensurePresets() {
+	presetsOnce.Do(registerPresets)
 }
 
 // Preset returns the named vendor map. Unknown names return false.
 func Preset(name string) (format string, fields FieldMap, ok bool) {
+	ensurePresets()
 	p, ok := fieldPresets[strings.ToLower(strings.TrimSpace(name))]
 	if !ok {
 		return "", nil, false
@@ -62,6 +68,7 @@ func Preset(name string) (format string, fields FieldMap, ok bool) {
 
 // PresetNames is the sorted list of fieldsPreconfigured values.
 func PresetNames() []string {
+	ensurePresets()
 	out := make([]string, 0, len(fieldPresets))
 	for name := range fieldPresets {
 		out = append(out, name)

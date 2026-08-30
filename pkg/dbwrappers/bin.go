@@ -19,8 +19,12 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
-// DefaultBINMinAge is how long a dated BIN stays current before GET.
-const DefaultBINMinAge = 30 * 24 * time.Hour
+const (
+	// DefaultBINMinAge is how long a dated BIN stays current before GET.
+	DefaultBINMinAge = 30 * 24 * time.Hour
+	// binASNPath is the IP2Location Get_all / Get_asn column name.
+	binASNPath = "asn"
+)
 
 // BINConfig is one BIN file to resolve, open, and keep current.
 type BINConfig struct {
@@ -212,7 +216,7 @@ func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error
 	var rec dbprovider.Record
 	wantAll := false
 	for path := range fields {
-		if path != "asn" {
+		if path != binASNPath {
 			wantAll = true
 			break
 		}
@@ -232,13 +236,13 @@ func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error
 		}
 		all = record
 		fields.apply(&rec, func(path string) string {
-			if path == "asn" {
+			if path == binASNPath {
 				return ""
 			}
 			return binColumn(all, path)
 		})
 	}
-	if fields.hasPath("asn") {
+	if fields.hasPath(binASNPath) {
 		asn := ""
 		if wantAll {
 			asn = usableMeta(all.Asn)
@@ -266,7 +270,7 @@ func binColumn(rec ip2loc.IP2Locationrecord, path string) string {
 		return usableMeta(rec.Isp)
 	case "domain":
 		return usableMeta(rec.Domain)
-	case "asn":
+	case binASNPath:
 		return usableMeta(rec.Asn)
 	default:
 		return ""
