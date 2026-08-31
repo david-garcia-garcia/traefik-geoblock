@@ -6,8 +6,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
@@ -35,6 +38,26 @@ func holdCtx(t *testing.T) context.Context {
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+// testLogBuf is a mutex-wrapped buffer for slog writes from a hot-swap goroutine.
+type testLogBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+// Write appends p under the lock.
+func (w *testLogBuf) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.b.Write(p)
+}
+
+// String is the buffer so far.
+func (w *testLogBuf) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.b.String()
 }
 
 func TestOpenBIN_LookupAndSingleton(t *testing.T) {
@@ -179,6 +202,13 @@ func TestOpenBIN_InitLogsDatedCopy(t *testing.T) {
 	if strings.Contains(out, " plugin=") {
 		t.Fatalf("unexpected plugin=: %s", out)
 	}
+	info, err := os.Stat(w.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "size_bytes="+strconv.FormatInt(info.Size(), 10)) {
+		t.Fatalf("missing size_bytes: %s", out)
+	}
 
 	if err := w.hotSwap(dated); err != nil {
 		t.Fatalf("hotSwap: %v", err)
@@ -190,6 +220,103 @@ func TestOpenBIN_InitLogsDatedCopy(t *testing.T) {
 	if !strings.Contains(swapOut, "source_path=") || !strings.Contains(swapOut, "20260831_paid.BIN") {
 		t.Fatalf("hot-swap source_path: %s", swapOut)
 	}
+}
+
+func TestOpenBIN_SeedFirstBeforeDatedCopy(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+
+	src, err := os.ReadFile(testBIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moduleRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := filepath.Join(moduleRoot, "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN")
+	t.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", moduleRoot)
+
+	dir := t.TempDir()
+	dated := filepath.Join(dir, "20260831_paid.BIN")
+	if err := os.WriteFile(dated, src, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	held := make(chan struct{})
+	release := make(chan struct{})
+	binTestHoldAfterSeed = func() {
+		close(held)
+		<-release
+	}
+	t.Cleanup(func() {
+		binTestHoldAfterSeed = nil
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+
+	var buf testLogBuf
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	w, err := OpenBIN(holdCtx(t), BINConfig{
+		Dir: dir,
+		Source: dbsource.Config{
+			Key:             "paid",
+			DatabaseType:    dbsource.TypeBIN,
+			DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
+		},
+	}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-held:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dated copy goroutine did not start")
+	}
+
+	if w.Path() != seed {
+		t.Fatalf("Path()=%s want seed %s", w.Path(), seed)
+	}
+	rec := testBINRecord(t, w)
+	if rec.Country != "US" {
+		t.Fatalf("seed lookup: %+v", rec)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, `msg="BIN initialized"`) {
+		t.Fatalf("missing BIN initialized: %s", out)
+	}
+	if !strings.Contains(out, "pending_source_path=") || !strings.Contains(out, "20260831_paid.BIN") {
+		t.Fatalf("missing pending_source_path: %s", out)
+	}
+	info, err := os.Stat(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "size_bytes="+strconv.FormatInt(info.Size(), 10)) {
+		t.Fatalf("missing size_bytes: %s", out)
+	}
+
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		swapOut := buf.String()
+		if strings.Contains(swapOut, "BIN hot-swapped") &&
+			strings.HasPrefix(filepath.Base(w.Path()), "bin_paid_") &&
+			w.SourcePath() == dated {
+			if !strings.Contains(swapOut, "size_bytes=") {
+				t.Fatalf("hot-swap missing size_bytes: %s", swapOut)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("after swap Path()=%s SourcePath()=%s log=%s", w.Path(), w.SourcePath(), buf.String())
 }
 
 func TestOpenBIN_HotSwap(t *testing.T) {
