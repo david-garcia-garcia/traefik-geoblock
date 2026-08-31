@@ -133,7 +133,7 @@ func TestOpenBIN_InitLogsDatedCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	dated := filepath.Join(dir, "20260831_paid.BIN")
-	if err := os.WriteFile(dated, src, 0o644); err != nil {
+	if err := os.WriteFile(dated, src, 0600); err != nil {
 		t.Fatal(err)
 	}
 
