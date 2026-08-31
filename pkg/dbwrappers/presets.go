@@ -9,12 +9,12 @@ import (
 
 // Named fieldsPreconfigured values (vendor product ids).
 const (
-	PresetIP2Location     = "ip2location"
-	PresetIP2LocationLite = "ip2location_lite"
-	PresetIP2LocationASN  = "ip2location_asn"
-	PresetIPinfoLite      = "ipinfo_lite"
-	PresetIPinfoCore      = "ipinfo_core"
-	PresetIPinfoPlus      = "ipinfo_plus"
+	PresetIP2Location       = "ip2location"
+	PresetIP2LocationLite   = "ip2location_lite"
+	PresetIP2LocationASN    = "ip2location_asn"
+	PresetIPinfoLite        = "ipinfo_lite"
+	PresetIPinfoCore        = "ipinfo_core"
+	PresetIPinfoPlus        = "ipinfo_plus"
 	PresetMaxMindCountry    = "maxmind_country"
 	PresetMaxMindCity       = "maxmind_city"
 	PresetMaxMindASN        = "maxmind_asn"
