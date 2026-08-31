@@ -16,7 +16,7 @@ None.
 
 ### Modified Capabilities
 
-- `std_go_reclaim_context-lease`: `Open` accepts a logger; put/dispose at debug; nil logger falls back to the table logger.
+- `std_go_reclaim_context-lease`: `Open` accepts a required logger; put/dispose at debug; nil logger is an error.
 
 ## Impact
 

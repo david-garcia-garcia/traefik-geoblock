@@ -3,15 +3,9 @@ package reclaim
 import (
 	"context"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 )
-
-// processLogger writes put/dispose to stdout so Traefik docker logs show incarnations.
-func processLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-}
 
 var (
 	defaultMu    sync.Mutex
@@ -23,28 +17,28 @@ func Default() *Table {
 	defaultMu.Lock()
 	defer defaultMu.Unlock()
 	if defaultTable == nil {
-		defaultTable = NewTable(DefaultGrace, processLogger())
+		defaultTable = NewTable(DefaultGrace)
 	}
 	return defaultTable
 }
 
 // Open is Default().Open: create-once for key on the process table and bind ctx.
-// If the value has Close(), the table calls it when the incarnation ends.
-func Open(ctx context.Context, key string, create func() (any, error)) (any, error) {
-	return Default().Open(ctx, key, create)
+// logger is required. If the value has Close(), the table calls it when the incarnation ends.
+func Open(ctx context.Context, key string, logger *slog.Logger, create func() (any, error)) (any, error) {
+	return Default().Open(ctx, key, logger, create)
 }
 
 // Reset tears down the process table (cancels every lifetime) and installs a fresh one. Tests only.
 func Reset() {
-	ResetWith(DefaultGrace, slog.Default())
+	ResetWith(DefaultGrace)
 }
 
 // ResetWith replaces the process table after canceling the current one. Tests only.
-func ResetWith(grace time.Duration, logger *slog.Logger) {
+func ResetWith(grace time.Duration) {
 	defaultMu.Lock()
 	defer defaultMu.Unlock()
 	if defaultTable != nil {
 		defaultTable.Reset()
 	}
-	defaultTable = NewTable(grace, logger)
+	defaultTable = NewTable(grace)
 }

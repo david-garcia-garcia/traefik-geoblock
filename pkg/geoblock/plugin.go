@@ -72,10 +72,33 @@ type Plugin struct {
 	requestHeaderEnrich   map[string]string // header name -> metadata key
 }
 
-// pluginLogger is the slog logger for this middleware name and config.
-func pluginLogger(name string, cfg *Config) *slog.Logger {
+var (
+	testPluginLoggerMu sync.Mutex
+	testPluginLogger   *slog.Logger
+)
+
+// SetTestPluginLogger makes PluginLogger return logger until SetTestPluginLogger(nil). Tests only.
+func SetTestPluginLogger(logger *slog.Logger) {
+	testPluginLoggerMu.Lock()
+	testPluginLogger = logger
+	testPluginLoggerMu.Unlock()
+}
+
+// PluginLogger is the slog logger for this middleware name and config.
+func PluginLogger(name string, cfg *Config) *slog.Logger {
+	testPluginLoggerMu.Lock()
+	override := testPluginLogger
+	testPluginLoggerMu.Unlock()
+	if override != nil {
+		return override
+	}
 	bootstrap := logging.NewBootstrap(name, cfg.LogLevel)
 	return logging.New(name, cfg.LogLevel, cfg.LogFormat, bootstrap)
+}
+
+// pluginLogger is PluginLogger for call sites inside this package.
+func pluginLogger(name string, cfg *Config) *slog.Logger {
+	return PluginLogger(name, cfg)
 }
 
 // NewCore builds the Plugin and opens catalog sources on this incarnation’s lifetime. cfg must already be Prepare'd.
@@ -202,7 +225,7 @@ func (p *Plugin) bindDatabase(life context.Context, cfg *Config) error {
 	if !ModeLooksUp(p.mode) {
 		return nil
 	}
-	db, err := openCatalogSources(life, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
+	db, err := openCatalogSources(life, cfg, p.logger)
 	if err != nil {
 		return fmt.Errorf("%s: failed to open catalog sources: %w", p.name, err)
 	}

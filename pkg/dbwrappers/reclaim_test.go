@@ -72,7 +72,7 @@ func hasSubseq(got [][2]string, want [][2]string) bool {
 func useShortLeases(t *testing.T) *recHandler {
 	t.Helper()
 	h := &recHandler{}
-	ResetWith(25*time.Millisecond, slog.New(h))
+	ResetWith(25 * time.Millisecond)
 	return h
 }
 
@@ -171,8 +171,9 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 	if !strings.HasPrefix(key2, keyPrefixBIN+"h2:") {
 		t.Fatalf("BIN key must include catalog key: %s", key2)
 	}
+	spy := slog.New(h)
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	h1, err := OpenBIN(ctx1, cfg1, testLogger())
+	h1, err := OpenBIN(ctx1, cfg1, spy)
 	if err != nil {
 		t.Fatalf("H1: %v", err)
 	}
@@ -182,7 +183,7 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 	cancel1()
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	h2, err := OpenBIN(ctx2, cfg2, testLogger())
+	h2, err := OpenBIN(ctx2, cfg2, spy)
 	if err != nil {
 		t.Fatalf("H2: %v", err)
 	}
@@ -289,8 +290,9 @@ func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 	if !strings.HasPrefix(key2, keyPrefixMMDB+"h2:") {
 		t.Fatalf("MMDB key must include catalog key: %s", key2)
 	}
+	spy := slog.New(h)
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	h1, err := OpenMMDB(ctx1, cfg1, testLogger())
+	h1, err := OpenMMDB(ctx1, cfg1, spy)
 	if err != nil {
 		t.Fatalf("H1: %v", err)
 	}
@@ -300,7 +302,7 @@ func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 	cancel1()
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	h2, err := OpenMMDB(ctx2, cfg2, testLogger())
+	h2, err := OpenMMDB(ctx2, cfg2, spy)
 	if err != nil {
 		t.Fatalf("H2: %v", err)
 	}
