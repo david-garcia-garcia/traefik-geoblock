@@ -38,10 +38,9 @@ const (
 // graceGen still matches the armed generation (a reclaim or a later orphan
 // bumped it). That stops a queued AfterFunc from disposing a live slot.
 type Table struct {
-	mu     sync.Mutex
-	grace  time.Duration
-	logger *slog.Logger
-	items  map[string]*slot
+	mu    sync.Mutex
+	grace time.Duration
+	items map[string]*slot
 }
 
 // slot is one incarnation: the value, the cancel for its lifetime, and the holders that still need it.
@@ -52,20 +51,17 @@ type slot struct {
 	nextID     uint64
 	graceTimer *time.Timer
 	graceGen   uint64
+	logger     *slog.Logger
 }
 
-// NewTable builds an empty table. Zero grace means no wait after the last holder. A negative grace becomes DefaultGrace. A nil logger becomes slog.Default.
-func NewTable(grace time.Duration, logger *slog.Logger) *Table {
+// NewTable builds an empty table. Zero grace means no wait after the last holder. A negative grace becomes DefaultGrace.
+func NewTable(grace time.Duration) *Table {
 	if grace < 0 {
 		grace = DefaultGrace
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
 	return &Table{
-		grace:  grace,
-		logger: logger,
-		items:  map[string]*slot{},
+		grace: grace,
+		items: map[string]*slot{},
 	}
 }
 
@@ -101,10 +97,14 @@ func stopValue(v any) {
 
 // Open returns the stored value for key, creating it once, and tracks ctx until it is done.
 // create takes no arguments: Yaegi cannot call func(context.Context) (any, error) (it assigns life onto the value).
+// logger is required; it is the only logger for this Open and is stored on the slot for orphan and dispose.
 // If the value has Close(), the table calls it when this incarnation ends.
-func (t *Table) Open(ctx context.Context, key string, create func() (any, error)) (any, error) {
+func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, create func() (any, error)) (any, error) {
 	if t == nil {
 		return nil, fmt.Errorf("reclaim: open %q: nil table", key)
+	}
+	if logger == nil {
+		return nil, fmt.Errorf("reclaim: open %q: nil logger", key)
 	}
 	requireContext(ctx)
 
@@ -112,9 +112,10 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 	t.mu.Lock()
 	if e, ok := t.items[key]; ok {
 		id, reclaimed := t.bindLocked(e)
+		e.logger = logger
 		v := e.value
 		t.mu.Unlock()
-		t.logBind(key, reclaimed)
+		t.logBind(logger, key, reclaimed)
 		go t.watch(key, id, e, ctx)
 		return v, nil
 	}
@@ -132,11 +133,12 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 	// Another Open won: keep the stored value and drop this extra create.
 	if e, ok := t.items[key]; ok {
 		id, reclaimed := t.bindLocked(e)
+		e.logger = logger
 		exist := e.value
 		t.mu.Unlock()
 		cancel()
 		stopValue(v)
-		t.logBind(key, reclaimed)
+		t.logBind(logger, key, reclaimed)
 		go t.watch(key, id, e, ctx)
 		return exist, nil
 	}
@@ -146,6 +148,7 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 		value:   v,
 		cancel:  cancel,
 		holders: map[uint64]struct{}{},
+		logger:  logger,
 	}
 	t.items[key] = e
 	id, _ := t.bindLocked(e)
@@ -154,8 +157,8 @@ func (t *Table) Open(ctx context.Context, key string, create func() (any, error)
 		waitCtx(life)
 		stopValue(v)
 	}()
-	t.logger.Info(MsgPut, "key", key)
-	t.logBind(key, false)
+	logger.Debug(MsgPut, "key", key)
+	t.logBind(logger, key, false)
 	go t.watch(key, id, e, ctx)
 	return v, nil
 }
@@ -174,11 +177,11 @@ func (t *Table) bindLocked(e *slot) (id uint64, reclaimed bool) {
 }
 
 // logBind emits reclaim (if this Open stopped grace) and bind. Caller must not hold t.mu.
-func (t *Table) logBind(key string, reclaimed bool) {
+func (t *Table) logBind(logger *slog.Logger, key string, reclaimed bool) {
 	if reclaimed {
-		t.logger.Debug(MsgReclaim, "key", key)
+		logger.Debug(MsgReclaim, "key", key)
 	}
-	t.logger.Debug(MsgBind, "key", key)
+	logger.Debug(MsgBind, "key", key)
 }
 
 // watch waits until ctx is done, then drops that holder on this slot only.
@@ -204,14 +207,15 @@ func (t *Table) drop(key string, id uint64, e *slot) {
 	// Last holder gone: arm grace or end immediately when grace is zero.
 	e.graceGen++
 	gen := e.graceGen
+	orphanLog := e.logger
 	if t.grace > 0 {
 		e.graceTimer = time.AfterFunc(t.grace, func() { t.fire(key, e, gen) })
 		t.mu.Unlock()
-		t.logger.Debug(MsgOrphan, "key", key)
+		orphanLog.Debug(MsgOrphan, "key", key)
 		return
 	}
 	t.mu.Unlock()
-	t.logger.Debug(MsgOrphan, "key", key)
+	orphanLog.Debug(MsgOrphan, "key", key)
 	t.fire(key, e, gen)
 }
 
@@ -224,12 +228,13 @@ func (t *Table) fire(key string, e *slot, gen uint64) {
 		return
 	}
 	cancel := e.cancel
+	disposeLog := e.logger
 	delete(t.items, key)
 	t.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
-	t.logger.Info(MsgDispose, "key", key)
+	disposeLog.Debug(MsgDispose, "key", key)
 }
 
 // Reset stops grace timers and cancels every incarnation lifetime. Tests only.
@@ -250,6 +255,6 @@ func (t *Table) Reset() {
 		if e.cancel != nil {
 			e.cancel()
 		}
-		t.logger.Info(MsgDispose, "key", key)
+		e.logger.Debug(MsgDispose, "key", key)
 	}
 }

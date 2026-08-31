@@ -41,7 +41,7 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 
 // bindPlugin stores or reclaims the NewCore Plugin, then ForRoutes this next.
 func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config) (http.Handler, error) {
-	stored, err := reclaim.Open(ctx, pluginKey(name, cfg), func() (any, error) {
+	stored, err := reclaim.Open(ctx, pluginKey(name, cfg), geoblock.PluginLogger(name, cfg), func() (any, error) {
 		return geoblock.NewCore(name, cfg)
 	})
 	if err != nil {

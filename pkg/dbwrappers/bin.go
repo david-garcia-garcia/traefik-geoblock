@@ -57,7 +57,7 @@ func binKey(cfg BINConfig) string {
 // OpenBIN returns the singleton BIN for cfg and binds ctx on the process table.
 func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	key := binKey(cfg)
-	v, err := reclaim.Open(ctx, key, func() (any, error) {
+	v, err := reclaim.Open(ctx, key, logger, func() (any, error) {
 		return newBIN(cfg, logger)
 	})
 	if err != nil {

@@ -96,7 +96,10 @@ func shortLeases(t *testing.T) *lifecycleLog {
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
 	h := &lifecycleLog{}
-	dbwrappers.ResetWith(25*time.Millisecond, slog.New(h))
+	spy := slog.New(h)
+	SetTestPluginLogger(spy)
+	t.Cleanup(func() { SetTestPluginLogger(nil) })
+	dbwrappers.ResetWith(25 * time.Millisecond)
 	return h
 }
 
