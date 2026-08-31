@@ -96,6 +96,7 @@ func (w *BIN) sourceCfg() dbsource.Config {
 	return cfg
 }
 
+// initialize resolves the catalog or seed file, copies it when dated, and opens the handle.
 func (w *BIN) initialize() error {
 	cfg := w.sourceCfg()
 	resolved, err := dbsource.Resolve(cfg, w.logger)
@@ -205,6 +206,7 @@ func (w *BIN) startUpdate() {
 	w.updater = updater
 }
 
+// hotSwap opens a new dated catalog file and replaces the live handle.
 func (w *BIN) hotSwap(newDatabasePath string) error {
 	newLocalCopy, err := w.createLocalCopy(newDatabasePath)
 	if err != nil {
