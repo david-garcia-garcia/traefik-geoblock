@@ -15,9 +15,12 @@ const (
 	PresetIPinfoLite      = "ipinfo_lite"
 	PresetIPinfoCore      = "ipinfo_core"
 	PresetIPinfoPlus      = "ipinfo_plus"
-	PresetMaxMindCountry  = "maxmind_country"
-	PresetMaxMindCity     = "maxmind_city"
-	PresetMaxMindASN      = "maxmind_asn"
+	PresetMaxMindCountry    = "maxmind_country"
+	PresetMaxMindCity       = "maxmind_city"
+	PresetMaxMindASN        = "maxmind_asn"
+	PresetMaxMindISP        = "maxmind_isp"
+	PresetMaxMindDomain     = "maxmind_domain"
+	PresetMaxMindEnterprise = "maxmind_enterprise"
 )
 
 func registerPresets() {
@@ -124,13 +127,31 @@ func registerMaxMind() {
 		"autonomous_system_number":       {Key: dbprovider.MetaAsn, Type: FieldTypeUint32},
 		"autonomous_system_organization": {Key: dbprovider.MetaIsp},
 	}
+	// GeoIP2 ISP / Domain are flat; Enterprise nests isp/domain/ASN under traits.
+	isp := FieldMap{
+		"isp":                      {Key: dbprovider.MetaIsp},
+		"autonomous_system_number": {Key: dbprovider.MetaAsn, Type: FieldTypeUint32},
+	}
+	domain := FieldMap{
+		"domain": {Key: dbprovider.MetaDomain},
+	}
+	enterprise := city.Clone()
+	enterprise["traits.isp"] = Field{Key: dbprovider.MetaIsp}
+	enterprise["traits.domain"] = Field{Key: dbprovider.MetaDomain}
+	enterprise["traits.autonomous_system_number"] = Field{Key: dbprovider.MetaAsn, Type: FieldTypeUint32}
 	register(PresetMaxMindCountry, dbsource.TypeMMDB, country)
 	register(PresetMaxMindCity, dbsource.TypeMMDB, city)
 	register(PresetMaxMindASN, dbsource.TypeMMDB, asn)
+	register(PresetMaxMindISP, dbsource.TypeMMDB, isp)
+	register(PresetMaxMindDomain, dbsource.TypeMMDB, domain)
+	register(PresetMaxMindEnterprise, dbsource.TypeMMDB, enterprise)
 	registerAlias("geolite2_country", PresetMaxMindCountry)
 	registerAlias("geolite2_city", PresetMaxMindCity)
 	registerAlias("geolite2_asn", PresetMaxMindASN)
 	registerAlias("geoip2_country", PresetMaxMindCountry)
 	registerAlias("geoip2_city", PresetMaxMindCity)
 	registerAlias("geoip2_asn", PresetMaxMindASN)
+	registerAlias("geoip2_isp", PresetMaxMindISP)
+	registerAlias("geoip2_domain", PresetMaxMindDomain)
+	registerAlias("geoip2_enterprise", PresetMaxMindEnterprise)
 }

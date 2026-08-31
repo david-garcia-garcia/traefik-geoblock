@@ -44,8 +44,13 @@ func TestPreset_FormatFamilies(t *testing.T) {
 		{PresetIPinfoCore, dbsource.TypeMMDB},
 		{PresetMaxMindCountry, dbsource.TypeMMDB},
 		{PresetMaxMindASN, dbsource.TypeMMDB},
+		{PresetMaxMindISP, dbsource.TypeMMDB},
+		{PresetMaxMindDomain, dbsource.TypeMMDB},
+		{PresetMaxMindEnterprise, dbsource.TypeMMDB},
 		{"geolite2_country", dbsource.TypeMMDB},
 		{"geoip2_city", dbsource.TypeMMDB},
+		{"geoip2_isp", dbsource.TypeMMDB},
+		{"geoip2_enterprise", dbsource.TypeMMDB},
 	}
 	for _, tc := range cases {
 		format, fields, ok := Preset(tc.name)
@@ -64,7 +69,7 @@ func TestPreset_FormatFamilies(t *testing.T) {
 
 func TestPresetNames_IncludesOfficialDB8(t *testing.T) {
 	names := strings.Join(PresetNames(), ",")
-	for _, want := range []string{"ip2location_db8", "ipinfo_lite", "maxmind_asn"} {
+	for _, want := range []string{"ip2location_db8", "ipinfo_lite", "maxmind_asn", "maxmind_isp", "maxmind_domain", "maxmind_enterprise"} {
 		if !strings.Contains(names, want) {
 			t.Errorf("PresetNames missing %s: %s", want, names)
 		}
@@ -103,5 +108,29 @@ func TestPreset_MaxMindASN_Uint32(t *testing.T) {
 	ipinfo := mustFields(t, PresetIPinfoLite)
 	if ipinfo["asn"].Type != "" && ipinfo["asn"].Type != FieldTypeString {
 		t.Fatalf("IPinfo asn is a string column: %+v", ipinfo["asn"])
+	}
+}
+
+// TestPreset_MaxMindISPDomainEnterprise checks GeoIP2 ISP/Domain/Enterprise maps.
+func TestPreset_MaxMindISPDomainEnterprise(t *testing.T) {
+	isp := mustFields(t, PresetMaxMindISP)
+	if isp["isp"].Key != dbprovider.MetaIsp {
+		t.Fatalf("isp: %+v", isp["isp"])
+	}
+	if isp["autonomous_system_number"].Type != FieldTypeUint32 {
+		t.Fatalf("isp asn type: %+v", isp["autonomous_system_number"])
+	}
+	domain := mustFields(t, PresetMaxMindDomain)
+	if domain["domain"].Key != dbprovider.MetaDomain {
+		t.Fatalf("domain: %+v", domain["domain"])
+	}
+	ent := mustFields(t, PresetMaxMindEnterprise)
+	for _, path := range []string{"country.iso_code", "city.names.en", "traits.isp", "traits.domain", "traits.autonomous_system_number"} {
+		if _, ok := ent[path]; !ok {
+			t.Errorf("enterprise missing %s", path)
+		}
+	}
+	if ent["traits.autonomous_system_number"].Type != FieldTypeUint32 {
+		t.Fatalf("enterprise asn type: %+v", ent["traits.autonomous_system_number"])
 	}
 }
