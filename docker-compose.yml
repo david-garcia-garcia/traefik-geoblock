@@ -374,7 +374,7 @@ services:
       - "traefik.http.services.service-reclaima.loadbalancer.server.port=80"
       - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.mode=enrichandblock"
       - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.countryHeader=X-Ipcountry"
-      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.logLevel=INFO"
+      - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.logLevel=DEBUG"
       - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.logFormat=JSON"
       - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.databaseSources.seed.path=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock/seeds/IP2LOCATION-LITE-DB1.IPV6.BIN"
       - "traefik.http.middlewares.geoblock-reclaim.plugin.geoblock.databaseSources.seed.databaseType=bin"

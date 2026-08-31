@@ -189,7 +189,7 @@ func TestTable_OpenCancelDispose(t *testing.T) {
 // TestTable_OpenDuringGraceReclaims checks that Open before grace keeps the incarnation and returns it.
 func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(80*time.Millisecond)
+	tab := NewTable(80 * time.Millisecond)
 	var ended atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	first, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
@@ -230,7 +230,7 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 // TestTable_SecondCreateDisposeIgnored checks that a later Open does not run create or replace the lifetime.
 func TestTable_SecondCreateDisposeIgnored(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(20*time.Millisecond)
+	tab := NewTable(20 * time.Millisecond)
 	var created atomic.Int32
 	var ended atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
@@ -260,7 +260,7 @@ func TestTable_SecondCreateDisposeIgnored(t *testing.T) {
 // TestTable_TwoOpensOneDispose checks that one live holder blocks lifetime cancel until the last ctx is Done.
 func TestTable_TwoOpensOneDispose(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(20*time.Millisecond)
+	tab := NewTable(20 * time.Millisecond)
 	var ended atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	ctx2, cancel2 := context.WithCancel(context.Background())
@@ -428,7 +428,7 @@ func TestTable_OpenBackgroundDoesNotPanic(t *testing.T) {
 // TestTable_CreateErrorCancelsLife checks that a failed create does not store a slot and cancels life.
 func TestTable_CreateErrorCancelsLife(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(20*time.Millisecond)
+	tab := NewTable(20 * time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) {
@@ -453,7 +453,7 @@ func TestTable_CreateErrorCancelsLife(t *testing.T) {
 // TestTable_LostCreateRaceCancelsLoser checks that a racing extra create is canceled and not stored.
 func TestTable_LostCreateRaceCancelsLoser(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(20*time.Millisecond)
+	tab := NewTable(20 * time.Millisecond)
 	var started sync.WaitGroup
 	started.Add(2)
 	gate := make(chan struct{})
@@ -507,7 +507,7 @@ func TestTable_LostCreateRaceCancelsLoser(t *testing.T) {
 // TestTable_ResetLogsDisposeAndKeepsNextIncarnation checks Reset logs dispose and stale watchers cannot drop a later Open.
 func TestTable_ResetLogsDisposeAndKeepsNextIncarnation(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(20*time.Millisecond)
+	tab := NewTable(20 * time.Millisecond)
 	var firstEnded, secondEnded atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	if _, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
@@ -570,7 +570,7 @@ func TestTable_ResetStopsArmedTimer(t *testing.T) {
 // TestTable_ConcurrentOpenSameKeySharesOneIncarnation checks parallel Open on one key.
 func TestTable_ConcurrentOpenSameKeySharesOneIncarnation(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(20*time.Millisecond)
+	tab := NewTable(20 * time.Millisecond)
 	const n = 8
 	var created atomic.Int32
 	ctxs := make([]context.Context, n)
@@ -673,7 +673,7 @@ func TestTable_StaleFireAfterReclaimNoops(t *testing.T) {
 // TestTable_StaleFireWhileHeldNoops checks that fire is ignored while a holder is still live.
 func TestTable_StaleFireWhileHeldNoops(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(20*time.Millisecond)
+	tab := NewTable(20 * time.Millisecond)
 	var ended atomic.Bool
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -695,7 +695,7 @@ func TestTable_StaleFireWhileHeldNoops(t *testing.T) {
 // TestTable_StaleFireAfterResetNoops checks that an old slot’s fire cannot drop a later incarnation.
 func TestTable_StaleFireAfterResetNoops(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(20*time.Millisecond)
+	tab := NewTable(20 * time.Millisecond)
 	var firstEnded, secondEnded atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	defer cancel1()
@@ -729,7 +729,7 @@ func TestTable_StaleFireAfterResetNoops(t *testing.T) {
 // TestTable_ConcurrentCancelLastHolders checks that many holders ending together orphan and dispose once.
 func TestTable_ConcurrentCancelLastHolders(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(15*time.Millisecond)
+	tab := NewTable(15 * time.Millisecond)
 	const n = 8
 	var ended atomic.Bool
 	cancels := make([]context.CancelFunc, n)
@@ -870,7 +870,6 @@ type levelGate struct {
 func (h *levelGate) Enabled(_ context.Context, l slog.Level) bool {
 	return l >= h.min
 }
-
 
 // TestTable_OpenLoggerLevelGatesPutDispose checks that an info Open logger hides put/dispose and a debug logger shows them.
 func TestTable_OpenLoggerLevelGatesPutDispose(t *testing.T) {
