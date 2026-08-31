@@ -74,6 +74,18 @@ func NewBootstrap(name string, level string) *slog.Logger {
 	return slog.New(handler).With("plugin", name)
 }
 
+// NewOwner creates a text slog logger for a shared BIN wrapper.
+// owner_plugin is the middleware that created the singleton; plugin is not set.
+func NewOwner(name string, level string) *slog.Logger {
+	logLevel, _ := parseLevel(level)
+	handler := slog.NewTextHandler(&StdoutWriter{}, handlerOptions(logLevel))
+	logger := slog.New(handler)
+	if name == "" {
+		return logger
+	}
+	return logger.With("owner_plugin", name)
+}
+
 // New creates a stdout slog logger from level and format.
 func New(name, level, format string, bootstrap *slog.Logger) *slog.Logger {
 	logLevel, ok := parseLevel(level)

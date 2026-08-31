@@ -16,6 +16,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
@@ -33,6 +34,10 @@ type BINConfig struct {
 	AllowMissing    bool
 	DefaultFileName string
 	MinAge          time.Duration
+	// OwnerPlugin is the creating middleware name on BIN log lines. Omitted from the share hash.
+	OwnerPlugin string `json:"-"`
+	// OwnerLevel is the log level for that owner logger. Omitted from the share hash.
+	OwnerLevel string `json:"-"`
 }
 
 // BIN is one open IP2Location BIN (file handle) with temp-copy hot-swap.
@@ -55,10 +60,15 @@ func binKey(cfg BINConfig) string {
 }
 
 // OpenBIN returns the singleton BIN for cfg and binds ctx on the process table.
+// logger is the reclaim table logger. Wrapper lines use NewOwner when OwnerPlugin is set.
 func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	key := binKey(cfg)
+	wrap := logger
+	if cfg.OwnerPlugin != "" {
+		wrap = logging.NewOwner(cfg.OwnerPlugin, cfg.OwnerLevel)
+	}
 	v, err := reclaim.Open(ctx, key, logger, func() (any, error) {
-		return newBIN(cfg, logger)
+		return newBIN(cfg, wrap)
 	})
 	if err != nil {
 		return nil, err
@@ -96,6 +106,7 @@ func (w *BIN) sourceCfg() dbsource.Config {
 	return cfg
 }
 
+// initialize resolves the catalog or seed file, copies it when dated, and opens the handle.
 func (w *BIN) initialize() error {
 	cfg := w.sourceCfg()
 	resolved, err := dbsource.Resolve(cfg, w.logger)
@@ -143,7 +154,7 @@ func (w *BIN) initialize() error {
 	w.db = db
 	w.path = targetPath
 	w.version = version
-	w.logger.Info("BIN initialized", "path", targetPath, "version", version.String())
+	w.logger.Info("BIN initialized", "path", targetPath, "source_path", w.sourceDbPath, "version", version.String())
 	if time.Since(version.Date()) > 60*24*time.Hour {
 		w.logger.Warn("ip2location database is more than 2 months old",
 			"version", version.String(),
@@ -152,15 +163,41 @@ func (w *BIN) initialize() error {
 	return nil
 }
 
+// createLocalCopy writes a process-temp copy named bin_<catalogKey>_<unixNano>.BIN.
 func (w *BIN) createLocalCopy(sourcePath string) (string, error) {
-	now := time.Now()
-	timestamp := fmt.Sprintf("%s_%d", now.Format("20060102_150405"), now.Nanosecond())
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("IP2LOCATION_%s.BIN", timestamp))
+	tmpFile := filepath.Join(os.TempDir(), binCopyName(fileToken(w.cfg.Source.Key), time.Now().UnixNano()))
 	if err := fileutils.Copy(sourcePath, tmpFile, false); err != nil {
 		return "", fmt.Errorf("failed to create local copy: %w", err)
 	}
 	w.currentLocalDbCopy = tmpFile
 	return tmpFile, nil
+}
+
+// fileToken is the catalog key as a temp-file name segment.
+func fileToken(catalogKey string) string {
+	var b strings.Builder
+	for _, r := range catalogKey {
+		if fileTokenRune(r) {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('_')
+	}
+	return b.String()
+}
+
+// fileTokenRune reports whether r may appear in a temp-copy catalog-key segment.
+func fileTokenRune(r rune) bool {
+	return r == '.' || r == '_' || r == '-' ||
+		(r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+}
+
+// binCopyName is the temp-copy basename: format, catalog key, Unix nanosecond.
+func binCopyName(token string, unixNano int64) string {
+	if token == "" {
+		return fmt.Sprintf("bin_%d.BIN", unixNano)
+	}
+	return fmt.Sprintf("bin_%s_%d.BIN", token, unixNano)
 }
 
 func (w *BIN) startUpdate() {
@@ -179,6 +216,7 @@ func (w *BIN) startUpdate() {
 	w.updater = updater
 }
 
+// hotSwap opens a new dated catalog file and replaces the live handle.
 func (w *BIN) hotSwap(newDatabasePath string) error {
 	newLocalCopy, err := w.createLocalCopy(newDatabasePath)
 	if err != nil {
@@ -207,7 +245,7 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 			oldDB.Close()
 		}()
 	}
-	w.logger.Info("BIN hot-swapped", "new_version", newVersion.String(), "new_path", newLocalCopy)
+	w.logger.Info("BIN hot-swapped", "new_version", newVersion.String(), "new_path", newLocalCopy, "source_path", newDatabasePath)
 	return nil
 }
 
