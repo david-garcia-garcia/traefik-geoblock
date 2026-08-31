@@ -284,63 +284,13 @@ Token and account downloads are operator rows (any key name). Set `archive` on p
 
 ### `fieldsPreconfigured`
 
-`fieldsPreconfigured` names a vendor column map. Record keys you can map in `requestHeaderEnrich` are `country`, `country_name`, `continent`, `continent_code`, `region`, `city`, `isp`, `domain`, `asn`. Extra BIN columns (coords, ZIP, timezone) stay unused.
+`fieldsPreconfigured` names a vendor column map. Record keys you can map in `requestHeaderEnrich` are `country`, `country_name`, `continent`, `continent_code`, `region`, `city`, `isp`, `domain`, `asn`. Extra vendor columns (coords, ZIP, timezone, privacy flags) stay unused.
 
-MMDB presets: `ipinfo_lite`, `ipinfo_core`, `ipinfo_plus`, `maxmind_country`, `maxmind_city`, `maxmind_asn`, plus `geolite2_*` / `geoip2_*` aliases. `fields` is the same map written by hand (`country.iso_code: country`).
+Every shipped name — IP2Location DB/LITE/ASN `file=` codes, IPinfo Lite/Core/Plus, MaxMind Country/City/ASN/ISP/Domain/Enterprise, and `geolite2_*` / `geoip2_*` aliases — is listed in [docs/fields-preconfigured.md](docs/fields-preconfigured.md).
 
-IP2Location IPv6 BIN uses one token URL and `archive: zip`. Put the package you own in `file=`. Codes are official download-client names (`DB8BINIPV6`, `DB1LITEBINIPV6`, …), not ZIP filenames. `ip2location` is the same map as `ip2location_db8`. `ip2location_lite` is the same map as `ip2location_db1` / `ip2location_lite_db1`.
+`fields` is the same map written by hand (`country.iso_code: country`). Do not set both on one row.
 
-| Package | `file=` | `fieldsPreconfigured` | Record keys |
-| --- | --- | --- | --- |
-| DB1 | `DB1BINIPV6` | `ip2location_db1` | country, country_name |
-| DB2 | `DB2BINIPV6` | `ip2location_db2` | country, country_name, isp |
-| DB3 | `DB3BINIPV6` | `ip2location_db3` | country, country_name, region, city |
-| DB4 | `DB4BINIPV6` | `ip2location_db4` | country, country_name, region, city, isp |
-| DB5 | `DB5BINIPV6` | `ip2location_db5` | country, country_name, region, city |
-| DB6 | `DB6BINIPV6` | `ip2location_db6` | country, country_name, region, city, isp |
-| DB7 | `DB7BINIPV6` | `ip2location_db7` | country, country_name, region, city, isp, domain |
-| DB8 | `DB8BINIPV6` | `ip2location_db8` | country, country_name, region, city, isp, domain |
-| DB9 | `DB9BINIPV6` | `ip2location_db9` | country, country_name, region, city |
-| DB10 | `DB10BINIPV6` | `ip2location_db10` | country, country_name, region, city, isp, domain |
-| DB11 | `DB11BINIPV6` | `ip2location_db11` | country, country_name, region, city |
-| DB12 | `DB12BINIPV6` | `ip2location_db12` | country, country_name, region, city, isp, domain |
-| DB13 | `DB13BINIPV6` | `ip2location_db13` | country, country_name, region, city |
-| DB14 | `DB14BINIPV6` | `ip2location_db14` | country, country_name, region, city, isp, domain |
-| DB15 | `DB15BINIPV6` | `ip2location_db15` | country, country_name, region, city |
-| DB16 | `DB16BINIPV6` | `ip2location_db16` | country, country_name, region, city, isp, domain |
-| DB17 | `DB17BINIPV6` | `ip2location_db17` | country, country_name, region, city |
-| DB18 | `DB18BINIPV6` | `ip2location_db18` | country, country_name, region, city, isp, domain |
-| DB19 | `DB19BINIPV6` | `ip2location_db19` | country, country_name, region, city, isp, domain |
-| DB20 | `DB20BINIPV6` | `ip2location_db20` | country, country_name, region, city, isp, domain |
-| DB21 | `DB21BINIPV6` | `ip2location_db21` | country, country_name, region, city |
-| DB22 | `DB22BINIPV6` | `ip2location_db22` | country, country_name, region, city, isp, domain |
-| DB23 | `DB23BINIPV6` | `ip2location_db23` | country, country_name, region, city, isp, domain |
-| DB24 | `DB24BINIPV6` | `ip2location_db24` | country, country_name, region, city, isp, domain |
-| DB25 | `DB25BINIPV6` | `ip2location_db25` | country, country_name, region, city, isp, domain |
-| DB26 | `DB26BINIPV6` | `ip2location_db26` | country, country_name, region, city, isp, domain, asn |
-
-LITE IPv6 BIN is the same token URL with `DBnLITEBINIPV6`. Free LITE DB1 (no token) is the reserved `default_ip2location` row.
-
-| Package | `file=` | `fieldsPreconfigured` | Record keys |
-| --- | --- | --- | --- |
-| LITE DB1 | `DB1LITEBINIPV6` | `ip2location_lite_db1` | country, country_name |
-| LITE DB2 | `DB2LITEBINIPV6` | `ip2location_lite_db2` | country, country_name, isp |
-| LITE DB3 | `DB3LITEBINIPV6` | `ip2location_lite_db3` | country, country_name, region, city |
-| LITE DB4 | `DB4LITEBINIPV6` | `ip2location_lite_db4` | country, country_name, region, city, isp |
-| LITE DB5 | `DB5LITEBINIPV6` | `ip2location_lite_db5` | country, country_name, region, city |
-| LITE DB6 | `DB6LITEBINIPV6` | `ip2location_lite_db6` | country, country_name, region, city, isp |
-| LITE DB7 | `DB7LITEBINIPV6` | `ip2location_lite_db7` | country, country_name, region, city, isp, domain |
-| LITE DB8 | `DB8LITEBINIPV6` | `ip2location_lite_db8` | country, country_name, region, city, isp, domain |
-| LITE DB9 | `DB9LITEBINIPV6` | `ip2location_lite_db9` | country, country_name, region, city |
-| LITE DB10 | `DB10LITEBINIPV6` | `ip2location_lite_db10` | country, country_name, region, city, isp, domain |
-| LITE DB11 | `DB11LITEBINIPV6` | `ip2location_lite_db11` | country, country_name, region, city |
-| ASN LITE | `DBASNLITEBINIPV6` | `ip2location_asn` | asn |
-
-ASN LITE is a `bin` row with `fieldsPreconfigured: ip2location_asn`. That package is a token download: set `path` or let auto-update write a dated file.
-
-IP2Location LITE DB1 is country-only; region/city/isp/domain need DB8 or richer. IPinfo Lite fills country, country_name, continent, continent_code, isp (`as_name`), domain (`as_domain`), and asn (`AS15169` form); region and city stay empty.
-
-A custom `fields` map (do not set `fieldsPreconfigured` on the same row):
+A custom `fields` map:
 
 ```yaml
 custom:
