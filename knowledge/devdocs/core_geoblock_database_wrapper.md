@@ -16,7 +16,8 @@ _Avoid_: treating a file brand as a wrapper type; hidden vendor structs; inferri
 
 ## How to use
 
-- Open through `OpenBIN` or `OpenMMDB` with the plugin `New` context. Same config hash shares one file and one Updater. The wrapper logger is scoped with `key` equal to the catalog map key.
+- Open through `OpenBIN` or `OpenMMDB` with the plugin `New` context. Same config hash shares one file and one Updater. The wrapper logger is scoped with `key` equal to the catalog map key. BIN open from catalog uses `logging.NewOwner`: `owner_plugin` is the creating middleware; do not attach `plugin` on that logger.
+- `BIN initialized` / `BIN hot-swapped`: `path` / `new_path` is the opened file (temp copy when one exists). `source_path` is the dated catalog or seed file. Temp copy basename is `bin_<catalogKey>_<unixNano>.BIN`.
 - Those opens go through `reclaim.Open` (`std_go_reclaim.md`) with `bin:<catalogKey>:<hash>` / `mmdb:<catalogKey>:<hash>` keys. Create watches the incarnation lifetime and calls `close` when it is canceled. Unreclaimed hash ends after grace. The caller asserts `*BIN` / `*MMDB`, then `LookupRecord(ip, fields)` via `dbprovider.Bind`.
 - One catalog row is one wrapper. A BIN ASN LITE row sets `fieldsPreconfigured: ip2location_asn` (map `asn` → `asn`). Lookup copies only that path from `Get_all`.
 - `Provider.Close` must not close the shared wrapper.

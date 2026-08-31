@@ -98,6 +98,13 @@ func TestNewBootstrap(t *testing.T) {
 	}
 }
 
+func TestNewOwner(t *testing.T) {
+	logger := NewOwner("traefik-geoblock@kubernetescrd", "info")
+	if logger == nil {
+		t.Fatal("expected logger")
+	}
+}
+
 func TestNew_LogLevels(t *testing.T) {
 	pluginName := testPluginName
 	bootstrapLogger := NewBootstrap(pluginName, "info")

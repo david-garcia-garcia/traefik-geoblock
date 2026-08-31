@@ -143,7 +143,7 @@ func (w *BIN) initialize() error {
 	w.db = db
 	w.path = targetPath
 	w.version = version
-	w.logger.Info("BIN initialized", "path", targetPath, "version", version.String())
+	w.logger.Info("BIN initialized", "path", targetPath, "source_path", w.sourceDbPath, "version", version.String())
 	if time.Since(version.Date()) > 60*24*time.Hour {
 		w.logger.Warn("ip2location database is more than 2 months old",
 			"version", version.String(),
@@ -152,15 +152,41 @@ func (w *BIN) initialize() error {
 	return nil
 }
 
+// createLocalCopy writes a process-temp copy named bin_<catalogKey>_<unixNano>.BIN.
 func (w *BIN) createLocalCopy(sourcePath string) (string, error) {
-	now := time.Now()
-	timestamp := fmt.Sprintf("%s_%d", now.Format("20060102_150405"), now.Nanosecond())
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("IP2LOCATION_%s.BIN", timestamp))
+	tmpFile := filepath.Join(os.TempDir(), binCopyName(fileToken(w.cfg.Source.Key), time.Now().UnixNano()))
 	if err := fileutils.Copy(sourcePath, tmpFile, false); err != nil {
 		return "", fmt.Errorf("failed to create local copy: %w", err)
 	}
 	w.currentLocalDbCopy = tmpFile
 	return tmpFile, nil
+}
+
+// fileToken is the catalog key as a temp-file name segment.
+func fileToken(catalogKey string) string {
+	var b strings.Builder
+	for _, r := range catalogKey {
+		if fileTokenRune(r) {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('_')
+	}
+	return b.String()
+}
+
+// fileTokenRune reports whether r may appear in a temp-copy catalog-key segment.
+func fileTokenRune(r rune) bool {
+	return r == '.' || r == '_' || r == '-' ||
+		(r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+}
+
+// binCopyName is the temp-copy basename: format, catalog key, Unix nanosecond.
+func binCopyName(token string, unixNano int64) string {
+	if token == "" {
+		return fmt.Sprintf("bin_%d.BIN", unixNano)
+	}
+	return fmt.Sprintf("bin_%s_%d.BIN", token, unixNano)
 }
 
 func (w *BIN) startUpdate() {
@@ -207,7 +233,7 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 			oldDB.Close()
 		}()
 	}
-	w.logger.Info("BIN hot-swapped", "new_version", newVersion.String(), "new_path", newLocalCopy)
+	w.logger.Info("BIN hot-swapped", "new_version", newVersion.String(), "new_path", newLocalCopy, "source_path", newDatabasePath)
 	return nil
 }
 

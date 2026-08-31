@@ -202,7 +202,7 @@ func (p *Plugin) bindDatabase(life context.Context, cfg *Config) error {
 	if !ModeLooksUp(p.mode) {
 		return nil
 	}
-	db, err := openCatalogSources(life, cfg, logging.NewBootstrap(p.name, cfg.LogLevel))
+	db, err := openCatalogSources(life, cfg, p.name, logging.NewBootstrap(p.name, cfg.LogLevel))
 	if err != nil {
 		return fmt.Errorf("%s: failed to open catalog sources: %w", p.name, err)
 	}
@@ -211,10 +211,10 @@ func (p *Plugin) bindDatabase(life context.Context, cfg *Config) error {
 }
 
 // openCatalogSources opens each enabled row and returns a Combined Lookup.
-func openCatalogSources(ctx context.Context, cfg *Config, logger *slog.Logger) (dbprovider.Provider, error) {
+func openCatalogSources(ctx context.Context, cfg *Config, ownerName string, logger *slog.Logger) (dbprovider.Provider, error) {
 	var sources []dbprovider.Named
 	for _, key := range enabledSourceKeys(cfg) {
-		lookup, err := openCatalogRow(ctx, cfg, key, logger)
+		lookup, err := openCatalogRow(ctx, cfg, key, ownerName, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +227,7 @@ func openCatalogSources(ctx context.Context, cfg *Config, logger *slog.Logger) (
 }
 
 // openCatalogRow opens one format wrapper Lookup for a catalog key.
-func openCatalogRow(ctx context.Context, cfg *Config, key string, logger *slog.Logger) (dbprovider.Provider, error) {
+func openCatalogRow(ctx context.Context, cfg *Config, key, ownerName string, logger *slog.Logger) (dbprovider.Provider, error) {
 	entry := cfg.DatabaseSources[key]
 	databaseType := strings.ToLower(strings.TrimSpace(entry.DatabaseType))
 	switch databaseType {
@@ -239,7 +239,7 @@ func openCatalogRow(ctx context.Context, cfg *Config, key string, logger *slog.L
 			DefaultFileName: src.DefaultFileName,
 			AllowMissing:    src.Path == "" && src.DefaultFileName == "",
 			MinAge:          dbwrappers.DefaultBINMinAge,
-		}, logger)
+		}, logging.NewOwner(ownerName, cfg.LogLevel))
 		if err != nil {
 			return nil, err
 		}
