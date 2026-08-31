@@ -140,7 +140,7 @@ func (w *BIN) initialize() error {
 	var targetPath string
 	if resolved != "" {
 		if latest, lerr := dbsource.Latest(cfg.Dir, cfg.Key, dbsource.TypeBIN); lerr == nil && latest != "" && latest == resolved {
-			if seed := bundledSeed(cfg, w.logger); seed != "" {
+			if seed, serr := dbsource.BundledFile(cfg, w.logger); serr == nil && seed != "" {
 				w.sourceDbPath = seed
 				targetPath = seed
 				w.pendingDated = latest
@@ -194,18 +194,6 @@ func (w *BIN) initialize() error {
 			"age", time.Since(version.Date()).Round(24*time.Hour))
 	}
 	return nil
-}
-
-// bundledSeed is the plugin-root defaultFile, or empty when Search fails.
-func bundledSeed(cfg dbsource.Config, logger *slog.Logger) string {
-	if cfg.DefaultFileName == "" {
-		return ""
-	}
-	found, err := fileutils.Default.Search("", cfg.DefaultFileName, logger)
-	if err != nil || found == "" {
-		return ""
-	}
-	return found
 }
 
 // openedFileSize is the byte length of path, or 0 when Stat fails.
