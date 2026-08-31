@@ -225,6 +225,15 @@ func TestNew(t *testing.T) {
 		if plugin != nil {
 			t.Error("expected plugin to be nil")
 		}
+		if !strings.Contains(err.Error(), "set fields or fieldsPreconfigured") {
+			t.Errorf("expected cause, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "plugin does not start") {
+			t.Errorf("expected start implication, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "this middleware is not applied") {
+			t.Errorf("expected apply implication, got: %v", err)
+		}
 	})
 
 	t.Run("UnknownPresetFails", func(t *testing.T) {
