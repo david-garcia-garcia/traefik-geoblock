@@ -88,7 +88,10 @@ func shortInstanceLeases(t *testing.T) *instanceLog {
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
 	h := &instanceLog{}
-	dbwrappers.ResetWith(100*time.Millisecond, slog.New(h))
+	spy := slog.New(h)
+	geoblock.SetTestPluginLogger(spy)
+	t.Cleanup(func() { geoblock.SetTestPluginLogger(nil) })
+	dbwrappers.ResetWith(100 * time.Millisecond)
 	return h
 }
 

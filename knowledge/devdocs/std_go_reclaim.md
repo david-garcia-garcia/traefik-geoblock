@@ -11,7 +11,7 @@ The process-wide table (`reclaim.Default`, `reclaim.Open`). One incarnation per 
 _Avoid_: one `NewTable` per caller when they should share; unprefixed keys that can collide
 
 **Open**:
-Create-once for a key (`create` takes no args — Yaegi assigns a `context.Context` arg onto the value). Later `Open` does not run create. If the value has `Close()`, the table calls it when the incarnation ends. `ctx` must not be nil. Traefik’s `New` ctx is `WithCancel`; the next dynamic config cancels it before the next `New`.
+Create-once for a key (`create` takes no args — Yaegi assigns a `context.Context` arg onto the value). The caller passes a `*slog.Logger` (required; no table logger and no fallback). Later `Open` does not run create. If the value has `Close()`, the table calls it when the incarnation ends. `ctx` must not be nil. Traefik’s `New` ctx is `WithCancel`; the next dynamic config cancels it before the next `New`.
 _Avoid_: Put vs Bind as two public calls; a nil holder context; `func(context.Context) (any, error)` as create
 
 **Grace**:
@@ -28,8 +28,8 @@ _Avoid_: a house `dispose func(any)` on `Open`
 
 ## How to use
 
-- Production: `reclaim.Open(ctx, key, create)` (process table). Tests: `NewTable` with a short grace, or `ResetWith`.
-- Watch stable `msg` + `key`. Info: `reclaim_put`, `reclaim_dispose` (process table writes these to stdout). Debug: `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`.
+- Production: `reclaim.Open(ctx, key, logger, create)` (process table). Tests: `NewTable` with a short grace, or `ResetWith`. `logger` is required.
+- Watch stable `msg` + `key`. All five (`reclaim_put`, `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`, `reclaim_dispose`) are debug. Put/bind/reclaim use that `Open`’s logger; orphan/dispose use the last `Open` on the key. A middleware `logLevel` of info hides them.
 - `ctx` is the host teardown context (Traefik `New` ctx), not `req.Context()`, not `context.Background()`.
 - Give the stored value a `Close()` method if it must stop when the incarnation ends. The table calls it once. `create` takes no arguments.
 - Prefix keys when more than one type shares Default (`bin:` / `mmdb:` / `plugin:`).
@@ -37,7 +37,7 @@ _Avoid_: a house `dispose func(any)` on `Open`
 ## Pattern snippet
 
 ```go
-v, err := reclaim.Open(ctx, "bin:"+hash, func() (any, error) {
+v, err := reclaim.Open(ctx, "bin:"+hash, logger, func() (any, error) {
 	return newBIN(cfg)
 })
 w := v.(*BIN) // *BIN has Close(); the table calls it when the incarnation ends

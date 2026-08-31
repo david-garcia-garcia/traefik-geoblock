@@ -1,7 +1,6 @@
 package dbwrappers
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
@@ -12,7 +11,7 @@ func Reset() {
 	reclaim.Reset()
 }
 
-// ResetWith is Reset with a grace and logger. Tests only.
-func ResetWith(grace time.Duration, logger *slog.Logger) {
-	reclaim.ResetWith(grace, logger)
+// ResetWith is Reset with a grace. Tests only.
+func ResetWith(grace time.Duration) {
+	reclaim.ResetWith(grace)
 }

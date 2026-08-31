@@ -16,6 +16,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
 
@@ -33,6 +34,10 @@ type BINConfig struct {
 	AllowMissing    bool
 	DefaultFileName string
 	MinAge          time.Duration
+	// OwnerPlugin is the creating middleware name on BIN log lines. Omitted from the share hash.
+	OwnerPlugin string `json:"-"`
+	// OwnerLevel is the log level for that owner logger. Omitted from the share hash.
+	OwnerLevel string `json:"-"`
 }
 
 // BIN is one open IP2Location BIN (file handle) with temp-copy hot-swap.
@@ -55,10 +60,15 @@ func binKey(cfg BINConfig) string {
 }
 
 // OpenBIN returns the singleton BIN for cfg and binds ctx on the process table.
+// logger is the reclaim table logger. Wrapper lines use NewOwner when OwnerPlugin is set.
 func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	key := binKey(cfg)
-	v, err := reclaim.Open(ctx, key, func() (any, error) {
-		return newBIN(cfg, logger)
+	wrap := logger
+	if cfg.OwnerPlugin != "" {
+		wrap = logging.NewOwner(cfg.OwnerPlugin, cfg.OwnerLevel)
+	}
+	v, err := reclaim.Open(ctx, key, logger, func() (any, error) {
+		return newBIN(cfg, wrap)
 	})
 	if err != nil {
 		return nil, err
