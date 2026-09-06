@@ -121,7 +121,7 @@ http:
           logStatusDetailHeader: X-Geoblock-Decision
 ```
 
-Every mapped header is written. A missing field is the string `null`. Country on a private IP is `PRIVATE`.
+Every mapped header is written. A missing field is the string `null`. Country on a private IP is `PRIVATE`. A public IP for which no enabled source returns a country is `XX`.
 
 Which fields are populated depends on the database you load (country-only LITE vs city/ISP/ASN packages). Map only the keys your file actually has if you want to avoid `null` columns.
 
@@ -418,7 +418,7 @@ ipHeaders:
 
 Country allow/block uses the single `countryHeader` value (first public country written). `CheckAll` still applies CIDR and private rules to every selected IP. To choose which hop’s country is written, use `CheckFirst` / `CheckFirstNonePrivate`. To allow or deny a later hop by address, use CIDR lists or omit that hop from `ipHeaders`.
 
-On lookup modes, `countryHeader` starts as `PRIVATE` and is overwritten by the first real country.
+On lookup modes, `countryHeader` starts as `PRIVATE` and is overwritten by the first real country. A public IP for which no enabled source returns a country is `XX`, so it reaches the country rules and `defaultAllow` rather than `allowPrivate`. `XX` is ISO 3166-1 user-assigned and may be listed in `allowedCountries` / `blockedCountries`. Note an IP2Location `bin` source returns `-` for an unknown address, which counts as a country, so a catalog with one enabled does not produce `XX`.
 
 ### Path include / exclude
 
