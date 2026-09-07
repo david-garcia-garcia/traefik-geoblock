@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: BIN Lookup applies mapped Get_all columns
-`BIN.LookupRecord` SHALL call `Get_all` once and SHALL copy only mapped paths onto the Record. Unused Get_all columns SHALL not be written. Path `asn` SHALL use the Get_all Asn field. Lookup MUST NOT call `Get_asn`. Path `country_short` SHALL be copied through the same empty-vendor mapping as the other BIN columns: IP2Location `-`, empty, unavailable, and invalid strings SHALL become empty on the Record. The BIN wrapper MUST NOT write `XX`.
+`BIN.LookupRecord` SHALL call `Get_all` once and SHALL copy only mapped paths onto the Record. Unused Get_all columns SHALL not be written. Path `asn` SHALL use the Get_all Asn field. Lookup MUST NOT call `Get_asn`. Path `country_short` SHALL map IP2Location `-`, empty, and unavailable strings to empty on the Record through the same empty-vendor mapping as the other BIN columns. An invalid `country_short` SHALL remain a lookup error. The BIN wrapper MUST NOT write `XX`.
 
 #### Scenario: ASN-only map does not write country
 - **WHEN** the Field map is `ip2location_asn`
