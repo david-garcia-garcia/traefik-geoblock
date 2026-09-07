@@ -25,3 +25,12 @@ fixed: none
 skipped: none
 change: bin-country-short-empty
 next: implement
+
+## implement — 2026-09-07T15:06:18Z
+phase: implement
+findings: none
+fixed: BIN country_short through usableMeta (bfc059c)
+skipped: none
+localTests: passed
+ci: 34136414344 success
+next: codereview
