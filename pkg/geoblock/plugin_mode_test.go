@@ -461,17 +461,18 @@ func TestMode_UnresolvedPublicIPFollowsDefaultAllow(t *testing.T) {
 		}
 	})
 
-	t.Run("a bin source answers - for an unknown address, so XX does not apply", func(t *testing.T) {
+	t.Run("a bin source miss writes XX, not a vendor dash", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Mode:                 ModeEnrichAndBlock,
-			CountryHeader:        "X-Ipcountry",
-			DatabaseSources:      seedCatalog(dbFilePath),
-			AllowPrivate:         true,
-			DefaultAllow:         false,
-			AllowedCountries:     []string{"GB"},
-			DisallowedStatusCode: http.StatusForbidden,
-			IPHeaders:            []string{"x-forwarded-for"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			Mode:                  ModeEnrichAndBlock,
+			CountryHeader:         "X-Ipcountry",
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			DatabaseSources:       seedCatalog(dbFilePath),
+			AllowPrivate:          true,
+			DefaultAllow:          false,
+			AllowedCountries:      []string{"GB"},
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 		}, pluginName)
 		if err != nil {
 			t.Fatalf("New: %v", err)
@@ -480,11 +481,66 @@ func TestMode_UnresolvedPublicIPFollowsDefaultAllow(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "203.0.113.7")
 		rr := httptest.NewRecorder()
 		plugin.ServeHTTP(rr, req)
-		if got := req.Header.Get("X-Ipcountry"); got != "-" {
-			t.Errorf("country %q want %q: bin returns - for unknowns, which is a country", got, "-")
+		if got := req.Header.Get("X-Ipcountry"); got != UnknownCountryAlias {
+			t.Errorf("country %q want %q", got, UnknownCountryAlias)
 		}
 		if rr.Code != http.StatusForbidden {
 			t.Errorf("status %d want %d", rr.Code, http.StatusForbidden)
+		}
+	})
+
+	t.Run("XX in allowedCountries covers a BIN miss", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                  ModeEnrichAndBlock,
+			CountryHeader:         "X-Ipcountry",
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			DatabaseSources:       seedCatalog(dbFilePath),
+			AllowPrivate:          true,
+			DefaultAllow:          false,
+			AllowedCountries:      []string{UnknownCountryAlias},
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Forwarded-For", "203.0.113.7")
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if rr.Code != http.StatusTeapot {
+			t.Errorf("status %d want pass", rr.Code)
+		}
+		if got := req.Header.Get("X-Geoblock-Decision"); got != LogStatusPass+":"+PhaseAllowedCountry {
+			t.Errorf("decision %q want %q", got, LogStatusPass+":"+PhaseAllowedCountry)
+		}
+	})
+
+	t.Run("a BIN miss does not lock the country for a later hop", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			CountryHeader:        "X-Ipcountry",
+			DatabaseSources:      seedCatalog(dbFilePath),
+			AllowPrivate:         true,
+			DefaultAllow:         false,
+			AllowedCountries:     []string{"US"},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-forwarded-for"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Forwarded-For", "203.0.113.7, 8.8.8.8")
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if got := req.Header.Get("X-Ipcountry"); got != "US" {
+			t.Errorf("country %q want US", got)
+		}
+		if rr.Code != http.StatusTeapot {
+			t.Errorf("status %d want pass", rr.Code)
 		}
 	})
 

@@ -1,0 +1,17 @@
+issueKey: 2026-09-07-78
+jobName: 2026-09-07-78
+issueHost: github
+issueRef: "78"
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified
+src: f353d5efa2232e01ff77d2e5a3767ebf291f5461cf960787bd88677cd18c177a
+localTests: passed
+requirement: requirement.md
+comments: none
+explore: explore.md
+change: bin-country-short-empty
+pr:
+  number: 79
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/79
