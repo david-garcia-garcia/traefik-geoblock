@@ -14,7 +14,7 @@ Traefik map of request header name → metadata key (`country`, `country_name`, 
 
 ## Overview
 
-`NewCore` opens enabled `databaseSources` only when `mode` is `enrich` or `enrichandblock`. Request path calls `Lookup` and gets a `Record`, then writes `countryHeader` and `requestHeaderEnrich`. An empty field is the string `null`. Country on a private IP is `PRIVATE`. `block` and `disabled` do not open catalog sources. A `bin` LITE DB1 is country-only. Region/city/ISP/domain need a richer BIN. ASN LITE is a second `bin` row with `fieldsPreconfigured: ip2location_asn` (no shipped seed). An `mmdb` row decodes only the operator or preset Field paths (type `string` or `uint32`). The bundled seeds are `ipinfo_lite.mmdb` and official dummy `GeoIP2-Country-Test.mmdb`. Shipped `default_geolite` is a disabled unofficial Country GET.
+`NewCore` opens enabled `databaseSources` only when `mode` is `enrich` or `enrichandblock`. Request path calls `Lookup` and gets a `Record`, then writes `countryHeader` and `requestHeaderEnrich`. An empty field is the string `null`. Country on a private IP is `PRIVATE`. A public IP no enabled source returns a country for is `XX`; a `bin` source returns `-` for an unknown address, which counts as a country, so a catalog with one enabled never yields `XX`. `block` and `disabled` do not open catalog sources. A `bin` LITE DB1 is country-only. Region/city/ISP/domain need a richer BIN. ASN LITE is a second `bin` row with `fieldsPreconfigured: ip2location_asn` (no shipped seed). An `mmdb` row decodes only the operator or preset Field paths (type `string` or `uint32`). The bundled seeds are `ipinfo_lite.mmdb` and official dummy `GeoIP2-Country-Test.mmdb`. Shipped `default_geolite` is a disabled unofficial Country GET.
 
 ## How to use
 

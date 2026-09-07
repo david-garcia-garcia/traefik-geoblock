@@ -21,6 +21,8 @@ import (
 const (
 	PrivateIpCountryAlias = "PRIVATE"
 	EnrichNullAlias       = "null"
+	// UnknownCountryAlias is a public IP no source resolved. ISO 3166-1 user-assigned.
+	UnknownCountryAlias = "XX"
 )
 
 // Log status constants for observability headers
@@ -577,11 +579,22 @@ func (p Plugin) writeDefaultEnrichHeaders(req *http.Request) {
 	}
 }
 
-// writePublicLookupHeaders copies rec onto the enrich headers when rec is a public
-// country. Private or empty country is ignored so the defaults stay. written becomes
-// true so a later hop cannot replace the first public country.
+// writePublicLookupHeaders copies rec onto the enrich headers. A private country is
+// ignored so the defaults stay; an empty country writes UnknownCountryAlias without
+// marking written. written becomes true so a later hop cannot replace the first
+// public country.
 func (p Plugin) writePublicLookupHeaders(req *http.Request, rec dbprovider.Record, written *bool) {
-	if rec.Country == "" || rec.Country == PrivateIpCountryAlias {
+	if rec.Country == PrivateIpCountryAlias {
+		return
+	}
+	// A public IP no source resolved must not keep the PRIVATE default: block reads
+	// that back as the allowPrivate verdict.
+	if rec.Country == "" {
+		for header, key := range p.requestHeaderEnrich {
+			if key == dbprovider.MetaCountry {
+				req.Header.Set(header, UnknownCountryAlias)
+			}
+		}
 		return
 	}
 	for header, key := range p.requestHeaderEnrich {

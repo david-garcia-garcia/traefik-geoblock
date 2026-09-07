@@ -1,9 +1,12 @@
 package geoblock
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 )
 
 // TestNormalizeMode_EmptyIsEnrichAndBlock checks empty and whitespace mode become enrichandblock.
@@ -303,4 +306,222 @@ func TestMode_BlockMissingCountryUsesBanIfError(t *testing.T) {
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("missing country status %d", rr.Code)
 	}
+}
+
+// TestMode_UnresolvedPublicIPFollowsDefaultAllow covers a public address that the
+// enabled sources ran against and did not resolve. That is not a private hop, so it
+// must not inherit the PRIVATE enrich default and must fall through to the country
+// rules, where defaultAllow decides. The shipped MaxMind test database resolves
+// 81.2.69.142 (GB) and 89.160.20.112 (SE) and nothing else used here.
+func TestMode_UnresolvedPublicIPFollowsDefaultAllow(t *testing.T) {
+	// banIfError is true here because CreateConfig ships it true (config.go) while
+	// Prepare leaves it alone, so a Config literal would otherwise test the opposite
+	// of what operators run -- and banIfError is exactly why the sentinel is XX and
+	// not null or "": those route to the banIfError branch in blockFromHeader.
+	// Memoised: every construction opens the seed database, and `go test ./...` runs
+	// packages in parallel, so building one per subtest adds enough CPU pressure to
+	// upset the grace-window tests in pkg/reclaim on a two-core runner.
+	built := map[string]http.Handler{}
+	newPlugin := func(t *testing.T, defaultAllow bool, strategy string, allowed, blocked []string) http.Handler {
+		t.Helper()
+		key := fmt.Sprintf("%v|%s|%v|%v", defaultAllow, strategy, allowed, blocked)
+		if p, ok := built[key]; ok {
+			return p
+		}
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                  ModeEnrichAndBlock,
+			CountryHeader:         "X-Ipcountry",
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			DatabaseSources:       seedCatalog(maxmindFilePath),
+			AllowPrivate:          true,
+			BanIfError:            true,
+			DefaultAllow:          defaultAllow,
+			AllowedCountries:      allowed,
+			BlockedCountries:      blocked,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for"},
+			IPHeaderStrategy:      strategy,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		built[key] = plugin
+		return plugin
+	}
+	serve := func(plugin http.Handler, chain string) (int, string, string) {
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Forwarded-For", chain)
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		return rr.Code, req.Header.Get("X-Ipcountry"), req.Header.Get("X-Geoblock-Decision")
+	}
+
+	t.Run("defaultAllow false blocks an unresolved public IP", func(t *testing.T) {
+		plugin := newPlugin(t, false, IPHeaderStrategyCheckAll, []string{"GB"}, nil)
+		for _, ip := range []string{"203.0.113.7", "198.51.100.1"} {
+			code, country, _ := serve(plugin, ip)
+			if code != http.StatusForbidden {
+				t.Errorf("%s: status %d want %d (country %q)", ip, code, http.StatusForbidden, country)
+			}
+			if country != UnknownCountryAlias {
+				t.Errorf("%s: country %q want %q", ip, country, UnknownCountryAlias)
+			}
+		}
+	})
+
+	t.Run("defaultAllow true still allows an unresolved public IP", func(t *testing.T) {
+		plugin := newPlugin(t, true, IPHeaderStrategyCheckAll, nil, nil)
+		code, country, _ := serve(plugin, "203.0.113.7")
+		if code != http.StatusTeapot {
+			t.Errorf("status %d want pass", code)
+		}
+		if country != UnknownCountryAlias {
+			t.Errorf("country %q want %q", country, UnknownCountryAlias)
+		}
+	})
+
+	t.Run("defaultAllow true with banIfError true still passes, not block:error", func(t *testing.T) {
+		// This is why the sentinel is XX. null or "" would reach the banIfError
+		// branch in blockFromHeader and ban these instead.
+		plugin := newPlugin(t, true, IPHeaderStrategyCheckAll, nil, nil)
+		code, country, decision := serve(plugin, "203.0.113.7")
+		if code != http.StatusTeapot {
+			t.Errorf("status %d want pass (decision %q)", code, decision)
+		}
+		if country != UnknownCountryAlias {
+			t.Errorf("country %q want %q", country, UnknownCountryAlias)
+		}
+		if decision != LogStatusPass+":"+PhaseDefaultAllow {
+			t.Errorf("decision %q want %q", decision, LogStatusPass+":"+PhaseDefaultAllow)
+		}
+	})
+
+	t.Run("XX can be listed in allowedCountries", func(t *testing.T) {
+		plugin := newPlugin(t, false, IPHeaderStrategyCheckAll, []string{"GB", UnknownCountryAlias}, nil)
+		code, _, decision := serve(plugin, "203.0.113.7")
+		if code != http.StatusTeapot || decision != LogStatusPass+":"+PhaseAllowedCountry {
+			t.Errorf("status %d decision %q want pass/%s", code, decision, PhaseAllowedCountry)
+		}
+	})
+
+	t.Run("XX can be listed in blockedCountries", func(t *testing.T) {
+		plugin := newPlugin(t, true, IPHeaderStrategyCheckAll, nil, []string{UnknownCountryAlias})
+		code, _, decision := serve(plugin, "203.0.113.7")
+		if code != http.StatusForbidden || decision != LogStatusBlock+":"+PhaseBlockedCountry {
+			t.Errorf("status %d decision %q want block/%s", code, decision, PhaseBlockedCountry)
+		}
+	})
+
+	t.Run("a private hop keeps PRIVATE and follows allowPrivate", func(t *testing.T) {
+		plugin := newPlugin(t, false, IPHeaderStrategyCheckAll, []string{"GB"}, nil)
+		code, country, _ := serve(plugin, "192.168.1.50")
+		if code != http.StatusTeapot {
+			t.Errorf("status %d want pass", code)
+		}
+		if country != PrivateIpCountryAlias {
+			t.Errorf("country %q want %q", country, PrivateIpCountryAlias)
+		}
+	})
+
+	t.Run("a later hop that resolves still wins", func(t *testing.T) {
+		plugin := newPlugin(t, false, IPHeaderStrategyCheckAll, []string{"GB"}, nil)
+		code, country, _ := serve(plugin, "203.0.113.7, 81.2.69.142")
+		if country != "GB" {
+			t.Errorf("country %q want GB", country)
+		}
+		if code != http.StatusTeapot {
+			t.Errorf("status %d want pass", code)
+		}
+	})
+
+	t.Run("an unresolved hop before a private hop still blocks", func(t *testing.T) {
+		plugin := newPlugin(t, false, IPHeaderStrategyCheckAll, []string{"GB"}, nil)
+		code, country, _ := serve(plugin, "203.0.113.7, 10.0.0.1")
+		if code != http.StatusForbidden {
+			t.Errorf("status %d want %d (country %q)", code, http.StatusForbidden, country)
+		}
+		if country != UnknownCountryAlias {
+			t.Errorf("country %q want %q", country, UnknownCountryAlias)
+		}
+	})
+
+	t.Run("CGNAT and link-local are public, so they resolve to XX", func(t *testing.T) {
+		// privateOrLoopback uses net.IP.IsPrivate, which is RFC 1918 only. These
+		// ranges were already outside allowPrivate; before this change they kept the
+		// PRIVATE default and were allowed anyway.
+		plugin := newPlugin(t, false, IPHeaderStrategyCheckAll, []string{"GB"}, nil)
+		for _, ip := range []string{"100.64.0.1", "169.254.1.1", "198.18.0.1"} {
+			code, country, _ := serve(plugin, ip)
+			if country != UnknownCountryAlias {
+				t.Errorf("%s: country %q want %q", ip, country, UnknownCountryAlias)
+			}
+			if code != http.StatusForbidden {
+				t.Errorf("%s: status %d want %d", ip, code, http.StatusForbidden)
+			}
+		}
+	})
+
+	t.Run("a bin source answers - for an unknown address, so XX does not apply", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			CountryHeader:        "X-Ipcountry",
+			DatabaseSources:      seedCatalog(dbFilePath),
+			AllowPrivate:         true,
+			DefaultAllow:         false,
+			AllowedCountries:     []string{"GB"},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-forwarded-for"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Forwarded-For", "203.0.113.7")
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if got := req.Header.Get("X-Ipcountry"); got != "-" {
+			t.Errorf("country %q want %q: bin returns - for unknowns, which is a country", got, "-")
+		}
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("status %d want %d", rr.Code, http.StatusForbidden)
+		}
+	})
+
+	t.Run("every country enrich header gets XX", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			CountryHeader:        "X-Ipcountry",
+			RequestHeaderEnrich:  map[string]string{"X-Geo-Country": dbprovider.MetaCountry},
+			DatabaseSources:      seedCatalog(maxmindFilePath),
+			AllowPrivate:         true,
+			DefaultAllow:         false,
+			AllowedCountries:     []string{"GB"},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-forwarded-for"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Forwarded-For", "203.0.113.7")
+		plugin.ServeHTTP(httptest.NewRecorder(), req)
+		for _, header := range []string{"X-Ipcountry", "X-Geo-Country"} {
+			if got := req.Header.Get(header); got != UnknownCountryAlias {
+				t.Errorf("%s: got %q want %q", header, got, UnknownCountryAlias)
+			}
+		}
+	})
+
+	t.Run("CheckFirstNonePrivate blocks an unresolved public hop after a private one", func(t *testing.T) {
+		plugin := newPlugin(t, false, IPHeaderStrategyCheckFirstNonePrivate, []string{"GB"}, nil)
+		code, country, _ := serve(plugin, "10.0.0.1, 203.0.113.7")
+		if code != http.StatusForbidden {
+			t.Errorf("status %d want %d (country %q)", code, http.StatusForbidden, country)
+		}
+		if country != UnknownCountryAlias {
+			t.Errorf("country %q want %q", country, UnknownCountryAlias)
+		}
+	})
 }
