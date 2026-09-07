@@ -49,8 +49,13 @@ type BIN struct {
 	version            *dbutils.DBVersion
 	currentLocalDbCopy string
 	sourceDbPath       string
-	updater            *dbsource.Updater
+	// pendingDated is a dated catalog path to copy after initialize returns.
+	pendingDated string
+	updater      *dbsource.Updater
 }
+
+// binTestHoldAfterSeed, when set by tests, runs in the dated-copy goroutine before hotSwap.
+var binTestHoldAfterSeed func()
 
 const keyPrefixBIN = "bin:"
 
@@ -89,10 +94,28 @@ func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	if err := w.initialize(); err != nil {
 		return nil, err
 	}
+	w.startDatedCopy()
 	if strings.TrimSpace(cfg.Source.URL) != "" {
 		w.startUpdate()
 	}
 	return w, nil
+}
+
+// startDatedCopy copies pendingDated off New and hot-swaps when the copy is ready.
+func (w *BIN) startDatedCopy() {
+	dated := w.pendingDated
+	if dated == "" {
+		return
+	}
+	w.pendingDated = ""
+	go func() {
+		if binTestHoldAfterSeed != nil {
+			binTestHoldAfterSeed()
+		}
+		if err := w.hotSwap(dated); err != nil {
+			w.logger.Error("failed to perform hot swap", "error", err)
+		}
+	}()
 }
 
 func (w *BIN) sourceCfg() dbsource.Config {
@@ -106,7 +129,7 @@ func (w *BIN) sourceCfg() dbsource.Config {
 	return cfg
 }
 
-// initialize resolves the catalog or seed file, copies it when dated, and opens the handle.
+// initialize opens a handle: bundled seed first when a dated file exists, else dated copy or path.
 func (w *BIN) initialize() error {
 	cfg := w.sourceCfg()
 	resolved, err := dbsource.Resolve(cfg, w.logger)
@@ -117,13 +140,19 @@ func (w *BIN) initialize() error {
 	var targetPath string
 	if resolved != "" {
 		if latest, lerr := dbsource.Latest(cfg.Dir, cfg.Key, dbsource.TypeBIN); lerr == nil && latest != "" && latest == resolved {
-			w.sourceDbPath = latest
-			copied, cerr := w.createLocalCopy(latest)
-			if cerr != nil {
-				w.logger.Warn("local copy failed, opening source", "error", cerr)
-				targetPath = latest
+			if seed, serr := dbsource.BundledFile(cfg, w.logger); serr == nil && seed != "" {
+				w.sourceDbPath = seed
+				targetPath = seed
+				w.pendingDated = latest
 			} else {
-				targetPath = copied
+				w.sourceDbPath = latest
+				copied, cerr := w.createLocalCopy(latest)
+				if cerr != nil {
+					w.logger.Warn("local copy failed, opening source", "error", cerr)
+					targetPath = latest
+				} else {
+					targetPath = copied
+				}
 			}
 		} else {
 			targetPath = resolved
@@ -154,13 +183,26 @@ func (w *BIN) initialize() error {
 	w.db = db
 	w.path = targetPath
 	w.version = version
-	w.logger.Info("BIN initialized", "path", targetPath, "source_path", w.sourceDbPath, "version", version.String())
+	attrs := []any{"path", targetPath, "source_path", w.sourceDbPath, "version", version.String(), "size_bytes", openedFileSize(targetPath)}
+	if w.pendingDated != "" {
+		attrs = append(attrs, "pending_source_path", w.pendingDated)
+	}
+	w.logger.Info("BIN initialized", attrs...)
 	if time.Since(version.Date()) > 60*24*time.Hour {
 		w.logger.Warn("ip2location database is more than 2 months old",
 			"version", version.String(),
 			"age", time.Since(version.Date()).Round(24*time.Hour))
 	}
 	return nil
+}
+
+// openedFileSize is the byte length of path, or 0 when Stat fails.
+func openedFileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
 }
 
 // createLocalCopy writes a process-temp copy named bin_<catalogKey>_<unixNano>.BIN.
@@ -233,6 +275,11 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 		os.Remove(newLocalCopy)
 		return fmt.Errorf("hotSwap: failed to read new database version: %w", err)
 	}
+	if w.db == nil {
+		newDB.Close()
+		os.Remove(newLocalCopy)
+		return nil
+	}
 	oldDB := w.db
 	w.db = newDB
 	w.path = newLocalCopy
@@ -245,7 +292,7 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 			oldDB.Close()
 		}()
 	}
-	w.logger.Info("BIN hot-swapped", "new_version", newVersion.String(), "new_path", newLocalCopy, "source_path", newDatabasePath)
+	w.logger.Info("BIN hot-swapped", "new_version", newVersion.String(), "new_path", newLocalCopy, "source_path", newDatabasePath, "size_bytes", openedFileSize(newLocalCopy))
 	return nil
 }
 

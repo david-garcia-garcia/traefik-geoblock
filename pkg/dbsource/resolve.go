@@ -2,6 +2,7 @@ package dbsource
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
@@ -26,11 +27,17 @@ func Resolve(cfg Config, logger *slog.Logger) (string, error) {
 		}
 		logger.Warn("seed was specified but not found", "path", cfg.Path)
 	}
-	// No bundled default (ASN): wait for auto-update.
-	if cfg.DefaultFileName == "" {
+	return BundledFile(cfg, logger)
+}
+
+// BundledFile is the plugin-root defaultFile ({env}/seeds/<name> or {env}/<name>), or empty.
+func BundledFile(cfg Config, logger *slog.Logger) (string, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if strings.TrimSpace(cfg.DefaultFileName) == "" {
 		return "", nil
 	}
-	// Plugin-root exact paths via Search.
 	found, err := fileutils.Default.Search("", cfg.DefaultFileName, logger)
 	if err != nil {
 		return "", err

@@ -32,6 +32,7 @@ Each enabled catalog row is one wrapper plus one source. Merge happens after Loo
 - Lookup modes insert reserved rows when the key is absent: `default_ip2location` (enabled; free LITE ZIP + `IP2LOCATION-LITE-DB1.IPV6.BIN`), `default_ipinfo` (disabled; `ipinfo_lite.mmdb`), `default_maxmind` (disabled; dummy `GeoIP2-Country-Test.mmdb`), `default_geolite` (disabled; unofficial P3TERX Country GET). Keep an operator-defined reserved row. Do not commit a live GeoLite file.
 - Omitted `enabled` means on. Zero enabled rows in a lookup mode fails `Prepare`. Unknown or empty `databaseType` on an enabled row fails `Prepare`. Unknown `databaseType`/`archive` fails `New`. A bound URL with empty `databaseAutoUpdateDir` WARNs and uses `os.TempDir()`/`traefik-geoblock`.
 - Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path). A set `path` that is not a file WARNs `seed was specified but not found`. Else `{TRAEFIK_PLUGIN_GEOBLOCK_PATH}/seeds/<defaultFile>` then `{env}/<defaultFile>`. Empty `defaultFile` skips bundled search. No directory walk. An ASN LITE row (`databaseType: bin`, `fieldsPreconfigured: ip2location_asn`) ships no `defaultFile`; BIN open allows a missing file when both `path` and `defaultFile` are empty. There is no `*_databaseFilePath`.
+- Need the bundled `defaultFile` without dated Latest winning: `dbsource.BundledFile` (same Search as Resolve’s last step). BIN seed-first initialize calls that.
 - Wrapper and source logs include `key` (the `databaseSources` map key).
 - `Start` returns a nil Updater when the URL is empty.
 
@@ -45,6 +46,7 @@ Each enabled catalog row is one wrapper plus one source. Merge happens after Loo
 
 ```go
 path, err := dbsource.Resolve(cfg, logger)
+seed, err := dbsource.BundledFile(cfg, logger)
 u, err := dbsource.Start(cfg, logger, onUpdate)
 ```
 
