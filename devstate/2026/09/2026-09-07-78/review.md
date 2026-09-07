@@ -41,3 +41,19 @@ findings: Spec P3 1 (invalid country_short SHALL)
 fixed: narrowed lookup spec; dest invalid-as-error kept
 skipped: none
 next: devdocsimpact
+
+## archive — 2026-09-07T15:14:41Z
+phase: archive
+findings: none
+fixed: catalog sync + move to archive/2026-09-07-bin-country-short-empty
+skipped: none
+next: pullrequest
+
+## pullrequest — 2026-09-07T15:14:41Z
+phase: pullrequest
+findings: none
+fixed: none
+skipped: none
+ci: 34137139823 success
+verdict: ready for review
+

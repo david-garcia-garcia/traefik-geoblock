@@ -9,6 +9,6 @@ JobName: 2026-09-07-78
 | propose | [x] | [x] | 2026-09-07T15:01:05Z |
 | implement | [x] | [x] | 2026-09-07T15:06:18Z |
 | codereview | [x] | [x] | 2026-09-07T15:10:09Z |
-| devdocsimpact | [x] | [ ] | |
-| archive | [ ] | [ ] | |
-| pullrequest | [ ] | [ ] | |
+| devdocsimpact | [x] | [x] | 2026-09-07T15:12:30Z |
+| archive | [x] | [x] | 2026-09-07T15:14:41Z |
+| pullrequest | [x] | [x] | 2026-09-07T15:14:41Z |
