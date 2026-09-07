@@ -808,3 +808,134 @@ func TestRemoteAddress_IntegrationWithStrategies(t *testing.T) {
 		})
 	}
 }
+
+// TestIPHeaderStrategy_CheckAllDeniesOnAnyHop pins the CheckAll contract: every
+// selected hop is subject to the CIDR and private rules, so a hop after the first
+// can deny even when an earlier hop was allowed.
+func TestIPHeaderStrategy_CheckAllDeniesOnAnyHop(t *testing.T) {
+	tests := []struct {
+		name              string
+		configure         func(*Config)
+		requestHeaders    map[string]string
+		headerValue       string
+		expectedStatus    int
+		expectedLogDetail string
+	}{
+		{
+			name: "blockedIPBlocks denies the last hop after an allowed first hop",
+			configure: func(c *Config) {
+				c.DefaultAllow = true
+				c.BlockedIPBlocks = []string{"1.1.1.0/24"}
+			},
+			headerValue:       "8.8.8.8, 1.1.1.1",
+			expectedStatus:    http.StatusForbidden,
+			expectedLogDetail: LogStatusBlock + ":" + PhaseBlockedIPBlock,
+		},
+		{
+			name: "blockedIPBlocks denies a middle hop",
+			configure: func(c *Config) {
+				c.DefaultAllow = true
+				c.BlockedIPBlocks = []string{"1.1.1.0/24"}
+			},
+			headerValue:       "8.8.8.8, 1.1.1.1, 9.9.9.9",
+			expectedStatus:    http.StatusForbidden,
+			expectedLogDetail: LogStatusBlock + ":" + PhaseBlockedIPBlock,
+		},
+		{
+			name: "a blocked country is denied behind an allowed private hop",
+			configure: func(c *Config) {
+				c.DefaultAllow = false
+				c.AllowPrivate = true
+				c.BlockedCountries = []string{"US"}
+			},
+			headerValue:       "10.0.0.1, 8.8.8.8",
+			expectedStatus:    http.StatusForbidden,
+			expectedLogDetail: LogStatusBlock + ":" + PhaseBlockedCountry,
+		},
+		{
+			// allowedIPBlocks exempts the hop it matches, not the chain. The
+			// countryHeader value is the first public country written, so a later
+			// hop is judged against that country, not its own.
+			name: "an allowedIPBlocks hop does not exempt the hops after it",
+			configure: func(c *Config) {
+				c.DefaultAllow = true
+				c.AllowedIPBlocks = []string{"8.8.8.0/24"}
+				c.BlockedCountries = []string{"US"}
+			},
+			headerValue:       "8.8.8.8, 1.1.1.1",
+			expectedStatus:    http.StatusForbidden,
+			expectedLogDetail: LogStatusBlock + ":" + PhaseBlockedCountry,
+		},
+		{
+			// block mode has no enrich stage, so the inbound country is used as is
+			// and an unparseable later hop reaches decide. enrichandblock already
+			// banned this chain-wide from ServeHTTP.
+			name: "banIfError bans an unparseable later hop in block mode",
+			configure: func(c *Config) {
+				c.Mode = ModeBlock
+				c.BanIfError = true
+				c.DefaultAllow = true
+			},
+			requestHeaders:    map[string]string{"x-country-code": "DE"},
+			headerValue:       "8.8.8.8, not-an-ip",
+			expectedStatus:    http.StatusForbidden,
+			expectedLogDetail: LogStatusBlock + ":error",
+		},
+		{
+			name: "a chain no rule matches still passes",
+			configure: func(c *Config) {
+				c.DefaultAllow = true
+				c.BlockedIPBlocks = []string{"1.1.1.0/24"}
+			},
+			headerValue:       "8.8.8.8, 9.9.9.9",
+			expectedStatus:    http.StatusTeapot,
+			expectedLogDetail: LogStatusPass + ":" + PhaseDefaultAllow,
+		},
+		{
+			name: "a private-only chain still passes on allowPrivate",
+			configure: func(c *Config) {
+				c.DefaultAllow = false
+				c.AllowPrivate = true
+			},
+			headerValue:       "10.0.0.1, 10.0.0.2",
+			expectedStatus:    http.StatusTeapot,
+			expectedLogDetail: LogStatusPass + ":" + PhaseAllowPrivate,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Mode:                  ModeEnrichAndBlock,
+				DatabaseSources:       seedCatalog(dbFilePath),
+				DisallowedStatusCode:  http.StatusForbidden,
+				IPHeaders:             []string{"x-forwarded-for"},
+				IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+				CountryHeader:         "x-country-code",
+				LogStatusDetailHeader: "X-Geoblock-Decision",
+			}
+			tt.configure(cfg)
+
+			plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
+			if err != nil {
+				t.Fatalf("Failed to create plugin: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			req.Header.Set("X-Forwarded-For", tt.headerValue)
+			for name, value := range tt.requestHeaders {
+				req.Header.Set(name, value)
+			}
+
+			rr := httptest.NewRecorder()
+			plugin.ServeHTTP(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("X-Forwarded-For %q: status %d, want %d", tt.headerValue, rr.Code, tt.expectedStatus)
+			}
+			if got := req.Header.Get("X-Geoblock-Decision"); got != tt.expectedLogDetail {
+				t.Errorf("X-Forwarded-For %q: decision %q, want %q", tt.headerValue, got, tt.expectedLogDetail)
+			}
+		})
+	}
+}
