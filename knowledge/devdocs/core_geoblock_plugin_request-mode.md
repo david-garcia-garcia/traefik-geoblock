@@ -50,4 +50,6 @@ if ModeBlocks(p.mode) && skipBlock == PhaseNone {
 
 - Chain enrich before block. Missing `countryHeader` uses `banIfError`.
 - Country rules use the one `countryHeader` value (first public written). `CheckAll` still applies CIDR and private per selected IP.
+- Every selected hop can deny: `blockFromHeader` returns on the first hop `decide` rejects. `passReason` names the first *allowing* phase for the `pass:{reason}` header and must not gate the deny.
+- `decide` answers private and loopback hops from `allowPrivate` **before** the CIDR lists, so `allowedIPBlocks` cannot allow a private hop.
 - `foldCountryHeader` copies `countryHeader` onto `requestHeaderEnrich` as `country` when that header name is unset.

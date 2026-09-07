@@ -414,6 +414,7 @@ func (p Plugin) blockFromHeader(rw http.ResponseWriter, req *http.Request, remot
 		}
 	}
 	var foundPublicIP bool
+	// passReason is only the pass log reason; any selected hop may deny.
 	passReason := PhaseNone
 	for i, ip := range remoteIPs {
 		if p.skipIP(i, ip, remoteIPs, &foundPublicIP) {
@@ -422,19 +423,19 @@ func (p Plugin) blockFromHeader(rw http.ResponseWriter, req *http.Request, remot
 		allowed, phase, err := p.decide(ip, country)
 		if err != nil {
 			p.logLookupError(req, ip, ipChain, remoteIPs, err)
-			if p.banIfError && passReason == PhaseNone {
+			if p.banIfError {
 				p.setDecisionLogHeader(req, LogStatusBlock, "error")
 				p.serveBanHtml(rw, ip, "Unknown", req.Method)
 				return true
 			}
 			continue
 		}
-		if !allowed && passReason == PhaseNone {
+		if !allowed {
 			p.setDecisionLogHeader(req, LogStatusBlock, phase)
 			p.serveBanHtml(rw, ip, countryForBan(ip, country), req.Method)
 			return true
 		}
-		if passReason == PhaseNone && allowed {
+		if passReason == PhaseNone {
 			passReason = phase
 		}
 		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirstNonePrivate && !privateOrLoopback(ip) {
