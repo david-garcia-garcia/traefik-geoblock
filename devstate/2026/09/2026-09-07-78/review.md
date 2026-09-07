@@ -34,3 +34,10 @@ skipped: none
 localTests: passed
 ci: 34136414344 success
 next: codereview
+
+## codereview — 2026-09-07T15:10:09Z
+phase: codereview
+findings: Spec P3 1 (invalid country_short SHALL)
+fixed: narrowed lookup spec; dest invalid-as-error kept
+skipped: none
+next: devdocsimpact
