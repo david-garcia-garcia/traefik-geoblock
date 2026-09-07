@@ -5,4 +5,9 @@ issueRef: "78"
 prHost: github
 repoSlug: traefik-geoblock
 destBranch: master
+qualify: qualified
+src: f353d5efa2232e01ff77d2e5a3767ebf291f5461cf960787bd88677cd18c177a
 comments: none
+pr:
+  number: 79
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/79
