@@ -74,5 +74,5 @@ Intended hop
   By: explore
 
 - Q: Fold the spec delta onto existing lookup + request-mode leaves, or open a new leaf?
-  Decision: assumed — fold. `core_geoblock_plugin_request-mode` already requires `XX` when sources returned no country; `core_geoblock_database_lookup` already owns BIN column copy. FindSpecHost in propose confirms.
-  By: explore
+  Decision: resolved — fold. FindSpecHost: `core_geoblock_database_lookup` and `core_geoblock_plugin_request-mode` (high). Recorded on `specs.md`.
+  By: propose

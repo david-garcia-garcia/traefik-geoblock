@@ -11,7 +11,7 @@ localTests: none
 requirement: requirement.md
 comments: none
 explore: explore.md
-change: none
+change: bin-country-short-empty
 pr:
   number: 79
   url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/79

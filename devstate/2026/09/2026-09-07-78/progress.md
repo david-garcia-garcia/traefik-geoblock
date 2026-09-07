@@ -6,7 +6,7 @@ JobName: 2026-09-07-78
 |-------|------|------|----|
 | prepare | [x] | [x] | 2026-09-07T14:55:00Z |
 | explore | [x] | [x] | 2026-09-07T14:56:50Z |
-| propose | [ ] | [ ] | |
+| propose | [x] | [ ] | |
 | implement | [ ] | [ ] | |
 | codereview | [ ] | [ ] | |
 | devdocsimpact | [ ] | [ ] | |
