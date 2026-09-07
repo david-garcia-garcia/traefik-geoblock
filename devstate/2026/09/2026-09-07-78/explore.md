@@ -66,8 +66,8 @@ Intended hop
   By: explore
 
 - Q: Should this change add a merged-catalog fallback test (BIN `-` then a later source fills country)?
-  Decision: assumed — yes. Ticket Desired names it. One package test next to the flipped BIN-miss header case (`plugin_mode_test.go` or Combined lookup test).
-  By: explore
+  Decision: resolved — yes. `TestBIN_UnknownCountryIsEmptySoCombinedCanFill` plus plugin BIN-miss / later-hop cases.
+  By: implement
 
 - Q: Treat MMDB / IPinfo vendor miss sentinels (`-`, `ZZ`) as empty the same way?
   Decision: assumed — no. Ticket out of scope is BIN `country_short` through `usableMeta` only.
