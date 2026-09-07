@@ -22,7 +22,7 @@ One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeade
 - Write country from lookup onto `countryHeader`, then read that header in the block stage. Do not pass `Record.Country` into country maps.
 - Do not call `writeDefaultEnrichHeaders` in `block` (it would overwrite the inbound country).
 - After CIDR, a `countryHeader` value of `PRIVATE` follows `allowPrivate`. Private or loopback IPs still apply `allowPrivate` first.
-- A public IP whose merged lookup returns an empty country is written as `XX`, never `PRIVATE`, so it reaches the country maps and `defaultAllow`. `writePublicLookupHeaders` writes `XX` without marking the country written, so a later hop that does resolve still wins. `Combined` fills only empty fields and `bin` returns `-` for unknowns, so an enabled `bin` row pre-empts `XX`.
+- A public IP whose merged lookup returns an empty country is written as `XX`, never `PRIVATE`, so it reaches the country maps and `defaultAllow`. `writePublicLookupHeaders` writes `XX` without marking the country written, so a later hop that does resolve still wins. `Combined` fills only empty fields. A `bin` `country_short` `-` is empty, so an enabled `bin` row does not pre-empt a later source or `XX`.
 
 ## Pattern snippet
 

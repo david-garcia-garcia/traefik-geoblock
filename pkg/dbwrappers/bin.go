@@ -274,7 +274,8 @@ func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error
 func binColumn(rec ip2loc.IP2Locationrecord, path string) string {
 	switch path {
 	case "country_short":
-		return rec.Country_short
+		// Vendor "-" is empty so Combined can fill country from a later source.
+		return usableMeta(rec.Country_short)
 	case "country_long":
 		return usableMeta(rec.Country_long)
 	case "region":
