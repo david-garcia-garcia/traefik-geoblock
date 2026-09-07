@@ -52,4 +52,5 @@ if ModeBlocks(p.mode) && skipBlock == PhaseNone {
 - Country rules use the one `countryHeader` value (first public written). `CheckAll` still applies CIDR and private per selected IP.
 - Every selected hop can deny: `blockFromHeader` returns on the first hop `decide` rejects. `passReason` names the first *allowing* phase for the `pass:{reason}` header and must not gate the deny.
 - `decide` answers private and loopback hops from `allowPrivate` **before** the CIDR lists, so `allowedIPBlocks` cannot allow a private hop.
+- `enrich` writes the lookup record to the enrich headers **before** it checks the returned error, so `recordForLookup` returns no country on its error paths. `writePublicLookupHeaders` maps an empty country to `XX` without marking it written.
 - `foldCountryHeader` copies `countryHeader` onto `requestHeaderEnrich` as `country` when that header name is unset.

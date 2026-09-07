@@ -581,3 +581,88 @@ func TestMode_UnresolvedPublicIPFollowsDefaultAllow(t *testing.T) {
 		}
 	})
 }
+
+// TestMode_UnparseableHopDoesNotBecomeCountry pins that an IP header value the
+// plugin cannot parse never reaches countryHeader. Only the ISO country, PRIVATE
+// and XX are legal there, so an unresolvable hop is XX like any other, and a
+// later hop that does resolve still wins.
+func TestMode_UnparseableHopDoesNotBecomeCountry(t *testing.T) {
+	tests := []struct {
+		name            string
+		mode            string
+		headerValue     string
+		expectedCountry string
+	}{
+		{
+			name:            "a country code in the IP header is not a country",
+			mode:            ModeEnrich,
+			headerValue:     "DE",
+			expectedCountry: UnknownCountryAlias,
+		},
+		{
+			name:            "arbitrary text in the IP header is not a country",
+			mode:            ModeEnrich,
+			headerValue:     "Norway",
+			expectedCountry: UnknownCountryAlias,
+		},
+		{
+			name:            "a later hop wins over an unparseable one",
+			mode:            ModeEnrich,
+			headerValue:     "DE, 8.8.8.8",
+			expectedCountry: "US",
+		},
+		{
+			name:            "enrichandblock behaves the same",
+			mode:            ModeEnrichAndBlock,
+			headerValue:     "DE, 8.8.8.8",
+			expectedCountry: "US",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Mode:                 tt.mode,
+				DatabaseSources:      seedCatalog(dbFilePath),
+				DefaultAllow:         true,
+				AllowPrivate:         true,
+				BanIfError:           false,
+				DisallowedStatusCode: http.StatusForbidden,
+				IPHeaders:            []string{"x-forwarded-for"},
+				IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+				CountryHeader:        "X-IPCountry",
+			}
+
+			plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
+			if err != nil {
+				t.Fatalf("Failed to create plugin: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			req.Header.Set("X-Forwarded-For", tt.headerValue)
+
+			rr := httptest.NewRecorder()
+			plugin.ServeHTTP(rr, req)
+
+			if got := req.Header.Get("X-IPCountry"); got != tt.expectedCountry {
+				t.Errorf("X-Forwarded-For %q: X-IPCountry %q, want %q", tt.headerValue, got, tt.expectedCountry)
+			}
+		})
+	}
+}
+
+// TestMode_LookupErrorCarriesNoCountry pins the second error path: a parseable
+// address whose lookup fails must not put the address itself on countryHeader.
+func TestMode_LookupErrorCarriesNoCountry(t *testing.T) {
+	p := Plugin{db: dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+		return dbprovider.Record{}, fmt.Errorf("source unavailable")
+	})}
+
+	rec, err := p.recordForLookup("8.8.8.8")
+	if err == nil {
+		t.Fatal("expected a lookup error")
+	}
+	if rec.Country != "" {
+		t.Errorf("country %q, want empty: the record is written to countryHeader before err is checked", rec.Country)
+	}
+}
