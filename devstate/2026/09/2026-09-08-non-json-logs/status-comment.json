@@ -1,0 +1,7 @@
+{
+  "commentId": "upstream-set-failed",
+  "issueKey": "2026-09-08-non-json-logs",
+  "markerValue": "2026-09-08-non-json-logs",
+  "issueHost": "github",
+  "note": "No write access to PascalMinder/geoblock; status comment Set skipped. Durable card is PR summary on david-garcia-garcia/traefik-geoblock."
+}

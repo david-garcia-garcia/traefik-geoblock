@@ -1,0 +1,12 @@
+issueKey: 2026-09-08-non-json-logs
+jobName: 2026-09-08-non-json-logs
+issueHost: github
+issueRef: https://github.com/PascalMinder/geoblock/issues/67
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified-with-gaps
+src: f90378f3413a3aa365305b3a9c60123eca4a25161bd9a96bbf01cff5f1feb4be
+comments: none
+localTests: none
+requirement: requirement.md
