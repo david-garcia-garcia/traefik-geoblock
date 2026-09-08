@@ -15,3 +15,9 @@ phase: propose
 findings: fold observability leaf; tests not applied
 fixed: change crowdsec-compatible-stdout-logs (proposal, spec delta, design, tasks)
 skipped: default json; bootstrap/owner format
+
+## implement (2026-09-08)
+phase: implement
+findings: #67 prefix absent; line-shape tests added
+fixed: logging + CreateConfig/PluginLogger stdout asserts; tasks 1.1–3.1
+skipped: default json; bootstrap/owner format
