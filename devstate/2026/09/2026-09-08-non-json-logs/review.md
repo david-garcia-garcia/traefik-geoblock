@@ -21,3 +21,9 @@ phase: implement
 findings: #67 prefix absent; line-shape tests added
 fixed: logging + CreateConfig/PluginLogger stdout asserts; tasks 1.1–3.1
 skipped: default json; bootstrap/owner format
+
+## codereview (2026-09-08)
+phase: codereview
+findings: P3 0 hard; Standards 4 judgement skipped
+fixed: none
+skipped: helper rename, shared capture extract
