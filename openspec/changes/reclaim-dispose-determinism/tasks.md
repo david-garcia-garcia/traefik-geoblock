@@ -4,7 +4,7 @@
 
 ## 1. Component: end an incarnation deterministically
 
-- [x] 1.1 Add a `closed chan struct{}` to `slot`, made in `Open` and closed by the lifetime goroutine after `stopValue`
+- [x] 1.1 Add a `valueClosed chan struct{}` to `slot`, made in `Open` and closed by the lifetime goroutine after `stopValue`
 - [x] 1.2 In `fire`, wait for that channel after `cancel()` and before the `reclaim_dispose` log
 - [x] 1.3 In `Reset`, cancel and wait the same way for every slot it takes off the map
 - [x] 1.4 Keep the lifetime context, its cancel, the lifetime goroutine, and `waitCtx` exactly as they are

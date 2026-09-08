@@ -148,6 +148,17 @@ func waitKeyMsg(t *testing.T, h *recHandler, msg, key string) {
 	waitUntil(t, func() bool { return countKeyMsg(h.events(), msg, key) > 0 })
 }
 
+// requireDisposeAfterClose waits for the dispose line on key and then checks the contract this
+// change exists for: by the time dispose is logged, the value's Close has already returned.
+// Wait for the line rather than the flag — the flag is set first, so it proves nothing on its own.
+func requireDisposeAfterClose(t *testing.T, h *recHandler, key string, closed *atomic.Bool) {
+	t.Helper()
+	waitKeyMsg(t, h, MsgDispose, key)
+	if !closed.Load() {
+		t.Fatalf("dispose for %s must not be logged before Close ran", key)
+	}
+}
+
 // requireLevels checks spec log levels on every recorded reclaim line.
 func (h *recHandler) requireLevels(t *testing.T) {
 	t.Helper()
@@ -179,11 +190,7 @@ func TestTable_OpenCancelDispose(t *testing.T) {
 
 	start := time.Now()
 	cancel()
-	// Wait for the dispose line, not the Close flag: Close runs before that line is logged.
-	waitKeyMsg(t, h, MsgDispose, "a")
-	if !ended.Load() {
-		t.Fatal("dispose must not be logged before Close ran")
-	}
+	requireDisposeAfterClose(t, h, "a", &ended)
 	if time.Since(start) < grace*3/4 {
 		t.Fatalf("canceled too early: %v", time.Since(start))
 	}
@@ -224,13 +231,17 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	}
 
 	waitUntil(t, func() bool { return countKeyMsg(h.events(), MsgReclaim, "a") == 1 })
-	// Grace is long, so any dispose in this window is a bug rather than a lost race.
-	deadline := time.Now().Add(100 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if ended.Load() {
-			t.Fatal("reclaim must not end the incarnation")
-		}
-		time.Sleep(time.Millisecond)
+	// The armed timer must be gone, not merely slow: with a long grace, watching ended for a
+	// window proves nothing, so read the state the reclaim was supposed to clear.
+	e := mustSlotA(t, tab)
+	tab.mu.Lock()
+	armed := e.graceTimer != nil
+	tab.mu.Unlock()
+	if armed {
+		t.Fatal("reclaim must invalidate the armed grace timer")
+	}
+	if ended.Load() {
+		t.Fatal("reclaim must not end the incarnation")
 	}
 	if !reflect.DeepEqual(keySeq(h.events(), "a"), []string{MsgPut, MsgBind, MsgOrphan, MsgReclaim, MsgBind}) {
 		t.Fatalf("events: %+v", h.events())
@@ -323,10 +334,7 @@ func TestTable_ZeroGraceEndsImmediately(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	cancel()
-	waitKeyMsg(t, h, MsgDispose, "a")
-	if !ended.Load() {
-		t.Fatal("dispose must not be logged before Close ran")
-	}
+	requireDisposeAfterClose(t, h, "a", &ended)
 	if !reflect.DeepEqual(keySeq(h.events(), "a"), []string{MsgPut, MsgBind, MsgOrphan, MsgDispose}) {
 		t.Fatalf("events: %+v", h.events())
 	}
@@ -769,10 +777,7 @@ func TestTable_ConcurrentCancelLastHolders(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	waitKeyMsg(t, h, MsgDispose, "a")
-	if !ended.Load() {
-		t.Fatal("dispose must not be logged before Close ran")
-	}
+	requireDisposeAfterClose(t, h, "a", &ended)
 	if countKeyMsg(h.events(), MsgOrphan, "a") != 1 {
 		t.Fatalf("one orphan: %+v", h.events())
 	}
@@ -792,8 +797,10 @@ func TestTable_ReclaimRacesFire(t *testing.T) {
 		h := &recHandler{}
 		tab := NewTable(grace)
 		var firstEnded, secondEnded atomic.Bool
+		var creates atomic.Int32
 		ctx1, cancel1 := context.WithCancel(context.Background())
 		first, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+			creates.Add(1)
 			return ending(1, &firstEnded), nil
 		})
 		if err != nil {
@@ -804,6 +811,7 @@ func TestTable_ReclaimRacesFire(t *testing.T) {
 
 		ctx2, cancel2 := context.WithCancel(context.Background())
 		second, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+			creates.Add(1)
 			return ending(2, &secondEnded), nil
 		})
 		if err != nil {
@@ -811,26 +819,35 @@ func TestTable_ReclaimRacesFire(t *testing.T) {
 			t.Fatalf("round %d Open 2: %v", i, err)
 		}
 
+		// Whichever side won, the incarnation the caller now holds must be the stored one and
+		// must stay alive while ctx2 is live. Both flags are monotonic, so one wait past the
+		// grace edge catches a wrong dispose as well as polling would.
 		reclaimed := second == first
 		if reclaimed {
-			// The queued fire must leave an incarnation with a live holder alone. Both flags are
-			// monotonic, so one wait past the grace edge catches a wrong dispose as well as polling.
 			time.Sleep(grace * 2)
 			if firstEnded.Load() {
 				cancel2()
 				t.Fatalf("round %d late fire disposed a live incarnation", i)
 			}
-			if secondEnded.Load() {
+			if n := creates.Load(); n != 1 {
 				cancel2()
-				t.Fatalf("round %d reclaim must not run create", i)
+				t.Fatalf("round %d reclaim must not run create: %d creates", i, n)
 			}
 		} else {
-			// Grace won: the first incarnation is gone, closed, and replaced by a second put.
+			// Grace won: the first incarnation is closed and the replacement holds the key.
 			waitUntil(t, firstEnded.Load)
-			if countKeyMsg(h.events(), MsgPut, "a") != 2 {
+			time.Sleep(grace * 2)
+			if secondEnded.Load() {
 				cancel2()
-				t.Fatalf("round %d replaced incarnation needs a second put: %+v", i, h.events())
+				t.Fatalf("round %d the replacement was disposed while its holder was live", i)
 			}
+		}
+		tab.mu.Lock()
+		cur, mapped := tab.items["a"]
+		tab.mu.Unlock()
+		if !mapped || cur.value != second {
+			cancel2()
+			t.Fatalf("round %d the returned value must be the stored incarnation (reclaimed=%v)", i, reclaimed)
 		}
 
 		cancel2()
@@ -853,7 +870,7 @@ func TestTable_ZeroGraceOpenRacesCancel(t *testing.T) {
 	for i := 0; i < rounds; i++ {
 		h := &recHandler{}
 		tab := NewTable(0)
-		var ended atomic.Bool
+		var ended, secondEnded atomic.Bool
 		ctx1, cancel1 := context.WithCancel(context.Background())
 		first, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
 			return ending(1, &ended), nil
@@ -873,7 +890,9 @@ func TestTable_ZeroGraceOpenRacesCancel(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			second, openErr = tab.Open(ctx2, "a", slog.New(h), func() (any, error) { return &box{n: 2}, nil })
+			second, openErr = tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+				return ending(2, &secondEnded), nil
+			})
 		}()
 		wg.Wait()
 		if openErr != nil {
@@ -889,6 +908,18 @@ func TestTable_ZeroGraceOpenRacesCancel(t *testing.T) {
 			}
 		} else {
 			waitUntil(t, ended.Load)
+			if secondEnded.Load() {
+				cancel2()
+				t.Fatalf("round %d the replacement was disposed while its holder was live", i)
+			}
+		}
+		// Either way the value the caller holds is the one the table has stored.
+		tab.mu.Lock()
+		cur, mapped := tab.items["a"]
+		tab.mu.Unlock()
+		if !mapped || cur.value != second {
+			cancel2()
+			t.Fatalf("round %d the returned value must be the stored incarnation", i)
 		}
 		cancel2()
 	}
@@ -1111,11 +1142,86 @@ func TestTable_ReclaimAndReleaseInsideOrphanWindowStillArms(t *testing.T) {
 	}
 }
 
+// TestTable_OpenInsideOrphanWindowKeepsIncarnationLive drives the arming window through drop
+// rather than reaching into bindLocked: the drop is held between the orphan line and the arm,
+// an Open binds a live holder there, and the drop then finds the slot held again. The incarnation
+// must survive with no timer armed, because a timer armed here would dispose a value in use.
+func TestTable_OpenInsideOrphanWindowKeepsIncarnationLive(t *testing.T) {
+	const grace = 5 * time.Millisecond
+	h := &gateHandler{gate: MsgOrphan, entered: make(chan struct{}), release: make(chan struct{})}
+	tab := NewTable(grace)
+	var ended atomic.Bool
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	first, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) { return ending(1, &ended), nil })
+	if err != nil {
+		cancel1()
+		t.Fatalf("Open 1: %v", err)
+	}
+	e := mustSlotA(t, tab)
+
+	// Hold the drop inside the orphan window, then bind a live holder there.
+	cancel1()
+	<-h.entered
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	second, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+		t.Error("an Open inside the orphan window must reclaim, not create")
+		return &box{n: 2}, nil
+	})
+	if err != nil {
+		close(h.release)
+		t.Fatalf("Open 2: %v", err)
+	}
+	if second != first {
+		close(h.release)
+		t.Fatal("an Open inside the orphan window must return the same incarnation")
+	}
+	close(h.release)
+
+	// arming clears when the held drop re-locks, which is where it decides whether to arm.
+	waitUntil(t, func() bool {
+		tab.mu.Lock()
+		defer tab.mu.Unlock()
+		return !e.arming
+	})
+	tab.mu.Lock()
+	cur, mapped := tab.items["a"]
+	armed := e.graceTimer != nil
+	holders := len(e.holders)
+	tab.mu.Unlock()
+	if !mapped || cur != e {
+		t.Fatal("the reclaimed incarnation must stay mapped")
+	}
+	if armed {
+		t.Fatal("a drop that finds the slot held again must not arm grace")
+	}
+	if holders != 1 {
+		t.Fatalf("holders = %d, want the reclaiming Open's holder", holders)
+	}
+
+	// Nothing is scheduled, so give a would-be timer several grace periods to prove itself.
+	time.Sleep(20 * grace)
+	if ended.Load() {
+		t.Fatal("the value must not be closed while a holder is live")
+	}
+	ev := h.events()
+	if countKeyMsg(ev, MsgDispose, "a") != 0 {
+		t.Fatalf("no dispose is due while a holder is live: %+v", ev)
+	}
+	// The gate is what pins this order: it holds the orphan line until Open 2 has bound.
+	if got := strings.Join(keySeq(ev, "a"), ","); got != "reclaim_put,reclaim_bind,reclaim_orphan,reclaim_reclaim,reclaim_bind" {
+		t.Fatalf("key sequence = %s", got)
+	}
+}
+
 // TestTable_GoroutinesReturnToBaseline checks that the watcher and lifetime goroutines a key
 // costs are all gone once its holders are Done and the incarnation has ended.
 func TestTable_GoroutinesReturnToBaseline(t *testing.T) {
 	const keys = 50
-	const slack = 8
+	// The two goroutines per key are joined deterministically now, so the only slack needed is for
+	// runtime goroutines that come and go around the sample, not for a share of the ~100 started.
+	const slack = 2
 	tab := NewTable(time.Millisecond)
 	h := &recHandler{}
 	base := settledGoroutines()
@@ -1414,7 +1520,8 @@ func TestTable_ResetRacingOpenClosesEveryValue(t *testing.T) {
 	const rounds = 50
 	h := &recHandler{}
 	tab := NewTable(time.Millisecond)
-	var created, closed atomic.Int32
+	var mu sync.Mutex
+	var values []*counterClose
 
 	for i := 0; i < rounds; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1423,8 +1530,11 @@ func TestTable_ResetRacingOpenClosesEveryValue(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) {
-				created.Add(1)
-				return &counterClose{closed: &closed}, nil
+				v := &counterClose{}
+				mu.Lock()
+				values = append(values, v)
+				mu.Unlock()
+				return v, nil
 			})
 			if err != nil {
 				t.Errorf("round %d Open: %v", i, err)
@@ -1439,15 +1549,38 @@ func TestTable_ResetRacingOpenClosesEveryValue(t *testing.T) {
 	}
 
 	tab.Reset()
-	waitUntil(t, func() bool { return closed.Load() == created.Load() })
+
+	// Per value, not in aggregate: a total would also be satisfied by one value closed twice
+	// and another never closed, which is exactly the pair of bugs this test is looking for.
+	mu.Lock()
+	created := append([]*counterClose(nil), values...)
+	mu.Unlock()
+	waitUntil(t, func() bool {
+		for _, v := range created {
+			if v.closes.Load() == 0 {
+				return false
+			}
+		}
+		return true
+	})
+	for i, v := range created {
+		if got := v.closes.Load(); got != 1 {
+			t.Fatalf("value %d closed %d times, want exactly 1", i, got)
+		}
+	}
+	tab.mu.Lock()
+	defer tab.mu.Unlock()
+	if len(tab.items) != 0 {
+		t.Fatalf("a reset table must store nothing, has %d", len(tab.items))
+	}
 }
 
-// counterClose counts its own Close so a test can prove no created value was dropped unclosed.
+// counterClose counts its own Close so a test can prove every created value was closed exactly once.
 type counterClose struct {
-	closed *atomic.Int32
+	closes atomic.Int32
 }
 
 // Close records that this value was stopped.
 func (c *counterClose) Close() {
-	c.closed.Add(1)
+	c.closes.Add(1)
 }

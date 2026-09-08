@@ -49,7 +49,7 @@ sequenceDiagram
     F->>F: cancel(life)
     F->>L: waitCtx wakes
     L->>L: stopValue -> Close()
-    L->>F: close(slot.closed)
+    L->>F: close(slot.valueClosed)
     F->>Test: log reclaim_dispose
     Test->>Test: read ended -> [1] PASS
 ```
@@ -99,10 +99,10 @@ Local ticket `2026-09-08-fix-reclaim` runs in its own worktree on branch `2026-0
 | Should `pkg/dbwrappers/reclaim_test.go` be hardened too, even though it did not flake in the stress runs? | assumed — yes. It asserts the same "reclaim wins a short timer window" shape (25 ms lease) that reproduced in `pkg/reclaim`, and the edit stays inside test files. | explore |
 | Should the upstream `traefik-modsecurity` copy get the same component fix so the two trees stop drifting? | resolved by the human — yes, and as a standing rule: this component is synced in both directions across projects, so changes here port there and vice versa, and nothing may be removed. Written into `knowledge/devdocs/std_go_reclaim.md`. | implement |
 | Does upstream carry features this repo lacks (the human asked about "sleep and wake")? | resolved — no. Upstream `pkg/reclaim` is three files and a code search for `Wake`/`Sleep` in that repo returns zero hits. If such a feature exists it is in another project. | implement |
-| Should the lifetime context and its per-slot goroutine be deleted, since closing inline is simpler? | resolved by the human — no. The no-removal rule applies even to code unreachable from this repo, so `fire`/`Reset` wait on a `closed` channel instead. | implement |
+| Should the lifetime context and its per-slot goroutine be deleted, since closing inline is simpler? | resolved by the human — no. The no-removal rule applies even to code unreachable from this repo, so `fire`/`Reset` wait on a `valueClosed` channel instead. | implement |
 
 ## Before merge
-- [x] [P2] Make `reclaim_dispose` imply `Close()` has returned — done additively, via a `closed` channel the lifetime goroutine closes and `fire`/`Reset` wait on
+- [x] [P2] Make `reclaim_dispose` imply `Close()` has returned — done additively, via a `valueClosed` channel the lifetime goroutine closes and `fire`/`Reset` wait on
 - [x] [P2] Order `reclaim_orphan` before the grace timer is armed without logging under the table mutex
 - [x] [P2] Make the race-stress tests assert both legal outcomes instead of requiring reclaim to win
 - [x] [P3] Port the upstream variable renames in `table.go` for parity with `traefik-modsecurity`

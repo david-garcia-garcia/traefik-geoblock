@@ -49,9 +49,9 @@ type slot struct {
 	cancel  context.CancelFunc
 	holders map[uint64]struct{}
 	nextID  uint64
-	// closed is closed by the lifetime goroutine once it has run Close on the value.
+	// valueClosed is closed by the lifetime goroutine once it has run Close on the value.
 	// fire and Reset receive on it before they log dispose, so every slot must have one.
-	closed chan struct{}
+	valueClosed chan struct{}
 	// graceTimer is the armed AfterFunc; arming is the window between the orphan
 	// log and that arming, so grace never starts before the orphan line lands.
 	graceTimer *time.Timer
@@ -154,7 +154,7 @@ func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, creat
 		value:   created,
 		cancel:  cancel,
 		holders: map[uint64]struct{}{},
-		closed:  make(chan struct{}),
+		valueClosed: make(chan struct{}),
 		logger:  logger,
 	}
 	t.items[key] = e
@@ -163,7 +163,7 @@ func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, creat
 	go func() {
 		waitCtx(life)
 		stopValue(created)
-		close(e.closed)
+		close(e.valueClosed)
 	}()
 	logger.Debug(MsgPut, "key", key)
 	t.logBind(logger, key, false)
@@ -241,11 +241,15 @@ func (t *Table) drop(key string, id uint64, e *slot) {
 	// the one logged above: an Open can have reclaimed and released the slot during that line,
 	// and its own drop returned early on the arming window, leaving the arm to this one.
 	gen := e.graceGen
+	// Zero grace ends the incarnation right here, on this watcher goroutine: fire runs the value's
+	// Close and blocks until it returns, so a slow Close holds up this drop rather than a timer.
 	if t.grace == 0 {
 		t.mu.Unlock()
 		t.fire(key, e, gen)
 		return
 	}
+	// Grace is armed for this generation only. A later reclaim bumps the generation, which is what
+	// makes the queued fire a no-op even though the timer still runs.
 	e.graceTimer = time.AfterFunc(t.grace, func() { t.fire(key, e, gen) })
 	t.mu.Unlock()
 }
@@ -266,7 +270,7 @@ func (t *Table) fire(key string, e *slot, gen uint64) {
 	if cancel != nil {
 		cancel()
 	}
-	<-e.closed
+	<-e.valueClosed
 	disposeLog.Debug(MsgDispose, "key", key)
 }
 
@@ -293,7 +297,7 @@ func (t *Table) Reset() {
 		if e.cancel != nil {
 			e.cancel()
 		}
-		<-e.closed
+		<-e.valueClosed
 		e.logger.Debug(MsgDispose, "key", key)
 	}
 }

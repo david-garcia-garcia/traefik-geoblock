@@ -32,7 +32,7 @@ Reproduction (this worktree, 8 background CPU burners on an 8-thread box, `go te
     table_test.go:372: ended: []
 ```
 
-Decision: fix the component, not the test — `reclaim_dispose` must be a real completion signal ("Close has returned"). Implemented additively, after the human ruled that this package is a copy shared across projects and nothing may be removed (see the resolved question below): the lifetime context, its cancel, and the `waitCtx(life)` goroutine all stay, the slot gains a `closed` channel that the goroutine closes after `stopValue`, and `fire` and `Reset` wait on it before logging dispose. Cost: a slow `Close()` now blocks the timer goroutine (or `Reset`) instead of a detached one — acceptable for this table (one entry per database, `Close` stops a ticker), and it is the same exposure the lost-create path already has at `pkg/reclaim/table.go:140`.
+Decision: fix the component, not the test — `reclaim_dispose` must be a real completion signal ("Close has returned"). Implemented additively, after the human ruled that this package is a copy shared across projects and nothing may be removed (see the resolved question below): the lifetime context, its cancel, and the `waitCtx(life)` goroutine all stay, the slot gains a `valueClosed` channel that the goroutine closes after `stopValue`, and `fire` and `Reset` wait on it before logging dispose. Cost: a slow `Close()` now blocks the timer goroutine (or `Reset`) instead of a detached one — acceptable for this table (one entry per database, `Close` stops a ticker), and it is the same exposure the lost-create path already has at `pkg/reclaim/table.go:140`.
 
 An earlier draft of this decision said `fire` and `Reset` would call `stopValue` inline and the goroutine would go away. That was reversed; it is kept in `design.md` as the rejected alternative.
 
@@ -75,7 +75,7 @@ No change to `Open`'s public signature, no change to the message constants, no c
 ## Open questions
 
 - Q: Should `Close()` be called synchronously inside `fire` / `Reset` (blocking that goroutine) instead of on a per-slot goroutine?
-  Decision: resolved — no. The human ruled that `pkg/reclaim` is a copy shared with `traefik-modsecurity` and edits must be additive, so the lifetime context and its goroutine stay. Instead the slot gets a `closed` channel that the lifetime goroutine closes after `Close()`, and `fire` / `Reset` wait on it before logging dispose. Same determinism, nothing removed.
+  Decision: resolved — no. The human ruled that `pkg/reclaim` is a copy shared with `traefik-modsecurity` and edits must be additive, so the lifetime context and its goroutine stay. Instead the slot gets a `valueClosed` channel that the lifetime goroutine closes after `Close()`, and `fire` / `Reset` wait on it before logging dispose. Same determinism, nothing removed.
   By: implement
 
 - Q: The spec forbids logging while `t.mu` is held, so how is `reclaim_orphan` ordered before `reclaim_dispose`?

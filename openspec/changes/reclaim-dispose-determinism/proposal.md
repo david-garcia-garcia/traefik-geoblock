@@ -23,7 +23,7 @@ No public signature, message constant, or default grace changes. Not a breaking 
 
 ## Impact
 
-- `pkg/reclaim/table.go` — `fire`, `Reset`, `drop`, `bindLocked`, `Open`; new `arming` and `closed` fields on `slot`. Nothing is removed: this package is a copy shared with `traefik-modsecurity` and every edit must port back verbatim.
+- `pkg/reclaim/table.go` — `fire`, `Reset`, `drop`, `bindLocked`, `Open`; new `arming` and `valueClosed` fields on `slot`. Nothing is removed: this package is a copy shared with `traefik-modsecurity` and every edit must port back verbatim.
 - `pkg/reclaim/table_test.go` — race-stress assertions, grace values, new coverage.
 - `pkg/dbwrappers/reclaim_test.go` — lease and wait hardening (tests only).
 - `openspec/specs/std_go_reclaim_context-lease/spec.md` — three requirement edits.

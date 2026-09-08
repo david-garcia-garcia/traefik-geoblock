@@ -29,17 +29,17 @@ The current end-of-incarnation path is: `fire` (or `Reset`) cancels the lifetime
 
 ### Make the canceller wait for the lifetime goroutine
 
-The slot gets a `closed chan struct{}`. The lifetime goroutine keeps doing exactly what it does today and then closes that channel:
+The slot gets a `valueClosed chan struct{}` — named for the fact it carries, since "closed" next to `value` and `holders` would read as the other end-of-incarnation fact, the slot leaving the map. The lifetime goroutine keeps doing exactly what it does today and then closes that channel:
 
 ```go
 go func() {
     waitCtx(life)
     stopValue(created)
-    close(e.closed)
+    close(e.valueClosed)
 }()
 ```
 
-`fire` and `Reset` cancel the lifetime as they already do, then wait on that channel, and only then log `reclaim_dispose`. The wait is a helper (`waitClosed`) that no-ops on a slot without the channel, matching the existing `if cancel != nil` defensiveness.
+`fire` and `Reset` cancel the lifetime as they already do, then receive on `e.valueClosed`, and only then log `reclaim_dispose`. Every slot is built with the channel, so the receive needs no guard.
 
 Why over the alternative: upstream `traefik-modsecurity` fixed the same failure by adding a `waitUntil` in the test. That leaves the contract ambiguous — every future caller and every future test has to know that the dispose line does not mean the value is closed.
 
