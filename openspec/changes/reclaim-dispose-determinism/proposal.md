@@ -29,6 +29,6 @@
 - Call sites pass `reclaim.TableGrace` (`plugin.go`, `pkg/dbwrappers/bin.go`, `pkg/dbwrappers/mmdb.go`), which is today's behavior.
 - `pkg/reclaim/table_test.go` — race-stress assertions, grace values, new coverage.
 - `pkg/dbwrappers/reclaim_test.go` — lease and wait hardening (tests only).
-- `openspec/specs/std_go_reclaim_context-lease/spec.md` — three requirement edits.
+- `openspec/specs/std_go_reclaim_context-lease/spec.md` — five requirement blocks: two added, three modified.
 - `knowledge/devdocs/std_go_reclaim.md` — the dispose-is-a-completion-signal rule and the goroutine note.
-- Callers (`pkg/dbwrappers`, `plugin.go`) are unaffected at the API level; a value with a slow `Close()` now blocks the grace timer goroutine or `Reset` instead of a throwaway goroutine.
+- Callers (`pkg/dbwrappers`, `plugin.go`) each gain one argument, `reclaim.TableGrace`, and keep exactly today's behavior; a value with a slow `Close()` now blocks the grace timer goroutine or `Reset` instead of a throwaway goroutine.

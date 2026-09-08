@@ -56,6 +56,14 @@
 - [x] 7.1 Give `useShortLeases` a grace argument; use a lease the reclaim tests cannot lose in `TestOpenBIN_SameHashReclaimKeepsTicker` and `TestOpenMMDB_SameHashReclaimKeepsTicker`
 - [x] 7.2 Replace the fixed 80 ms sleeps in `TestOpenBIN_HashChangeDisposesOld` and `TestOpenMMDB_HashChangeDisposesOld` with a poll for `reclaim_dispose` on the old key
 
+## 8. Docs and verification
+
+- [x] 8.1 Update `knowledge/devdocs/std_go_reclaim.md`: the shared-copy sync rule, dispose implies Close has returned, `Close()` must not block, and the grace-edge rule for tests
+- [x] 8.2 `go build ./...`, `go vet ./...`, `golangci-lint` as configured, and `go test ./...`
+- [x] 8.3 Re-run the reproduction: `go test ./pkg/reclaim/ -count=25` under CPU contention, and confirm no failures
+- [x] 8.4 `openspec validate --strict reclaim-dispose-determinism`
+- [x] 8.5 Prove the new tests catch the defects with a mutation that keeps `Open`'s signature, not only by building against `origin/master` (where they would not compile): revert the behavior in a scratch module and confirm each test fails there
+
 ## 9. Grace belongs to the incarnation
 
 - [x] 9.1 Add a `grace time.Duration` field to `slot`, set once by the `Open` that creates the value
@@ -64,11 +72,4 @@
 - [x] 9.4 Leave the reclaim path alone: an `Open` that binds an existing incarnation does not touch its grace, the same way it does not re-run `create`
 - [x] 9.5 Pass `reclaim.TableGrace` at the three production call sites (`plugin.go`, `pkg/dbwrappers/bin.go`, `pkg/dbwrappers/mmdb.go`) so their behavior is unchanged
 - [x] 9.6 Test two keys with different graces on one table, a negative `Open` grace taking the table's, and a reclaim that names a different grace leaving the incarnation's unchanged
-
-## 8. Docs and verification
-
-- [x] 8.1 Update `knowledge/devdocs/std_go_reclaim.md`: the shared-copy sync rule, dispose implies Close has returned, `Close()` must not block, and the grace-edge rule for tests
-- [x] 8.2 `go build ./...`, `go vet ./...`, `golangci-lint` as configured, and `go test ./...`
-- [x] 8.3 Re-run the reproduction: `go test ./pkg/reclaim/ -count=25` under CPU contention, and confirm no failures
-- [x] 8.4 `openspec validate --strict reclaim-dispose-determinism`
-- [x] 8.5 Prove the new tests catch the defects: build them against `origin/master`'s `table.go` in a scratch module and confirm they fail there
+- [x] 9.7 Name the mutations these tests must kill and confirm each one dies: `drop` reading `t.grace` (both branches, and the inline branch alone) and the `reclaim.Open` façade discarding its `grace` argument

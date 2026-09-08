@@ -323,7 +323,9 @@ func TestTable_NegativeGraceUsesDefault(t *testing.T) {
 // that a key opened with TableGrace on the same table still waits the table's grace.
 func TestTable_GraceIsPerIncarnation(t *testing.T) {
 	h := &recHandler{}
-	tab := NewTable(graceNoRace)
+	// The table's grace must outlast waitBudget, or waiting for the fast key's dispose is satisfied
+	// by the table's grace elapsing and the test passes even when grace is not per key at all.
+	tab := NewTable(2 * waitBudget)
 	defer tab.Reset()
 	var fastEnded, slowEnded atomic.Bool
 
@@ -343,7 +345,7 @@ func TestTable_GraceIsPerIncarnation(t *testing.T) {
 		t.Fatalf("Open slow: %v", err)
 	}
 
-	// The zero-grace key ends the moment its holder goes, on a table whose own grace is 5 s.
+	// The zero-grace key ends the moment its holder goes, on a table whose own grace outlasts the test.
 	cancelFast()
 	requireDisposeAfterClose(t, h, "fast", &fastEnded)
 
@@ -359,11 +361,40 @@ func TestTable_GraceIsPerIncarnation(t *testing.T) {
 	}
 }
 
+// TestTable_KeyGraceSurvivesAZeroGraceTable is the other direction of per-key grace: a table that
+// ends its keys immediately must not end a key that asked to be kept. It pins drop's inline
+// zero-grace branch on e.grace, which the reverse case cannot reach.
+func TestTable_KeyGraceSurvivesAZeroGraceTable(t *testing.T) {
+	h := &recHandler{}
+	tab := NewTable(0)
+	defer tab.Reset()
+	var ended atomic.Bool
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if _, err := tab.Open(ctx, "a", slog.New(h), graceNoRace, func() (any, error) {
+		return ending(1, &ended), nil
+	}); err != nil {
+		cancel()
+		t.Fatalf("Open: %v", err)
+	}
+
+	cancel()
+	waitKeyMsg(t, h, MsgOrphan, "a")
+	time.Sleep(50 * time.Millisecond)
+	if ended.Load() {
+		t.Fatal("a key that named its own grace must not take the table's zero grace")
+	}
+	if got := countKeyMsg(h.events(), MsgDispose, "a"); got != 0 {
+		t.Fatalf("dispose = %d, want 0 while this key's own grace runs", got)
+	}
+}
+
 // TestTable_OpenGraceBelowZeroTakesTheTable checks that TableGrace is a spelling, not a magic number:
 // any negative grace means the table's.
 func TestTable_OpenGraceBelowZeroTakesTheTable(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(graceNoRace)
+	defer tab.Reset()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if _, err := tab.Open(ctx, "a", slog.New(h), -time.Hour, func() (any, error) {
@@ -1448,6 +1479,26 @@ func TestDefault_ResetWithAppliesGrace(t *testing.T) {
 	if got := Default().grace; got != DefaultGrace {
 		t.Fatalf("Reset grace: %v want %v", got, DefaultGrace)
 	}
+}
+
+// TestDefault_OpenForwardsTheGrace checks the process-table façade passes the caller's grace through.
+// The table is set far above waitBudget, so a dispose can only arrive if the key's own zero grace took.
+func TestDefault_OpenForwardsTheGrace(t *testing.T) {
+	t.Cleanup(Reset)
+	ResetWith(2 * waitBudget)
+	h := &recHandler{}
+	var ended atomic.Bool
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if _, err := Open(ctx, "k", slog.New(h), 0, func() (any, error) {
+		return ending(1, &ended), nil
+	}); err != nil {
+		cancel()
+		t.Fatalf("Open: %v", err)
+	}
+
+	cancel()
+	requireDisposeAfterClose(t, h, "k", &ended)
 }
 
 // TestDefault_ConcurrentFirstUseReturnsOneTable checks the process table is created once under a race.

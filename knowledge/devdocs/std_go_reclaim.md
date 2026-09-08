@@ -11,7 +11,7 @@ The process-wide table (`reclaim.Default`, `reclaim.Open`). One incarnation per 
 _Avoid_: one `NewTable` per caller when they should share; unprefixed keys that can collide
 
 **Open**:
-Create-once for a key (`create` takes no args — Yaegi assigns a `context.Context` arg onto the value). The caller passes a `*slog.Logger` (required; no table logger and no fallback). Later `Open` does not run create. If the value has `Close()`, the table calls it when the incarnation ends. `ctx` must not be nil. Traefik’s `New` ctx is `WithCancel`; the next dynamic config cancels it before the next `New`.
+Create-once for a key (`create` takes no args — Yaegi assigns a `context.Context` arg onto the value). The caller passes a `*slog.Logger` (required; no table logger and no fallback) and a `grace`, which only takes effect when this call's value becomes the stored one. Later `Open` does not run create. If the value has `Close()`, the table calls it when the incarnation ends. `ctx` must not be nil. Traefik’s `New` ctx is `WithCancel`; the next dynamic config cancels it before the next `New`.
 _Avoid_: Put vs Bind as two public calls; a nil holder context; `func(context.Context) (any, error)` as create
 
 **Incarnation**:
@@ -19,7 +19,7 @@ One instance of a value under a key: it begins at the `Open` that found the key 
 _Avoid_: "the entry" or "the key" when you mean this instance; treating a reclaimed value as a new one
 
 **Grace**:
-Wait after the last bound context for a key is Done, before the incarnation lifetime is canceled. An `Open` in that window is a reclaim. Zero grace means no wait. Grace belongs to the incarnation: the `Open` that creates the value fixes it, and an `Open` that reclaims cannot change it. `TableGrace` (any negative duration) takes the table's grace, which is the default for keys that name none; a negative grace at `NewTable` is `DefaultGrace` (10s).
+Wait after the last bound context for a key is Done, before the incarnation lifetime is canceled. An `Open` in that window is a reclaim. Zero grace means no wait. Grace belongs to the incarnation: the `Open` that creates the value fixes it, and an `Open` that reclaims cannot change it. When two first `Open` calls race, the grace of the create whose value is stored wins; the loser's is discarded with its value. `TableGrace` (any negative duration) takes the table's grace, which is the default for keys that name none. It is an `Open` argument only: a negative grace at `NewTable` is `DefaultGrace` (10s), since a table has nothing above it to inherit from.
 _Avoid_: passing `0` when you meant the table's; expecting a reclaiming `Open`'s grace to take effect
 
 **Lifetime**:
@@ -34,7 +34,7 @@ _Avoid_: a house `dispose func(any)` on `Open`
 
 ## How to use
 
-- Production: `reclaim.Open(ctx, key, logger, reclaim.TableGrace, create)` (process table). Pass a real duration instead of `TableGrace` only when this key needs a different one from every other key on the table. Tests: `NewTable` with a short grace, or `ResetWith`. `logger` is required. `Reset` and `ResetWith` block until every stored value's `Close()` has returned, so a test can use them as teardown that really stops the tickers it started.
+- Production: `reclaim.Open(ctx, key, logger, reclaim.TableGrace, create)` (process table). Pass a real duration instead of `TableGrace` only when this key needs a grace that differs from the table's. Tests: `NewTable` with a short grace, or `ResetWith`. `logger` is required. `Reset` and `ResetWith` block until every stored value's `Close()` has returned, so a test can use them as teardown that really stops the tickers it started.
 - Watch stable `msg` + `key`. All five (`reclaim_put`, `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`, `reclaim_dispose`) are debug. Put/bind/reclaim use that `Open`’s logger; orphan/dispose use the last `Open` on the key. A middleware `logLevel` of info hides them.
 - `ctx` is the host teardown context (Traefik `New` ctx), not `req.Context()`, not `context.Background()`.
 - Give the stored value a `Close()` method if it must stop when the incarnation ends. The table calls it once, and waits for it before logging `reclaim_dispose` — so that line means the value is already stopped. `Close()` must not block: it holds up the grace timer (or `Reset`). `create` takes no arguments.
@@ -57,7 +57,7 @@ w := v.(*BIN) // *BIN has Close(); the table calls it when the incarnation ends
 
 ## Gotchas
 
-- Hosts that cancel before they call the constructor again need a positive grace (Traefik: ~1 ms, then `New`). `NewTable(0)` ends the incarnation as soon as the last holder is gone.
+- Hosts that cancel before they call the constructor again need a positive grace (Traefik: ~1 ms, then `New`). A zero grace — `NewTable(0)` for every key that names none, or `Open(…, 0, …)` for one key — ends the incarnation as soon as the last holder is gone. `0` in the `Open` slot is the most aggressive value, not the default; the default is `TableGrace`.
 - Yaegi: do not write `Table[*T]` on a type from another package.
 - A second `Open` while the incarnation is live or in grace does not replace the lifetime.
 - Tests assert the `msg` constants. A config change is two keys: cancel A, Open B, wait grace, expect `reclaim_dispose` A.

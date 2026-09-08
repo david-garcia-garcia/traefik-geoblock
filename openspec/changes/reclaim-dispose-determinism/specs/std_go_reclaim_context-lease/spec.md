@@ -58,7 +58,7 @@ An `Open` that races the end of grace for the same key SHALL either reclaim the 
 - **AND** no incarnation is stored
 
 ### Requirement: Grace is configurable
-Grace SHALL belong to the incarnation, not to the table. The `Open` that creates a value SHALL fix that incarnation's grace from its `grace` argument; a negative `grace` (spelled `TableGrace`) SHALL mean the table's grace. An `Open` that binds or reclaims an existing incarnation MUST NOT change that incarnation's grace, whatever it passes. Two keys on one table MAY therefore have different graces. The table's grace is the default for every `Open` that names none: it is supplied at `NewTable`, and a negative value there SHALL become the product default of 10 seconds (`DefaultGrace`), which is what the process table is constructed with. A zero grace SHALL cancel the lifetime as soon as the last holder is gone (no wait).
+Grace SHALL belong to the incarnation, not to the table. The `Open` that creates a value SHALL fix that incarnation's grace from its `grace` argument; a negative `grace` (spelled `TableGrace`) SHALL mean the table's grace. When two first `Open` calls race, the grace of the create whose value is stored applies; the losing create's grace is discarded with its value. An `Open` that binds or reclaims an existing incarnation MUST NOT change that incarnation's grace, whatever it passes. Two keys on one table MAY therefore have different graces. The table's grace is the default for every `Open` that names none: it is supplied at `NewTable`, and a negative value there SHALL become the product default of 10 seconds (`DefaultGrace`), which is what the process table is constructed with. A zero grace SHALL cancel the lifetime as soon as the last holder is gone (no wait).
 
 #### Scenario: Default grace
 - **WHEN** a table is created with a negative grace
@@ -74,6 +74,11 @@ Grace SHALL belong to the incarnation, not to the table. The `Open` that creates
 - **AND** both holder contexts are Done
 - **THEN** the zero-grace key's lifetime is canceled without waiting
 - **AND** the other key's lifetime is not canceled before the table's grace elapses
+
+#### Scenario: A key outlives a table that ends its keys immediately
+- **WHEN** a key is opened with a positive grace on a table whose grace is zero
+- **AND** the holder context is Done
+- **THEN** that key's lifetime is not canceled before its own grace elapses
 
 #### Scenario: Reclaim does not change the grace
 - **WHEN** a key is created by an `Open` naming one grace

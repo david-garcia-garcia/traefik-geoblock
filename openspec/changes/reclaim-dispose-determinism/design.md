@@ -67,7 +67,7 @@ Tests that assert the reclaim *branch* rather than the race (`TestTable_OpenDuri
 
 ### Grace moves onto the slot, with the table as the default
 
-`slot` gets a `grace`, set once by the `Open` that created the value, and `drop` reads `e.grace` where it read `t.grace`. `Open` takes a `grace` argument; `TableGrace` (declared as `-1`, and any negative duration behaves the same) means "take the table's". That mirrors the rule `NewTable` already has for a negative grace, so there is one convention in the package rather than two.
+`slot` gets a `grace`, set once by the `Open` that created the value, and `drop` reads `e.grace` where it read `t.grace`. `Open` takes a `grace` argument; `TableGrace` (declared as `-1`, and any negative duration behaves the same) means "take the table's". The convention in the package is that a negative grace inherits the default one level up, which is what `NewTable` already did — but the level differs, so the two are not interchangeable: `NewTable(-1)` is `DefaultGrace`, because a table has no table above it. `TableGrace` is therefore documented as an `Open` argument only; it compiles at `NewTable` and silently means 10 s there.
 
 Why the creating `Open` fixes it and a reclaiming one cannot change it: grace is a property of the thing being kept alive, not of the caller that happens to hold it now. A reclaiming `Open` already cannot re-run `create` or replace the lifetime; letting it move the grace would mean the value a caller reclaims can outlive — or fail to outlive — what its creator asked for, decided by whichever middleware instance bound last. The logger is the deliberate exception (orphan and dispose follow the last binder) because a log line belongs to whoever is watching; a lifetime does not.
 

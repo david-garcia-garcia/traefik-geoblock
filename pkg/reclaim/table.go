@@ -12,9 +12,12 @@ const (
 	DefaultGrace = 10 * time.Second
 
 	// TableGrace is the grace an Open passes to take the table's grace instead of naming its own.
-	// Any negative duration means the same; this is the spelling to use.
+	// Any negative duration means the same. It is an Open argument only: NewTable accepts it, but
+	// there a negative grace means DefaultGrace, since a table has no table above it to inherit from.
 	TableGrace time.Duration = -1
+)
 
+const (
 	MsgPut     = "reclaim_put"
 	MsgBind    = "reclaim_bind"
 	MsgOrphan  = "reclaim_orphan"
@@ -112,7 +115,8 @@ func stopValue(value any) {
 // create takes no arguments: Yaegi cannot call func(context.Context) (any, error) (it assigns life onto the value).
 // logger is required; it is the only logger for this Open and is stored on the slot for orphan and dispose.
 // grace is this incarnation's wait after its last holder goes; pass TableGrace to take the table's.
-// It applies only when this Open creates the value — an Open that finds one keeps that incarnation's grace.
+// It applies only when this Open's value becomes the stored one — an Open that finds one, or that
+// loses the create race, keeps (or discards with its value) that grace.
 // If the value has Close(), the table calls it when this incarnation ends, before it logs dispose.
 func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, grace time.Duration, create func() (any, error)) (any, error) {
 	if t == nil {
@@ -159,14 +163,15 @@ func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, grace
 	}
 
 	// First put for this key. Close the value when life is canceled (fire / Reset).
-	if grace < 0 {
-		grace = t.grace
+	ownGrace := grace
+	if ownGrace < 0 {
+		ownGrace = t.grace
 	}
 	e := &slot{
 		value:       created,
 		cancel:      cancel,
 		holders:     map[uint64]struct{}{},
-		grace:       grace,
+		grace:       ownGrace,
 		valueClosed: make(chan struct{}),
 		logger:      logger,
 	}
