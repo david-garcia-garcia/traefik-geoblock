@@ -24,3 +24,8 @@ description: Official MaxMind GeoLite2 / GeoIP2 database download and schema thi
 priority: normal
 local: index_ext_traefik.md
 description: Official Traefik Yaegi plugin loader and packaging this product relies on.
+
+## traefik-modsecurity
+priority: normal
+local: index_ext_traefik-modsecurity.md
+description: Sibling Traefik plugin repo reclaim package compared to this product.
