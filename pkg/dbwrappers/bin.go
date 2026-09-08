@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"log/slog"
@@ -42,8 +43,10 @@ type BINConfig struct {
 
 // BIN is one open IP2Location BIN (file handle) with temp-copy hot-swap.
 type BIN struct {
-	cfg                BINConfig
-	logger             *slog.Logger
+	cfg    BINConfig
+	logger *slog.Logger
+	// mu guards every field a hot swap, a sleep, or a wake replaces.
+	mu                 sync.RWMutex
 	db                 *ip2loc.DB
 	path               string
 	version            *dbutils.DBVersion
@@ -89,8 +92,8 @@ func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	if err := w.initialize(); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(cfg.Source.URL) != "" {
-		w.startUpdate()
+	if err := w.startUpdate(); err != nil {
+		w.logger.Error("source updater", "error", err)
 	}
 	return w, nil
 }
@@ -200,20 +203,27 @@ func binCopyName(token string, unixNano int64) string {
 	return fmt.Sprintf("bin_%s_%d.BIN", token, unixNano)
 }
 
-func (w *BIN) startUpdate() {
-	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
-		if path == "" || path == w.sourceDbPath {
-			return
-		}
-		if err := w.hotSwap(path); err != nil {
-			w.logger.Error("failed to perform hot swap", "error", err)
-		}
-	})
+// startUpdate builds and starts the download ticker for this source. newBIN calls it once and
+// Wake calls it again after a sleep stopped it.
+func (w *BIN) startUpdate() error {
+	updater, err := dbsource.Start(w.sourceCfg(), w.logger, w.onUpdate)
 	if err != nil {
-		w.logger.Error("source updater", "error", err)
+		return err
+	}
+	w.mu.Lock()
+	w.updater = updater
+	w.mu.Unlock()
+	return nil
+}
+
+// onUpdate hot-swaps a newly downloaded file. The ticker calls it; newBIN and Wake both pass it.
+func (w *BIN) onUpdate(path string) {
+	if path == "" || path == w.SourcePath() {
 		return
 	}
-	w.updater = updater
+	if err := w.hotSwap(path); err != nil {
+		w.logger.Error("failed to perform hot swap", "error", err)
+	}
 }
 
 // hotSwap opens a new dated catalog file and replaces the live handle.
@@ -233,12 +243,14 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 		os.Remove(newLocalCopy)
 		return fmt.Errorf("hotSwap: failed to read new database version: %w", err)
 	}
+	w.mu.Lock()
 	oldDB := w.db
 	w.db = newDB
 	w.path = newLocalCopy
 	w.version = newVersion
 	w.currentLocalDbCopy = newLocalCopy
 	w.sourceDbPath = newDatabasePath
+	w.mu.Unlock()
 	if oldDB != nil {
 		go func() {
 			time.Sleep(10 * time.Second)
@@ -252,10 +264,16 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 // LookupRecord fills Record from the BIN using fields (path → Record key).
 // One Get_all; only mapped paths are copied.
 func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error) {
-	if w == nil || w.db == nil {
+	if w == nil {
 		return dbprovider.Record{}, fmt.Errorf("BIN is not open")
 	}
-	record, err := w.db.Get_all(ip)
+	w.mu.RLock()
+	db := w.db
+	w.mu.RUnlock()
+	if db == nil {
+		return dbprovider.Record{}, fmt.Errorf("BIN is not open")
+	}
+	record, err := db.Get_all(ip)
 	if err != nil {
 		return dbprovider.Record{}, err
 	}
@@ -295,28 +313,49 @@ func binColumn(rec ip2loc.IP2Locationrecord, path string) string {
 
 // Version is the BIN header version.
 func (w *BIN) Version() *dbutils.DBVersion {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.version
 }
 
 // Path is the file last opened (temp copy or source).
 func (w *BIN) Path() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.path
 }
 
 // SourcePath is the dated or seed file the live handle was copied from.
 func (w *BIN) SourcePath() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.sourceDbPath
 }
 
-// Close stops the updater and the file handle. The reclaim table calls this when the incarnation ends.
-func (w *BIN) Close() {
-	w.close()
+// Sleep stops the download ticker and does not return until it has finished, so nothing writes
+// into the source directory while nobody holds this BIN. The file handle stays open, so Wake
+// cannot fail. The reclaim table calls this when the last holder is gone.
+func (w *BIN) Sleep() {
+	w.mu.Lock()
+	updater := w.updater
+	w.updater = nil
+	w.mu.Unlock()
+	updater.Stop()
 }
 
-func (w *BIN) close() {
-	if w.updater != nil {
-		w.updater.Stop()
+// Wake restarts the download ticker. The reclaim table calls this before it hands a sleeping BIN
+// back to a caller.
+func (w *BIN) Wake() {
+	if err := w.startUpdate(); err != nil {
+		w.logger.Error("source updater", "error", err)
 	}
+}
+
+// Close releases the file handle. The reclaim table calls this when the incarnation ends, always
+// after Sleep, so there is no ticker left to stop here.
+func (w *BIN) Close() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.db != nil {
 		w.db.Close()
 		w.db = nil
