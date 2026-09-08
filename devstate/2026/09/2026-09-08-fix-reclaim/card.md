@@ -21,6 +21,8 @@ There is also a third, narrower defect: `drop` arms the grace timer and *then* l
 
 Not merging leaves every PR in this repo one coin flip away from a red `Test` job, which trains everyone to re-run CI instead of reading it — and the day a real reclaim regression lands, "just re-run it" is exactly the wrong reflex. It also leaves `reclaim_dispose` documented as the end-of-incarnation signal while it can be emitted before the database handle is actually closed.
 
+The end of an incarnation on `master`, where the dispose line does not wait for anything:
+
 ```mermaid
 sequenceDiagram
     participant T as grace timer
@@ -33,6 +35,23 @@ sequenceDiagram
     F->>Test: log reclaim_dispose
     Test->>Test: read ended -> [] FAIL
     L->>L: stopValue -> Close() (too late)
+```
+
+The same path on this branch. The goroutine stays; `fire` now waits for it:
+
+```mermaid
+sequenceDiagram
+    participant T as grace timer
+    participant F as fire()
+    participant L as life goroutine
+    participant Test as TestTable_HashChangeProof
+    T->>F: grace elapsed
+    F->>F: cancel(life)
+    F->>L: waitCtx wakes
+    L->>L: stopValue -> Close()
+    L->>F: close(slot.closed)
+    F->>Test: log reclaim_dispose
+    Test->>Test: read ended -> [1] PASS
 ```
 
 ## Merge readiness
