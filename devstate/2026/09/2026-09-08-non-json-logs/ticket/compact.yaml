@@ -1,0 +1,5 @@
+host: github
+ref: https://github.com/PascalMinder/geoblock/issues/67
+title: Traefik Logs Parser Fails on Non-JSON Logs
+url: https://github.com/PascalMinder/geoblock/issues/67
+number: 67
