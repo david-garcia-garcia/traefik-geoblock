@@ -10,7 +10,7 @@ src: f90378f3413a3aa365305b3a9c60123eca4a25161bd9a96bbf01cff5f1feb4be
 comments: none
 explore: explore.md
 change: crowdsec-compatible-stdout-logs
-localTests: none
+localTests: passed
 pr:
   id: 81
   url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/81
