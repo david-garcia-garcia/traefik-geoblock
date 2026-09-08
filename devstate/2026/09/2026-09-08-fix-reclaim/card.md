@@ -1,11 +1,11 @@
-Developer review: in progress — 2026-09-08T15:04:21Z
+Developer review: in progress — 2026-09-08T15:47:22Z
 
 ## What this changes
 **Operators.** A `reclaim_dispose` line in the logs now means the database handle behind that key is already closed, and it can no longer appear before the `reclaim_orphan` line for the same key. No configuration changes.
 
 **Admin users.** None.
 
-**Developers.** `pkg/reclaim` gains two guarantees and nothing is taken away. `reclaim_dispose` is emitted only after the stored value's `Close()` has returned, so it is a completion signal rather than a hint — the cost is that a value which blocks in `Close()` now blocks whoever ended the incarnation, which the spec forbids. `reclaim_orphan` is emitted before grace is armed, so the per-key sequence is stable at any grace including zero. The test file goes from 22 to 35 tests, covering the two new guarantees, the grace edge, and nine paths no test reached before. `pkg/reclaim` is a copy shared with `traefik-modsecurity`, so every edit here is additive by rule and ports back as a file copy.
+**Developers.** `pkg/reclaim` gains two guarantees and nothing is taken away. `reclaim_dispose` is emitted only after the stored value's `Close()` has returned, so it is a completion signal rather than a hint — the cost is that a value which blocks in `Close()` now blocks whoever ended the incarnation, which the spec forbids. `reclaim_orphan` is emitted before grace is armed, so the per-key sequence is stable at any grace including zero. The package goes from 26 to 42 tests, covering the two new guarantees, the grace edge, and the paths no test reached before. `pkg/reclaim` is a copy shared with `traefik-modsecurity`, so every edit here is additive by rule and ports back as a file copy.
 
 **End users.** None.
 
@@ -55,28 +55,29 @@ sequenceDiagram
 ```
 
 ## Merge readiness
-Implement is complete: all 8 task groups are checked, the full local suite is green, 25 stressed runs under eight CPU burners are green where `master` failed within two, and all three CI jobs are green on this head. Code review is running. 1 item remains.
+Implement and code review are both complete. Seven axes ran on Opus against the pinned diff and returned 27 findings (10 hard); 24 are applied, 3 are argued and left with measurements. Two of them were real defects in this change rather than style: an incarnation that could be stranded forever by the new arming window, and two `pkg/dbwrappers` tests that were never taking the reclaim branch they claim to test. The full local suite is green, 8 stressed runs under twelve CPU burners at `GOMAXPROCS=2` are green where `master` failed within two, and CI is green on the pre-review head. 1 item remains: CI on the review head.
 
 Priority: P2 — a coin-flip red `Test` job on every PR, plus a `reclaim_dispose` line that can precede both the orphan line and the actual `Close()`; the workaround today is re-running CI.
-Reviewed head: 995849a
+Reviewed head: 4735753
 Owner decision: Not required for the code. One decision was taken by the human this round and is recorded below.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 5/6 | Fixed, proven against `master`, stress-clean, and CI-green; code review is the remaining gate |
-| CI proof | 6/6 | Run 34241944768 on 995849a: Test, Lint, and Integration Tests all success — https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34241944768 |
-| Local tests proof | 6/6 | `go test ./...` green; `-count=25` on `pkg/reclaim` + `pkg/dbwrappers` green under eight CPU burners |
-| Review resolution | 6/6 | No reviewer comments on PR #82 |
+| Overall readiness | 5/6 | Fixed, reviewed on seven axes, proven against `master`, and stress-clean; CI on the review head is the remaining gate |
+| CI proof | 5/6 | Run 34241944768 green on 995849a (Test, Lint, Integration Tests) — https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34241944768 — but 4735753 has not finished CI yet |
+| Local tests proof | 6/6 | `go test ./...` green; `-count=8` on `pkg/reclaim` + `pkg/dbwrappers` green under twelve CPU burners at `GOMAXPROCS=2`, plus `-count=25` under eight burners before the review fixes |
+| Review resolution | 6/6 | 27 axis findings: 24 applied, 3 argued with measurements, 0 open; no reviewer comments on PR #82 |
 
 ## Verification
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Branch | 2026-09-08-fix-reclaim pushed | `git push` (995849a) |
+| Branch | 2026-09-08-fix-reclaim pushed | `git push` (4735753) |
 | OpenSpec | reclaim-dispose-determinism valid | `openspec validate --strict reclaim-dispose-determinism` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/82 | pr-host List/Create |
 | CI | run 34241944768 success on 995849a (Test, Lint, Integration Tests) https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34241944768 | pr-host check runs |
-| Local tests | `go test ./...` all 10 packages ok; `-count=25` stressed green | shell, this worktree |
+| Local tests | `go test ./...` all 10 packages ok; `-count=8` stressed green at `GOMAXPROCS=2` under twelve burners | shell, this worktree |
+| Code review | 7 axes on Opus, 27 findings, 24 applied / 3 argued / 0 open | `devstate/2026/09/2026-09-08-fix-reclaim/codereview_*.md` |
 | Regression proof | 4 new tests fail on `origin/master`'s `table.go` in all 3 runs; a 5th fails within 57 rounds | scratch module `tmp-reclaim-proof2` |
 | Lint | no findings; `golangci-lint` gofmt hits are the CRLF working tree and include untouched `default.go` | `golangci-lint run ./pkg/reclaim/... ./pkg/dbwrappers/...`, `gofmt -l` on LF copies is empty |
 | PR comments | no comments | devstate/comments.md |
@@ -87,7 +88,8 @@ Owner decision: Not required for the code. One decision was taken by the human t
 | `std_go_reclaim_context-lease` | 2 requirements added (dispose implies Close returned; either side of the grace edge is correct), 1 modified (orphan precedes dispose at every grace) | `openspec/changes/reclaim-dispose-determinism/specs/` |
 
 ## Follow-up issues
-- Port this change to `david-garcia-garcia/traefik-modsecurity` `pkg/reclaim`. The two copies are kept in sync in both directions; the port is a file copy of `table.go` and `table_test.go` plus the `useLeases` change if that repo has the same integration tests. Not done here because it is a different repository.
+- Port this change to `david-garcia-garcia/traefik-modsecurity` `pkg/reclaim`. The two copies are kept in sync in both directions; the port is a file copy of `table.go`, `default.go` and `table_test.go`, plus the equivalent test-support changes if that repo has the same integration tests. Not done here because it is a different repository.
+- `pkg/dbsource`: `Updater.Stop` does not wait for the update goroutine, and `tick` never checks for stop before downloading, so a disposed wrapper can still write into a directory `t.TempDir` is removing. That is why `settleFirstTick` exists in `pkg/dbwrappers/reclaim_test.go`. The fix is to cancel the in-flight request and join the goroutine; out of scope for a reclaim ticket.
 
 ## How this fits together
 Local ticket `2026-09-08-fix-reclaim` runs in its own worktree on branch `2026-09-08-fix-reclaim`, which is already open as PR #82 against `master`; CI on that PR is the merge gate, and this card is the PR summary.
@@ -108,16 +110,30 @@ Local ticket `2026-09-08-fix-reclaim` runs in its own worktree on branch `2026-0
 - [x] [P3] Port the upstream variable renames in `table.go` for parity with `traefik-modsecurity`
 - [x] [P3] Add the missing coverage (nil-`Done` holder, `ResetWith` grace, logger ownership, goroutine leak guard, repeated reclaim cycles)
 - [x] [P3] Harden the 25 ms lease windows and fixed 80 ms sleeps in `pkg/dbwrappers/reclaim_test.go`
-- [ ] [P2] Code review of the component change
-- [x] [P2] Green CI on PR #82 — run 34241944768 on 995849a, all three jobs success
+- [x] [P2] Code review of the component change — seven axes on Opus, 27 findings, 24 applied and 3 argued
+- [ ] [P2] Green CI on PR #82 for the review head 4735753 (run 34241944768 was green on 995849a)
 
 ## Findings
 | Finding | Where | Why it matters |
 | --- | --- | --- |
 | Making `Close()` precede the dispose line inverts the two observables, which broke three tests that had used a `Close`-side flag as a proxy for "dispose was logged" | `TestTable_OpenCancelDispose`, `TestTable_ZeroGraceEndsImmediately`, `TestTable_ConcurrentCancelLastHolders` | Surfaced only under the stress harness, one iteration after the fix looked done. All three now wait for the line and assert the flag after it, which makes each a second check of the new guarantee. The rule is in the devdocs gotchas. |
+| The arming window this change adds could strand an incarnation forever | `pkg/reclaim/table.go` `drop` | An `Open` that reclaimed and released inside the orphan window returned early on `arming`, and the original `drop` then bailed because the generation had moved — leaving the slot mapped with no holders, no timer, and a value never closed. `drop` now arms against the state it reads at re-lock. `TestTable_ReclaimAndReleaseInsideOrphanWindowStillArms` drives the interleaving with a log handler that blocks on the orphan line; it times out on the pre-fix code. Found by the performance axis, not by any test. |
+| Two `pkg/dbwrappers` tests were never taking the reclaim branch they are named for | `TestOpenBIN_SameHashReclaimKeepsTicker`, `TestOpenMMDB_SameHashReclaimKeepsTicker` | Wiring up the event recorder the coverage axis asked for showed the recorded events were put, bind, bind — no orphan, no reclaim. Cancelling a holder and calling `Open` straight after usually lands before the holder's watcher goroutine has dropped, so it was a plain second bind and the pointer-equality assert was trivially true. Both now wait for `reclaim_orphan` first and assert the reclaim line; runtime fell to 0.05 s. The trap is in the devdocs gotchas. |
 
 ## Axis review
-Not run yet — code review is the next phase.
+All seven axes ran on Opus, each against the diff pinned at 995849a.
+
+| Axis | Findings | Applied | Argued | Worst finding |
+| --- | --- | --- | --- | --- |
+| Standards | 5 (4 hard) | 5 | 0 | The slot's `closed` field named the slot, not the fact it carries — the exact conflation this change exists to separate. Now `valueClosed` |
+| Nitpicks | 5 (3 hard) | 5 | 0 | Test names and locals that described the mechanism instead of the behavior (`armingGen`, `useLeases`, `...DisposesQuietly`) |
+| Spec | 4 | 4 | 0 | The delta spec claimed `reclaim_orphan` always precedes `reclaim_dispose` "at every grace", which `Reset` does not honor. The requirement now states both exceptions |
+| Security | 0 | — | — | No findings. The change adds no input handling, no logging of untrusted data, and no new lock ordering |
+| Performance | 4 (1 hard) | 2 | 2 | **A real leak introduced by this change**: the new arming window could strand an incarnation mapped with no holders and no timer, its value never closed |
+| Dead code | 2 | 1 | 1 | An unreachable nil-channel guard in `waitClosed`; the helper is gone and `fire`/`Reset` receive directly |
+| Test coverage | 7 (2 hard) | 7 | 0 | The arming window — the state this change adds — had no test that entered it through `drop` |
+
+The three argued findings are recorded in the axis files with the measurement that justifies them: two are wall-clock trims that would remove a regression guard (the 40 rounds first catch the defect on round 57, and the `pkg/dbwrappers` sleeps are covering a `pkg/dbsource` shutdown gap, now a follow-up), and one is a pre-existing test-only production symbol.
 
 ## Agent review details
 
@@ -125,10 +141,11 @@ Not run yet — code review is the next phase.
 | Metric | Value | Why it matters |
 | --- | --- | --- |
 | Specs in this PR | `std_go_reclaim_context-lease` | Same list as ## Specs; do not paste diff --stat |
-| Tests in `pkg/reclaim` | 22 → 35 | The component this PR is about had no coverage of its own end-of-incarnation ordering |
-| New tests that fail on `master` | 5 | A test that passes on the buggy code proves nothing |
+| Tests in `pkg/reclaim` | 26 → 42 | The component this PR is about had no coverage of its own end-of-incarnation ordering (`go test -list`) |
+| New tests that fail on `master` | 5 | A test that passes on the buggy code proves nothing. The two tests added during review pin the arming state, which `master` does not have, so they are measured against the pre-fix version of this branch instead |
+| Axis findings | 27 found / 24 applied / 3 argued / 0 open | Seven axes on Opus; two findings were defects in this change, not style |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 995849afe7752553e22c4514eccc8f733d90bb67 | Card must match the branch you measured |
+| Reviewed head | 4735753af0fc6f6821689cfc89a54547a478812b | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -155,6 +172,14 @@ What I checked after the fix:
 - The new tests built against `origin/master`'s `table.go` in a scratch module fail there in all 3 runs: `TestTable_DisposeLogFollowsClose`, `TestTable_ResetDisposeLogFollowsClose`, `TestTable_RepeatedReclaimCyclesKeepOneIncarnation`, `TestTable_ReclaimRacesFire`; `TestTable_OrphanPrecedesDisposeAtTinyGrace` fails there on round 57 of 300 with `[put, bind, dispose, orphan]`
 - `openspec validate --strict reclaim-dispose-determinism` — valid
 - Upstream `pkg/reclaim` re-checked for the features the human asked about: three files, zero hits for `Wake` or `Sleep` in the whole repo
+
+What I checked after the review fixes (head 4735753):
+- `go build ./...`, `go vet ./...`, `go test ./...` — all 10 packages ok
+- `go test ./pkg/reclaim/ ./pkg/dbwrappers/ -count=8` under twelve CPU burners at `GOMAXPROCS=2` — green
+- `TestTable_OpenInsideOrphanWindowKeepsIncarnationLive` `-count=5` green; the arming window is now entered through `drop` rather than by hand-setting the flag
+- `TestTable_GoroutinesReturnToBaseline` at `slack=2` (was 8): 25 solo runs and 8 full-suite runs green
+- The two `SameHashReclaimKeepsTicker` tests now record `reclaim_reclaim`; before the fix their event stream was put, bind, bind
+- `openspec validate --strict reclaim-dispose-determinism` — valid
 
 ### Rank-up moves
 - Consider whether the holder `watch` goroutine should park forever for a `context.Background()` holder, or refuse that case outside tests.
