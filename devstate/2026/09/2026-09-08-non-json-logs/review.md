@@ -3,3 +3,9 @@ phase: prepare
 findings: qualified-with-gaps; upstream status comment Set skipped (no write access)
 fixed: bus folder, ticket dump, requirement.md, stub PR 81
 skipped: upstream issue status comment Set
+
+## explore (2026-09-08)
+phase: explore
+findings: #67 INFO: GeoBlock prefix not in tree; default still slog text; tests do not lock prefix or JSON lines
+fixed: explore.md decisions; debt note for bootstrap/owner logFormat
+skipped: default flip; bootstrap/owner format parameter
