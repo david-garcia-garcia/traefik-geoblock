@@ -1,0 +1,15 @@
+issueKey: 2026-09-08-reclaim-lifecycle
+jobName: 2026-09-08-reclaim-lifecycle
+issueHost: local
+issueRef: none
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified
+src: local-spec-2026-09-08-reclaim-lifecycle+d10ad52
+localTests: none
+requirement: requirement.md
+comments: none
+explore: none
+change: none
+pr: none
