@@ -486,17 +486,18 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, phase string, err error) {
 }
 
 // recordForLookup is PRIVATE for private/loopback IPs, else catalog Lookup.
+// Errors carry no country: enrich writes this record before it checks err, and ip is client-set.
 func (p Plugin) recordForLookup(ip string) (dbprovider.Record, error) {
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
-		return dbprovider.Record{Country: ip}, fmt.Errorf("unable to parse IP address from [%s]", ip)
+		return dbprovider.Record{}, fmt.Errorf("unable to parse IP address from [%s]", ip)
 	}
 	if ipAddr.IsPrivate() || ipAddr.IsLoopback() {
 		return dbprovider.Record{Country: PrivateIpCountryAlias}, nil
 	}
 	rec, err := p.Lookup(ip)
 	if err != nil {
-		return dbprovider.Record{Country: ip}, fmt.Errorf("lookup of %s failed: %w", ip, err)
+		return dbprovider.Record{}, fmt.Errorf("lookup of %s failed: %w", ip, err)
 	}
 	return rec, nil
 }

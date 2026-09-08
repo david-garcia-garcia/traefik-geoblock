@@ -420,7 +420,7 @@ Country allow/block uses the single `countryHeader` value (first public country 
 
 **Every selected hop can deny.** An earlier allowed hop does not vouch for the ones after it; `pass:{reason}` names the first *allowing* hop. If a forwarding proxy leaves its own private address in the chain, set `allowPrivate: true` or use `CheckFirstNonePrivate` — `allowedIPBlocks` cannot allow a private hop, because private and loopback addresses answer to `allowPrivate` before the CIDR lists are consulted.
 
-On lookup modes, `countryHeader` starts as `PRIVATE` and is overwritten by the first real country. A public IP for which no enabled source returns a country is `XX`, so it reaches the country rules and `defaultAllow` rather than `allowPrivate`. `XX` is ISO 3166-1 user-assigned and may be listed in `allowedCountries` / `blockedCountries`. An IP2Location `bin` miss (`country_short` `-`) is empty at merge, so a later catalog source may fill country and a BIN-only miss still writes `XX`.
+On lookup modes, `countryHeader` starts as `PRIVATE` and is overwritten by the first real country. An IP header value the plugin cannot parse enriches as `XX`, never as itself — the header only ever carries an ISO country, `PRIVATE` or `XX`. A public IP for which no enabled source returns a country is `XX`, so it reaches the country rules and `defaultAllow` rather than `allowPrivate`. `XX` is ISO 3166-1 user-assigned and may be listed in `allowedCountries` / `blockedCountries`. An IP2Location `bin` miss (`country_short` `-`) is empty at merge, so a later catalog source may fill country and a BIN-only miss still writes `XX`.
 
 ### Path include / exclude
 
