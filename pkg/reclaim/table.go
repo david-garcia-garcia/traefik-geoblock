@@ -130,23 +130,38 @@ type waker interface {
 	Wake()
 }
 
+// The three lookups below are type switches rather than `value.(sleeper)` because a comma-ok
+// assertion to an interface panics under Yaegi ("reflect.Set: value of type interface {} is not
+// assignable to type interp.valueInterface") for a value that reached `any` by being passed in,
+// and a panic here runs on a background goroutine and would end the Traefik process. The type
+// switch reports no match instead.
+//
+// It reports no match a lot: Yaegi hands back a value returned through an interpreted
+// `func() (any, error)` as a synthesized struct type with no methods, so under the interpreter
+// none of the three ever matches and the optional lifecycle is inert. That is upstream and
+// predates this change (Close has never run interpreted either); see
+// knowledge/debt/2026-09-08-yaegi-drops-methods-on-any.md. Compiled callers get all four events.
+
 // sleepValue puts value to sleep if it has Sleep. Runs outside t.mu.
 func sleepValue(value any) {
-	if typed, ok := value.(sleeper); ok {
+	switch typed := value.(type) {
+	case sleeper:
 		typed.Sleep()
 	}
 }
 
 // wakeValue wakes value if it has Wake. Runs outside t.mu, before Open returns.
 func wakeValue(value any) {
-	if typed, ok := value.(waker); ok {
+	switch typed := value.(type) {
+	case waker:
 		typed.Wake()
 	}
 }
 
 // closeValue closes value if it has Close. Runs outside t.mu, always after sleepValue.
 func closeValue(value any) {
-	if typed, ok := value.(closer); ok {
+	switch typed := value.(type) {
+	case closer:
 		typed.Close()
 	}
 }

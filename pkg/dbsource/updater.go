@@ -141,7 +141,11 @@ func withoutQuery(err error, rawURL string) string {
 		// Nothing reliable to redact down to, so name neither the URL nor the failure detail.
 		return "download failed"
 	}
-	parsed.RawQuery, parsed.Fragment, parsed.User = "", "", nil
+	// One field per statement: Yaegi panics on a multi-assignment that mixes a nil into a
+	// pointer field, and this runs on the update goroutine where a panic ends the process.
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.User = nil
 	return strings.ReplaceAll(text, rawURL, parsed.String())
 }
 
