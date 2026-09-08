@@ -4,11 +4,11 @@
 
 ## What Changes
 
-- `reclaim_dispose` becomes a completion signal: `fire` and `Reset` call the stored value's `Close()` synchronously after canceling the lifetime and before emitting the dispose line. The per-slot `waitCtx(life)` goroutine is removed, so an incarnation no longer costs a parked goroutine.
+- `reclaim_dispose` becomes a completion signal: after canceling the incarnation lifetime, `fire` and `Reset` wait for the lifetime goroutine to finish closing the value, and only then emit the dispose line. The lifetime context and its goroutine stay exactly as they are — this is an added handshake, not a removal.
 - `reclaim_orphan` is always logged before the grace timer is armed, and therefore always before `reclaim_dispose` for that incarnation — without logging while the table mutex is held. `drop` marks the slot as arming under the lock, logs outside it, then arms only if the slot is still mapped and its grace generation has not moved; a bind that lands in that window reclaims the slot as it does today.
 - The race-stress tests accept every legal outcome of the grace edge instead of requiring reclaim to win it, and the tests that assert the reclaim *branch* get a grace long enough that the branch is certain rather than probable.
 - Upstream parity with `david-garcia-garcia/traefik-modsecurity` `pkg/reclaim`: the local-variable renames in `table.go` (`v` → `stored` / `created`).
-- New coverage for surface no test reaches today: the nil-`Done` holder polling branch, `stopValue` on a value without `Close()`, `ResetWith` grace on the process table, `Default()` under concurrent first use, repeated orphan → reclaim → orphan → dispose cycles, holder-map cleanup, the logger-ownership rule for orphan and dispose, key independence at scale, `Reset` racing an in-flight `Open`, and a goroutine-count check that proves the removed goroutine stays removed.
+- New coverage for surface no test reaches today: the nil-`Done` holder polling branch, `stopValue` on a value without `Close()`, `ResetWith` grace on the process table, `Default()` under concurrent first use, repeated orphan → reclaim → orphan → dispose cycles, holder-map cleanup, the logger-ownership rule for orphan and dispose, key independence at scale, `Reset` racing an in-flight `Open`, and a goroutine-leak guard.
 - `pkg/dbwrappers/reclaim_test.go` stops depending on a 25 ms reclaim window and fixed 80 ms sleeps.
 
 No public signature, message constant, or default grace changes. Not a breaking change for callers.
@@ -19,11 +19,11 @@ No public signature, message constant, or default grace changes. Not a breaking 
 <!-- none: this change tightens an existing contract -->
 
 ### Modified Capabilities
-- `std_go_reclaim_context-lease`: `reclaim_dispose` is emitted only after the stored value's `Close()` has returned; `reclaim_orphan` is emitted before grace starts, so it always precedes `reclaim_dispose` for the same incarnation; the table keeps no goroutine per incarnation for the lifetime watch.
+- `std_go_reclaim_context-lease`: `reclaim_dispose` is emitted only after the stored value's `Close()` has returned; `reclaim_orphan` is emitted before grace starts, so it always precedes `reclaim_dispose` for the same incarnation; no goroutine the table starts for a key outlives that key.
 
 ## Impact
 
-- `pkg/reclaim/table.go` — `fire`, `Reset`, `drop`, `bindLocked`, `Open`; new `arming` field on `slot`; per-slot lifetime goroutine removed.
+- `pkg/reclaim/table.go` — `fire`, `Reset`, `drop`, `bindLocked`, `Open`; new `arming` and `closed` fields on `slot`. Nothing is removed: this package is a copy shared with `traefik-modsecurity` and every edit must port back verbatim.
 - `pkg/reclaim/table_test.go` — race-stress assertions, grace values, new coverage.
 - `pkg/dbwrappers/reclaim_test.go` — lease and wait hardening (tests only).
 - `openspec/specs/std_go_reclaim_context-lease/spec.md` — three requirement edits.

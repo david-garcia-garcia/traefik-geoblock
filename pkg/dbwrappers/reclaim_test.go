@@ -69,11 +69,31 @@ func hasSubseq(got [][2]string, want [][2]string) bool {
 	return i == len(want)
 }
 
-func useShortLeases(t *testing.T) *recHandler {
+// graceReclaimSafe is long enough that a test asserting the reclaim branch cannot lose the grace timer.
+const graceReclaimSafe = 5 * time.Second
+
+// graceDisposeFast lets an unreclaimed key reach dispose quickly; wait for the event, never a fixed sleep.
+const graceDisposeFast = 25 * time.Millisecond
+
+// useLeases resets the process table with grace and returns a handler recording its reclaim lines.
+func useLeases(t *testing.T, grace time.Duration) *recHandler {
 	t.Helper()
 	h := &recHandler{}
-	ResetWith(25 * time.Millisecond)
+	ResetWith(grace)
 	return h
+}
+
+// waitEvent fails if msg for key is still missing after a budget a loaded runner cannot exhaust.
+func waitEvent(t *testing.T, h *recHandler, msg, key string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if hasEvent(h.events(), msg, key) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for %s on %s: %+v", msg, key, h.events())
 }
 
 func silentTickerURL(t *testing.T) string {
@@ -88,7 +108,7 @@ func silentTickerURL(t *testing.T) string {
 func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	useShortLeases(t)
+	useLeases(t, graceReclaimSafe)
 	cfg := BINConfig{
 		Dir: t.TempDir(),
 		Source: dbsource.Config{
@@ -124,17 +144,18 @@ func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {
 	if rec.Country != "US" {
 		t.Fatalf("lookup: %+v", rec)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// The reclaimed wrapper stays usable while ctx2 holds it.
+	time.Sleep(50 * time.Millisecond)
 	rec = testBINRecord(t, b)
 	if rec.Country != "US" {
-		t.Fatalf("after grace: %+v", rec)
+		t.Fatalf("after reclaim: %+v", rec)
 	}
 }
 
 func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	h := useShortLeases(t)
+	h := useLeases(t, graceDisposeFast)
 	cfg1 := BINConfig{
 		Dir: t.TempDir(),
 		Source: dbsource.Config{
@@ -187,7 +208,8 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("H2: %v", err)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// Dispose is logged only after the old wrapper's Close returned, so H1 is stopped by now.
+	waitEvent(t, h, reclaim.MsgDispose, key1)
 	if _, err := h1.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil {
 		t.Fatal("H1 loop must be stopped")
 	}
@@ -208,7 +230,7 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 func TestOpenMMDB_SameHashReclaimKeepsTicker(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	useShortLeases(t)
+	useLeases(t, graceReclaimSafe)
 	cfg := MMDBConfig{
 		Dir: t.TempDir(),
 		Source: dbsource.Config{
@@ -243,16 +265,17 @@ func TestOpenMMDB_SameHashReclaimKeepsTicker(t *testing.T) {
 	if err := b.Lookup("8.8.8.8", &rec); err != nil || rec.CountryCode != "US" {
 		t.Fatalf("lookup: %+v %v", rec, err)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// The reclaimed wrapper stays usable while ctx2 holds it.
+	time.Sleep(50 * time.Millisecond)
 	if err := b.Lookup("8.8.8.8", &rec); err != nil || rec.CountryCode != "US" {
-		t.Fatalf("after grace: %+v %v", rec, err)
+		t.Fatalf("after reclaim: %+v %v", rec, err)
 	}
 }
 
 func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	h := useShortLeases(t)
+	h := useLeases(t, graceDisposeFast)
 	lite := testLiteMMDB(t)
 	cfg1 := MMDBConfig{
 		Dir: t.TempDir(),
@@ -306,7 +329,8 @@ func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("H2: %v", err)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// Dispose is logged only after the old wrapper's Close returned, so H1 is stopped by now.
+	waitEvent(t, h, reclaim.MsgDispose, key1)
 	var rec struct {
 		CountryCode string `maxminddb:"country_code"`
 	}

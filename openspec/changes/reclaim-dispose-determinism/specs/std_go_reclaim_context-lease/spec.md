@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Incarnation end closes the stored value before it reports the end
-When an incarnation ends (grace elapsed while orphaned, `Reset`, or a lost create race), the table SHALL call the stored value's `Close()` in the same goroutine that ends the incarnation, after the lifetime is canceled and before `reclaim_dispose` is emitted. `Close()` SHALL be called at most once per incarnation. The table MUST NOT hold a goroutine per stored incarnation in order to observe the end of that lifetime, so the number of goroutines the table owns SHALL return to its pre-`Open` level once every incarnation has ended and every holder context is Done. A value whose `Close()` blocks therefore blocks the caller that ended the incarnation; values stored on this table SHALL NOT block in `Close()`.
+When an incarnation ends (grace elapsed while orphaned, `Reset`, or a lost create race), the table SHALL cancel the incarnation lifetime, then wait until the stored value's `Close()` has returned, and only then emit `reclaim_dispose`. `Close()` SHALL be called at most once per incarnation. Because the table waits, a value whose `Close()` blocks blocks whoever ended the incarnation; values stored on this table SHALL NOT block in `Close()`. Every goroutine the table starts for a key SHALL exit once that key's holder contexts are Done and its incarnation has ended.
 
 #### Scenario: Dispose log implies Close has returned
 - **WHEN** a key is orphaned and grace elapses
@@ -11,10 +11,11 @@ When an incarnation ends (grace elapsed while orphaned, `Reset`, or a lost creat
 #### Scenario: Reset closes the value before it reports dispose
 - **WHEN** `Reset` is called on a table that still has an incarnation
 - **THEN** that value's `Close()` has returned before `reclaim_dispose` is emitted for that key
+- **AND** `Reset` does not return before that dispose is emitted
 
-#### Scenario: No goroutine per incarnation
-- **WHEN** a key is opened, then all of its holder contexts are Done and the incarnation ends
-- **THEN** the table owns no more goroutines than it did before that `Open`
+#### Scenario: Goroutines do not outlive the incarnation
+- **WHEN** many keys are opened, then every holder context is Done and every incarnation has ended
+- **THEN** the table owns no more goroutines than it did before those `Open` calls
 
 ### Requirement: Either side of the grace edge is correct
 An `Open` that races the end of grace for the same key SHALL either reclaim the stored incarnation (returning the stored value and keeping the lifetime) or bind a new incarnation created by that `Open`. Both outcomes are correct. In neither outcome SHALL the table cancel the lifetime of an incarnation that has a live holder, and in neither outcome SHALL a value be left stored after its lifetime was canceled.

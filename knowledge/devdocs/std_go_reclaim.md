@@ -19,19 +19,21 @@ Wait after the last bound context for a key is Done, before the incarnation life
 _Avoid_: passing `0` when you meant the product default
 
 **Lifetime**:
-The context `create` receives. It is canceled when the incarnation ends (grace elapsed while orphaned, `Reset`, or a lost create race).
+The per-incarnation context the table holds. It is canceled when the incarnation ends (grace elapsed while orphaned, `Reset`, or a lost create race); a goroutine started by `Open` watches it and calls `Close()` on the value. `create` takes no arguments, so callers never see this context.
 _Avoid_: a house `dispose func(any)` on `Open`
 
 ## Overview
 
 `pkg/reclaim` is reusable across packages. Yaegi panics on `reclaim.Table[*BIN]`; it loads a non-generic table of `any` and a type-assert in the caller.
 
+**This package is a shared copy.** The same `pkg/reclaim` lives in [traefik-modsecurity](https://github.com/david-garcia-garcia/traefik-modsecurity/tree/main/pkg/reclaim) and the two are kept in sync in both directions: a change made here is ported there, and a change made there is ported here. So edits are **additive** — fix a defect, add coverage — and never remove or reshape what the package already does, even when a piece looks unreachable from this repo. Keep it stdlib-only and self-contained so the port stays a file copy. Before changing it, diff against upstream `main`.
+
 ## How to use
 
 - Production: `reclaim.Open(ctx, key, logger, create)` (process table). Tests: `NewTable` with a short grace, or `ResetWith`. `logger` is required.
 - Watch stable `msg` + `key`. All five (`reclaim_put`, `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`, `reclaim_dispose`) are debug. Put/bind/reclaim use that `Open`’s logger; orphan/dispose use the last `Open` on the key. A middleware `logLevel` of info hides them.
 - `ctx` is the host teardown context (Traefik `New` ctx), not `req.Context()`, not `context.Background()`.
-- Give the stored value a `Close()` method if it must stop when the incarnation ends. The table calls it once. `create` takes no arguments.
+- Give the stored value a `Close()` method if it must stop when the incarnation ends. The table calls it once, and waits for it before logging `reclaim_dispose` — so that line means the value is already stopped. `Close()` must not block: it holds up the grace timer (or `Reset`). `create` takes no arguments.
 - Prefix keys when more than one type shares Default (`bin:` / `mmdb:` / `plugin:`).
 
 ## Pattern snippet
@@ -55,3 +57,6 @@ w := v.(*BIN) // *BIN has Close(); the table calls it when the incarnation ends
 - Yaegi: do not write `Table[*T]` on a type from another package.
 - A second `Open` while the incarnation is live or in grace does not replace the lifetime.
 - Tests assert the `msg` constants. A config change is two keys: cancel A, Open B, wait grace, expect `reclaim_dispose` A.
+- A flag set inside the value's `Close()` is **not** a signal that `reclaim_dispose` was logged — `Close()` runs first, then the line. A test that waits on such a flag and then reads the log races it. Wait for the line (`waitKeyMsg`) and assert the flag afterwards.
+- A test must never need a specific timer to win. Either use a grace long enough that the branch you assert cannot lose (`graceNoRace`), or accept both sides of the grace edge and assert what must hold for the side that happened. A test that requires "the reclaim beat the 3 ms timer" is a CI flake, not a check.
+- `reclaim_orphan` is emitted before grace is armed, so it always precedes `reclaim_dispose` for one incarnation at any grace. The `arming` window on the slot is what buys that ordering without logging under the table mutex.

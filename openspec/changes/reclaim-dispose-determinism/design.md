@@ -1,37 +1,51 @@
 ## Context
 
-See proposal.md — Why. Two constraints shape the approach.
+See proposal.md — Why. Three constraints shape the approach.
 
-The first is the existing spec rule that log lines MUST NOT be emitted while the table mutex is held (`openspec/specs/std_go_reclaim_context-lease/spec.md`). That rules out the obvious ordering fix for `reclaim_orphan`: moving the log above `time.AfterFunc` inside the critical section in `drop`.
+The first is that `pkg/reclaim` is a **shared copy**. The same package lives in `david-garcia-garcia/traefik-modsecurity`, and the two must stay in sync in both directions: whatever lands here gets ported there, and whatever lands there gets ported here. So this change is additive only — fix defects and add coverage, never remove or reshape existing functionality — and it must not depend on anything outside `pkg/reclaim` or on this repo's callers.
 
-The second is Yaegi. `pkg/reclaim` is loaded by the Traefik plugin interpreter, so it stays non-generic, stdlib-only, and `create` keeps its zero-argument signature. Nothing here may add a dependency or a type parameter.
+The second is the existing spec rule that log lines MUST NOT be emitted while the table mutex is held (`openspec/specs/std_go_reclaim_context-lease/spec.md`). That rules out the obvious ordering fix for `reclaim_orphan`: moving the log above `time.AfterFunc` inside the critical section in `drop`.
 
-The current end-of-incarnation path is: `fire` (or `Reset`) cancels the lifetime, and a goroutine started by `Open` — `go func(){ waitCtx(life); stopValue(value) }()` — wakes up and calls `Close()`. That goroutine exists only to translate "lifetime canceled" into "Close the value". `life` is a `context.WithCancel(context.Background())` whose cancel function is reachable only from `fire` and `Reset`, so nothing outside the table can end that lifetime.
+The third is Yaegi. `pkg/reclaim` is loaded by the Traefik plugin interpreter, so it stays non-generic, stdlib-only, and `create` keeps its zero-argument signature. Nothing here may add a dependency or a type parameter.
+
+The current end-of-incarnation path is: `fire` (or `Reset`) cancels the lifetime, and a goroutine started by `Open` — `go func(){ waitCtx(life); stopValue(value) }()` — wakes up and calls `Close()`. Nothing makes the canceller wait for that goroutine, which is why the dispose line can be emitted first.
 
 ## Goals / Non-Goals
 
 **Goals:**
 - `reclaim_dispose` is a completion signal, not a hint: when it is emitted, `Close()` has returned.
+- Every edit is additive, so the whole change ports to `traefik-modsecurity` as-is.
 - `reclaim_orphan` precedes `reclaim_dispose` for one incarnation at any grace duration, still without logging under the mutex.
 - Tests prove the invariants that must hold on both sides of the grace edge, and never depend on which side of it a timer landed.
 - The coverage gaps named in the proposal are closed.
 
 **Non-Goals:**
+- No removal or reshaping of anything the package already does. The incarnation lifetime context, its cancel, and the goroutine that watches it all stay.
 - No change to `Open`'s signature, the five message constants, `DefaultGrace`, or how `pkg/dbwrappers` builds keys.
 - No `-race` flag in CI and no test-only hook or fake clock injected into `Table`. The fix must hold for the production timer.
 - The holder `watch` goroutine for a `context.Background()` holder still parks forever; that is a Yaegi accommodation, not this change.
 
 ## Decisions
 
-### Close the value synchronously and delete the per-slot goroutine
+### Make the canceller wait for the lifetime goroutine
 
-`fire` and `Reset` call `stopValue(value)` immediately after `cancel()` and before the `reclaim_dispose` log. The `go func(){ waitCtx(life); stopValue(value) }()` in `Open` goes away.
+The slot gets a `closed chan struct{}`. The lifetime goroutine keeps doing exactly what it does today and then closes that channel:
 
-Why over the alternative: upstream `traefik-modsecurity` fixed the same failure by adding a `waitUntil` in the test. That leaves the contract ambiguous — every future caller and every future test has to know that the dispose line does not mean the value is closed — and it costs a goroutine per incarnation forever. Closing inline makes the observable order deterministic, removes the goroutine, and matches the lost-create-race path at `table.go:140`, which already calls `stopValue` synchronously.
+```go
+go func() {
+    waitCtx(life)
+    stopValue(created)
+    close(e.closed)
+}()
+```
 
-Considered and rejected: keeping the goroutine but having `fire` wait for it (a channel closed after `stopValue`). Same determinism, strictly more machinery, and the goroutine still exists.
+`fire` and `Reset` cancel the lifetime as they already do, then wait on that channel, and only then log `reclaim_dispose`. The wait is a helper (`waitClosed`) that no-ops on a slot without the channel, matching the existing `if cancel != nil` defensiveness.
 
-Cost accepted: a value whose `Close()` blocks now blocks the grace-timer goroutine or the `Reset` caller. Values on this table close a ticker and a file handle. The spec states the constraint so a future caller cannot claim surprise.
+Why over the alternative: upstream `traefik-modsecurity` fixed the same failure by adding a `waitUntil` in the test. That leaves the contract ambiguous — every future caller and every future test has to know that the dispose line does not mean the value is closed.
+
+Considered and rejected: calling `stopValue` inline in `fire` / `Reset` and deleting the lifetime goroutine. It is a smaller file, but it removes existing functionality from a package that is a shared copy, and this change is additive by rule (see Context).
+
+Cost accepted: a value whose `Close()` blocks now blocks the grace-timer goroutine or the `Reset` caller instead of a detached goroutine. Values on this table stop a ticker and close a file handle, and `Updater.Stop` only closes a channel. The spec states the constraint so a future caller cannot claim surprise.
 
 ### Order the orphan log with the generation counter, not the mutex
 
@@ -56,7 +70,8 @@ Tests that assert the reclaim *branch* rather than the race (`TestTable_OpenDuri
 ## Risks / Trade-offs
 
 - A stored value with a slow or blocking `Close()` now stalls the grace timer goroutine (or `Reset`) → the spec forbids blocking in `Close()` for values on this table, and both values in this product (`*BIN`, `*MMDB`) stop a ticker and close a file.
+- The two copies of this package drift if one side lands a change and the other is not ported → every edit here is additive and self-contained, so the port is a file copy; the port itself is tracked as a follow-up on the card.
 - `drop` takes the table mutex twice per orphan instead of once → orphan happens once per key per config reload; the extra acquisition is not on any request path.
 - The arming window is a new state that `bindLocked`, `drop`, `fire`, and `Reset` must all agree on → covered by a direct-call test that binds inside the window, plus the existing stale-`fire` tests, plus the stress loops.
-- Removing the per-slot goroutine changes when `Close()` runs relative to the value's own lifetime-watching goroutines → it does not: `cancel()` still happens first, exactly as before; only the caller of `Close()` moves.
+- A `Close()` that never returns would now hang `fire` or `Reset` forever instead of leaking a goroutine → the same value would previously have leaked its ticker and file handle silently; a hang is the louder failure, and the spec names the constraint.
 - The remaining flake risk is a `waitUntil` budget exhausted on a very slow runner → the budget is a guard, not an assertion, and it is raised.

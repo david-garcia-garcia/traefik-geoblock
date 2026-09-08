@@ -71,8 +71,8 @@ No change to `Open`'s public signature, no change to the message constants, no c
 ## Open questions
 
 - Q: Should `Close()` be called synchronously inside `fire` / `Reset` (blocking that goroutine) instead of on a per-slot goroutine?
-  Decision: resolved — yes. It is the root cause of the reproduced `TestTable_HashChangeProof` flake, it removes a goroutine per incarnation, and the lost-create path already calls `stopValue` synchronously. Values in this product close a ticker and a file handle; neither blocks.
-  By: explore
+  Decision: resolved — no. The human ruled that `pkg/reclaim` is a copy shared with `traefik-modsecurity` and edits must be additive, so the lifetime context and its goroutine stay. Instead the slot gets a `closed` channel that the lifetime goroutine closes after `Close()`, and `fire` / `Reset` wait on it before logging dispose. Same determinism, nothing removed.
+  By: implement
 
 - Q: The spec forbids logging while `t.mu` is held, so how is `reclaim_orphan` ordered before `reclaim_dispose`?
   Decision: resolved — mark the slot `arming` under the lock, log outside it, then re-lock and arm only when the slot is still mapped and `graceGen` is unchanged. No log under the mutex, deterministic order.
@@ -87,5 +87,9 @@ No change to `Open`'s public signature, no change to the message constants, no c
   By: explore
 
 - Q: Should the upstream `traefik-modsecurity` copy be updated with the component fix so the two trees do not drift further?
-  Decision: assumed — out of scope for this repo's PR; the human owns both repos and should decide. Recorded as a follow-up note rather than taken here.
-  By: explore
+  Decision: resolved — yes, and it is a standing rule, not a one-off: the human confirmed this component is synced in both directions across projects. Every change here ports there and vice versa, which is why this change removes nothing. The port itself happens in that repo, so it stays a follow-up on this PR; the rule is now written in `knowledge/devdocs/std_go_reclaim.md`.
+  By: implement
+
+- Q: Does upstream have extra features this repo is missing (the human asked about "sleep and wake")?
+  Decision: resolved — no. `pkg/reclaim` upstream on `main` is exactly three files (`default.go` 1086 B, `table.go` 6932 B, `table_test.go` 25600 B) and a code search for `Wake` or `Sleep` across that repo returns zero hits. The only upstream delta is variable renames in `table.go` plus a six-line `waitUntil` in `TestTable_HashChangeProof`. If such a feature exists it is in a different project, and the human has to name it.
+  By: implement
