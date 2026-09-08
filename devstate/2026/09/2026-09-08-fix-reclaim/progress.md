@@ -8,7 +8,7 @@ JobName: 2026-09-08-fix-reclaim
 | explore | [x] | [x] | 2026-09-08T14:31:12Z |
 | propose | [x] | [x] | 2026-09-08T14:35:40Z |
 | implement | [x] | [x] | 2026-09-08T15:52:00Z |
-| codereview | [ ] | [ ] | |
-| devdocsimpact | [ ] | [ ] | |
-| archive | [ ] | [ ] | |
-| pullrequest | [ ] | [ ] | |
+| codereview | [x] | [x] | 2026-09-08T16:35:00Z |
+| devdocsimpact | [x] | [x] | 2026-09-08T16:41:00Z |
+| archive | [x] | [x] | 2026-09-08T17:05:00Z |
+| pullrequest | [x] | [x] | 2026-09-08T17:09:00Z |

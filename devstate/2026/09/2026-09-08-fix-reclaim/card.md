@@ -1,4 +1,4 @@
-Developer review: in progress — 2026-09-08T15:47:22Z
+Developer review: ready to merge — 2026-09-08T17:08:23Z
 
 ## What this changes
 **Operators.** A `reclaim_dispose` line in the logs now means the database handle behind that key is already closed, and it can no longer appear before the `reclaim_orphan` line for the same key. No configuration changes.
@@ -55,27 +55,28 @@ sequenceDiagram
 ```
 
 ## Merge readiness
-Implement and code review are both complete, and the per-slot grace the human asked for landed on top and was reviewed on its own. Across two rounds Opus returned 40 findings (13 hard); 35 are applied, 5 are argued and left with measurements. Three were real defects rather than style: an incarnation that could be stranded forever by the new arming window, two `pkg/dbwrappers` tests that were never taking the reclaim branch they claim to test, and a new grace test that could not fail for the behavior it was named after. The full local suite is green, stressed runs under twelve CPU burners at `GOMAXPROCS=2` are green where `master` failed within two, and each mutation the second round found surviving the suite now dies. 1 item remains: the Integration Tests job on the final head.
+Ready to merge. Implement, code review and archive are complete, and the per-slot grace the human asked for landed on top and was reviewed on its own. Across two rounds Opus returned 40 findings (13 hard); 35 are applied, 5 are argued and left with measurements. Three were real defects rather than style: an incarnation that could be stranded forever by the new arming window, two `pkg/dbwrappers` tests that were never taking the reclaim branch they claim to test, and a new grace test that could not fail for the behavior it was named after. The full local suite is green, stressed runs under twelve CPU burners at `GOMAXPROCS=2` are green where `master` failed within two, each mutation the second round found surviving the suite now dies, and all three CI jobs are green on the final head.
 
 Priority: P2 — a coin-flip red `Test` job on every PR, plus a `reclaim_dispose` line that can precede both the orphan line and the actual `Close()`; the workaround today is re-running CI.
-Reviewed head: 4b41e46
+Reviewed head: ec6db3e
 Owner decision: Not required for the code. Three decisions were taken by the human and are recorded below.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 5/6 | Fixed, reviewed twice on Opus, proven against `master` and against signature-preserving mutations, and stress-clean; the last CI job on the final head is the remaining gate |
-| CI proof | 5/6 | Run 34253967695 on the final head 4b41e46: Test and Lint green, Integration Tests still running — https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34253967695 |
+| Overall readiness | 6/6 | Fixed, reviewed twice on Opus, proven against `master` and against signature-preserving mutations, stress-clean, archived, and green on CI |
+| CI proof | 6/6 | Run 34254850208 green on ec6db3e — Test, Lint, Integration Tests — https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34254850208. The only commit after it is this card |
 | Local tests proof | 6/6 | `go test ./...` green; `-count=15` on `pkg/reclaim` + `pkg/dbwrappers` green under twelve CPU burners at `GOMAXPROCS=2`, plus `-count=25` under eight burners before the review fixes |
 | Review resolution | 6/6 | 40 axis findings across two rounds: 35 applied, 5 argued with measurements, 0 open; no reviewer comments on PR #82 |
 
 ## Verification
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Branch | 2026-09-08-fix-reclaim pushed | `git push` (4b41e46) |
-| OpenSpec | reclaim-dispose-determinism valid | `openspec validate --strict reclaim-dispose-determinism` |
+| Branch | 2026-09-08-fix-reclaim pushed | `git push` (ec6db3e) |
+| OpenSpec | change valid before archive; `std_go_reclaim_context-lease` valid after the fold; the one failing spec in the catalog (`core_geoblock_database_token-download-file`, no requirements) is pre-existing from PR #60 and untouched here | `openspec validate --strict reclaim-dispose-determinism`, `openspec validate --specs --strict` |
+| Spec catalog | map refreshed, both librarian validators OK | `validate-spec-map.mjs --write`, `validate-spec-map.mjs`, `validate-artifact-names.mjs` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/82 | pr-host List/Create |
-| CI | run 34253967695 on 4b41e46: Test and Lint success, Integration Tests in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34253967695 | pr-host check runs |
+| CI | run 34254850208 success on ec6db3e (Test, Lint, Integration Tests) https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34254850208 | pr-host check runs |
 | Local tests | `go test ./...` all 10 packages ok; `-count=15` stressed green at `GOMAXPROCS=2` under twelve burners | shell, this worktree |
 | Code review | 2 rounds on Opus, 40 findings, 35 applied / 5 argued / 0 open | `devstate/2026/09/2026-09-08-fix-reclaim/codereview_*.md` |
 | Regression proof | 4 new tests fail on `origin/master`'s `table.go` in all 3 runs; a 5th fails within 57 rounds; the 3 grace tests each kill a signature-preserving mutation | scratch modules `tmp-reclaim-proof2`, `%TEMP%\grace-mutate` |
@@ -85,7 +86,7 @@ Owner decision: Not required for the code. Three decisions were taken by the hum
 ## Specs
 | Spec | Change | Where |
 | --- | --- | --- |
-| `std_go_reclaim_context-lease` | 5 requirement blocks: 2 added (dispose implies Close returned; either side of the grace edge is correct), 3 modified (orphan precedes dispose at every grace; `Open` takes a grace; grace is per incarnation) | `openspec/changes/reclaim-dispose-determinism/specs/` |
+| `std_go_reclaim_context-lease` | 5 requirement blocks folded into the catalog: 2 added (dispose implies Close returned; either side of the grace edge is correct), 3 modified (orphan precedes dispose at every grace; `Open` takes a grace; grace is per incarnation) | [openspec/specs/std_go_reclaim_context-lease/spec.md](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-08-fix-reclaim/openspec/specs/std_go_reclaim_context-lease/spec.md), archived change at [openspec/changes/archive/2026-09-08-reclaim-dispose-determinism](https://github.com/david-garcia-garcia/traefik-geoblock/tree/2026-09-08-fix-reclaim/openspec/changes/archive/2026-09-08-reclaim-dispose-determinism) |
 
 ## Follow-up issues
 - Port this change to `david-garcia-garcia/traefik-modsecurity` `pkg/reclaim`. The two copies are kept in sync in both directions; the port is a file copy of `table.go`, `default.go` and `table_test.go`, plus the equivalent test-support changes if that repo has the same integration tests. Not done here because it is a different repository.
@@ -113,7 +114,8 @@ Local ticket `2026-09-08-fix-reclaim` runs in its own worktree on branch `2026-0
 - [x] [P3] Harden the 25 ms lease windows and fixed 80 ms sleeps in `pkg/dbwrappers/reclaim_test.go`
 - [x] [P2] Code review of the component change — seven axes on Opus, 27 findings, 24 applied and 3 argued
 - [x] [P2] Move grace onto the incarnation (`Open` takes a `grace`, `TableGrace` means the table's) at the human's request, and review that commit on Opus — 13 findings, 11 applied and 2 argued
-- [ ] [P2] Green CI on PR #82 for the final head 4b41e46 (Test and Lint already green in run 34253967695; Integration Tests running)
+- [x] [P2] Fold the delta into `std_go_reclaim_context-lease`, refresh the map, and archive the change
+- [x] [P2] Green CI on PR #82 for the final head ec6db3e (run 34254850208: Test, Lint, Integration Tests)
 
 ## Findings
 | Finding | Where | Why it matters |
@@ -161,7 +163,7 @@ The two argued findings are naming calls the reviewer already marked defensible:
 | Mutations killed | 3 of 3 | The grace tests are measured the only way that means anything once `Open`'s signature changed: revert the behavior, keep the signature, confirm each test fails |
 | Axis findings | 40 found / 35 applied / 5 argued / 0 open | Two rounds on Opus; three findings were defects in this change, not style |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 4b41e46f3b1f4168ee99ef309013c5767ab283b4 | Card must match the branch you measured |
+| Reviewed head | ec6db3eada429a47e4eff66d218311d9b44d9462 | Card must match the branch you measured |
 
 ### Stored data model
 None.

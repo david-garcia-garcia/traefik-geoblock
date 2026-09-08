@@ -11,7 +11,10 @@ comments: none
 localTests: pass
 requirement: requirement.md
 explore: explore.md
-change: reclaim-dispose-determinism
+change: archive/2026-09-08-reclaim-dispose-determinism
 pr:
   id: 82
   url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/82
+ci: success
+ciRun: https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34254850208
+reviewedHead: ec6db3eada429a47e4eff66d218311d9b44d9462
