@@ -8,7 +8,7 @@ destBranch: master
 qualify: qualified-with-gaps
 src: d7ccd2fc8a8380a495f8f5e3b1ce1bf5df212068bb6159211d51006bbf6a6545
 comments: none
-localTests: none
+localTests: pass
 requirement: requirement.md
 explore: explore.md
 change: reclaim-dispose-determinism
