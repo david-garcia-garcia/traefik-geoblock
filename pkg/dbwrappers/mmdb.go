@@ -74,19 +74,35 @@ func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	if err := w.open(path); err != nil {
 		return nil, err
 	}
-	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
-		if path == "" || path == w.Path() {
-			return
-		}
-		if err := w.open(path); err != nil {
-			w.logger.Error("failed to open updated MMDB", "error", err)
-		}
-	})
-	if err != nil {
+	// MMDB has no bundled fallback, so a bad source config is fatal here. newBIN logs the same
+	// error and carries on instead, because a BIN can serve from its local file.
+	if err := w.startUpdate(); err != nil {
 		return nil, err
 	}
-	w.updater = updater
 	return w, nil
+}
+
+// startUpdate builds and starts the download ticker for this source. Only the constructor calls
+// it: Wake restarts the updater this built rather than building another. No URL means no ticker.
+func (w *MMDB) startUpdate() error {
+	updater, err := dbsource.Start(w.sourceCfg(), w.logger, w.onUpdate)
+	if err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.updater = updater
+	w.mu.Unlock()
+	return nil
+}
+
+// onUpdate swaps in a newly downloaded file. The ticker calls it; newMMDB and Wake both pass it.
+func (w *MMDB) onUpdate(path string) {
+	if path == "" || path == w.Path() {
+		return
+	}
+	if err := w.open(path); err != nil {
+		w.logger.Error("failed to open updated MMDB", "error", err)
+	}
 }
 
 func (w *MMDB) sourceCfg() dbsource.Config {
@@ -155,15 +171,30 @@ func (w *MMDB) Lookup(ip string, dest any) error {
 	return db.Lookup(parsed, dest)
 }
 
-// Close stops the updater and the reader. The reclaim table calls this when the incarnation ends.
-func (w *MMDB) Close() {
-	w.close()
+// Sleep stops the download ticker and does not return until it has finished, so nothing writes
+// into the source directory while nobody holds this MMDB. The reader stays open, so Wake cannot
+// fail. The reclaim table calls this when the last holder is gone.
+func (w *MMDB) Sleep() {
+	w.currentUpdater().Stop()
 }
 
-func (w *MMDB) close() {
-	if w.updater != nil {
-		w.updater.Stop()
-	}
+// Wake restarts the download ticker this MMDB already has. The reclaim table calls this before it
+// hands a sleeping MMDB back to a caller, so it cannot fail: the updater was built at
+// construction and Start on a stopped one runs a fresh loop over the same source config.
+func (w *MMDB) Wake() {
+	w.currentUpdater().Start(w.onUpdate)
+}
+
+// currentUpdater is the download loop, or nil when this source has no URL to poll.
+func (w *MMDB) currentUpdater() *dbsource.Updater {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.updater
+}
+
+// Close releases the reader. The reclaim table calls this when the incarnation ends, always
+// after Sleep, so there is no ticker left to stop here.
+func (w *MMDB) Close() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.db != nil {

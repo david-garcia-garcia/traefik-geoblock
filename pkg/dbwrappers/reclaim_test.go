@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -69,6 +70,20 @@ func hasSubseq(got [][2]string, want [][2]string) bool {
 	return i == len(want)
 }
 
+// binUpdater reads the wrapper's update loop under its own lock.
+func binUpdater(w *BIN) *dbsource.Updater {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.updater
+}
+
+// mmdbUpdater reads the wrapper's update loop under its own lock.
+func mmdbUpdater(w *MMDB) *dbsource.Updater {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.updater
+}
+
 func useShortLeases(t *testing.T) *recHandler {
 	t.Helper()
 	h := &recHandler{}
@@ -83,6 +98,216 @@ func silentTickerURL(t *testing.T) string {
 	}))
 	t.Cleanup(srv.Close)
 	return srv.URL + "/db.bin"
+}
+
+// countingTickerURL is a source that answers 404 but counts how many times it was asked, so a
+// test can tell a running update loop from a stopped one.
+func countingTickerURL(t *testing.T, name string) (string, *atomic.Int32) {
+	t.Helper()
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL + "/" + name, &requests
+}
+
+// waitLogged fails if msg has not been logged for key within ten seconds.
+func waitLogged(t *testing.T, h *recHandler, msg, key string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if hasEvent(h.events(), msg, key) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("%s was never logged for %s", msg, key)
+}
+
+// waitRequests fails if the source has not been asked want times within ten seconds.
+func waitRequests(t *testing.T, requests *atomic.Int32, want int32) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if requests.Load() >= want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("the source was asked %d times, want %d", requests.Load(), want)
+}
+
+func TestOpenBIN_SleepStopsTheUpdateLoopAndWakeStartsAFreshOne(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	h := &recHandler{}
+	// Long enough that the sleeping wrapper is still there when the second Open arrives.
+	ResetWith(10 * time.Second)
+	url, requests := countingTickerURL(t, "db.bin")
+	cfg := BINConfig{
+		Dir: t.TempDir(),
+		Source: dbsource.Config{
+			Path:         testBIN,
+			URL:          url,
+			Key:          "sleepwake",
+			DatabaseType: dbsource.TypeBIN,
+		},
+		MinAge: 365 * 24 * time.Hour,
+	}
+	spy := slog.New(h)
+	key := binKey(cfg)
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	first, err := OpenBIN(ctx1, cfg, spy)
+	if err != nil {
+		t.Fatalf("OpenBIN: %v", err)
+	}
+	if binUpdater(first) == nil {
+		t.Fatal("a live wrapper has no update loop")
+	}
+	waitRequests(t, requests, 1)
+
+	loop := binUpdater(first)
+	cancel1()
+	waitLogged(t, h, reclaim.MsgOrphan, key)
+	// A sleeping wrapper keeps its updater but the loop is stopped, so the source goes quiet.
+	if binUpdater(first) != loop {
+		t.Fatal("sleeping replaced the updater instead of stopping it")
+	}
+	asleep := requests.Load()
+	time.Sleep(100 * time.Millisecond)
+	if later := requests.Load(); later != asleep {
+		t.Fatalf("a sleeping wrapper asked the source again: %d then %d", asleep, later)
+	}
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	second, err := OpenBIN(ctx2, cfg, spy)
+	if err != nil {
+		t.Fatalf("OpenBIN after sleep: %v", err)
+	}
+	if first != second {
+		t.Fatal("waking returned a different wrapper")
+	}
+	if binUpdater(second) == nil {
+		t.Fatal("a woken wrapper has no update loop")
+	}
+	// A fresh loop runs its own immediate check, which is how the wrapper catches up on
+	// whatever changed while it slept.
+	waitRequests(t, requests, 2)
+	if rec := testBINRecord(t, second); rec.Country != "US" {
+		t.Fatalf("lookup after wake: %+v", rec)
+	}
+	if hasEvent(h.events(), reclaim.MsgDispose, key) {
+		t.Fatal("the sleeping wrapper was disposed instead of woken")
+	}
+}
+
+func TestOpenMMDB_SleepStopsTheUpdateLoopAndWakeStartsAFreshOne(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	h := &recHandler{}
+	ResetWith(10 * time.Second)
+	url, requests := countingTickerURL(t, "db.mmdb")
+	cfg := MMDBConfig{
+		Dir: t.TempDir(),
+		Source: dbsource.Config{
+			Path:         testLiteMMDB(t),
+			URL:          url,
+			Key:          "sleepwake",
+			DatabaseType: dbsource.TypeMMDB,
+		},
+		MinAge: 365 * 24 * time.Hour,
+	}
+	spy := slog.New(h)
+	key := mmdbKey(cfg)
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	first, err := OpenMMDB(ctx1, cfg, spy)
+	if err != nil {
+		t.Fatalf("OpenMMDB: %v", err)
+	}
+	if mmdbUpdater(first) == nil {
+		t.Fatal("a live wrapper has no update loop")
+	}
+	waitRequests(t, requests, 1)
+
+	loop := mmdbUpdater(first)
+	cancel1()
+	waitLogged(t, h, reclaim.MsgOrphan, key)
+	if mmdbUpdater(first) != loop {
+		t.Fatal("sleeping replaced the updater instead of stopping it")
+	}
+	asleep := requests.Load()
+	time.Sleep(100 * time.Millisecond)
+	if later := requests.Load(); later != asleep {
+		t.Fatalf("a sleeping wrapper asked the source again: %d then %d", asleep, later)
+	}
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	second, err := OpenMMDB(ctx2, cfg, spy)
+	if err != nil {
+		t.Fatalf("OpenMMDB after sleep: %v", err)
+	}
+	if first != second {
+		t.Fatal("waking returned a different wrapper")
+	}
+	if mmdbUpdater(second) == nil {
+		t.Fatal("a woken wrapper has no update loop")
+	}
+	waitRequests(t, requests, 2)
+	var rec struct {
+		CountryCode string `maxminddb:"country_code"`
+	}
+	if err := second.Lookup("8.8.8.8", &rec); err != nil || rec.CountryCode != "US" {
+		t.Fatalf("lookup after wake: %+v %v", rec, err)
+	}
+	if hasEvent(h.events(), reclaim.MsgDispose, key) {
+		t.Fatal("the sleeping wrapper was disposed instead of woken")
+	}
+}
+
+func TestOpenBIN_SleepPrecedesClose(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	h := &recHandler{}
+	// Zero grace: the wrapper is dropped for good the moment its last holder goes.
+	ResetWith(0)
+	url, requests := countingTickerURL(t, "db.bin")
+	cfg := BINConfig{
+		Dir: t.TempDir(),
+		Source: dbsource.Config{
+			Path:         testBIN,
+			URL:          url,
+			Key:          "nograce",
+			DatabaseType: dbsource.TypeBIN,
+		},
+		MinAge: 365 * 24 * time.Hour,
+	}
+	spy := slog.New(h)
+	key := binKey(cfg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	wrapper, err := OpenBIN(ctx, cfg, spy)
+	if err != nil {
+		t.Fatalf("OpenBIN: %v", err)
+	}
+	waitRequests(t, requests, 1)
+	cancel()
+	waitLogged(t, h, reclaim.MsgDispose, key)
+
+	// Close never has a running loop to stop, because sleep always ran first.
+	if _, err := wrapper.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil {
+		t.Fatal("a disposed wrapper still answers lookups")
+	}
+	settled := requests.Load()
+	time.Sleep(100 * time.Millisecond)
+	if later := requests.Load(); later != settled {
+		t.Fatalf("a disposed wrapper asked the source again: %d then %d", settled, later)
+	}
 }
 
 func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {

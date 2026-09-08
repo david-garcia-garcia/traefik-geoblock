@@ -1,23 +1,28 @@
-## Purpose
+## ADDED Requirements
 
-Defines a keyed reclaim table that stores one value per key as `any`, survives context cancel when the same key is opened again within grace, and cancels the incarnation lifetime when it is not. The table lives in `pkg/reclaim` and is reusable across packages. Callers type-assert. Yaegi cannot instantiate `Table[T]` from another package; this table is not generic.
+### Requirement: Incarnation end closes the stored value before it reports the end
+When an incarnation ends (grace elapsed while sleeping, `Reset`, or a zero-grace drop), the table
+SHALL call `Close()` on the stored value and SHALL wait until it has returned before it emits
+`reclaim_dispose`. `Close()` SHALL be called at most once per incarnation. Because the table
+waits, a value whose `Close()` blocks blocks whoever ended the incarnation; values stored on this
+table SHALL NOT block in `Close()`. Every goroutine the table starts for a key SHALL exit once
+that key's holder contexts are Done and its incarnation has ended.
 
-## Requirements
+#### Scenario: Dispose log implies Close has returned
+- **WHEN** a key is orphaned and grace elapses
+- **AND** the stored value has a `Close()` method
+- **THEN** `Close()` has returned before `reclaim_dispose` is emitted for that key
+- **AND** `Close()` did not observe a dispose line already written for that key
 
-### Requirement: Table file depends only on the Go standard library
-The `Table` source file SHALL import only Go standard-library packages. It MUST NOT import this module’s plugin, wrapper, source, or vendor packages. It MUST store `any`. It MUST NOT be a generic `Table[T]` instantiated as `otherpkg.Table[*T]` (Yaegi panics or fails import).
+#### Scenario: Reset closes the value before it reports dispose
+- **WHEN** `Reset` is called on a table that still has an incarnation
+- **THEN** that value's `Close()` has returned before `reclaim_dispose` is emitted for that key
 
-#### Scenario: Stdlib-only imports
-- **WHEN** `table.go` is listed for imports
-- **THEN** every import path is a Go standard-library package
+#### Scenario: Goroutines do not outlive the incarnation
+- **WHEN** many keys are opened, then every holder context is Done and every incarnation has ended
+- **THEN** the table owns no more goroutines than it did before those `Open` calls
 
-### Requirement: Process table is a singleton
-`pkg/reclaim` SHALL expose one process-wide table (`Default` / package `Open`). Independent keys on that table MUST NOT share an incarnation. Callers in other packages SHALL type-assert the value `Open` returns.
-
-#### Scenario: Default Open shares one incarnation
-- **WHEN** `Open` and `Default().Open` are called for the same key
-- **THEN** both return the same stored value
-- **AND** `create` runs once
+## MODIFIED Requirements
 
 ### Requirement: Open creates once and binds a context
 `Open(ctx, key, logger, create)` SHALL create the value on the first call for a key, store it,
@@ -83,14 +88,6 @@ reclaim MUST NOT run `create` again.
 - **WHEN** all contexts for a key are Done
 - **AND** no `Open` for that key occurs during grace
 - **THEN** the incarnation is disposed once
-
-### Requirement: Keys are independent
-Canceling the lifetime of one key MUST NOT cancel the lifetime of another key.
-
-#### Scenario: One key times out
-- **WHEN** key A’s contexts are all Done and grace elapses
-- **AND** key B still has a live context
-- **THEN** only key A’s lifetime is canceled
 
 ### Requirement: Grace is configurable
 Grace SHALL be how long a **sleeping** value is kept before it is disposed. Because a sleeping
@@ -163,25 +160,3 @@ away SHALL be logged as a new incarnation (`reclaim_put` then `reclaim_bind`), n
 - **THEN** `reclaim_dispose` is emitted at debug
 - **WHEN** `Open` is called with a logger whose handler level is info
 - **THEN** `reclaim_put` and `reclaim_dispose` are not emitted
-
-### Requirement: Incarnation end closes the stored value before it reports the end
-When an incarnation ends (grace elapsed while sleeping, `Reset`, or a zero-grace drop), the table
-SHALL call `Close()` on the stored value and SHALL wait until it has returned before it emits
-`reclaim_dispose`. `Close()` SHALL be called at most once per incarnation. Because the table
-waits, a value whose `Close()` blocks blocks whoever ended the incarnation; values stored on this
-table SHALL NOT block in `Close()`. Every goroutine the table starts for a key SHALL exit once
-that key's holder contexts are Done and its incarnation has ended.
-
-#### Scenario: Dispose log implies Close has returned
-- **WHEN** a key is orphaned and grace elapses
-- **AND** the stored value has a `Close()` method
-- **THEN** `Close()` has returned before `reclaim_dispose` is emitted for that key
-- **AND** `Close()` did not observe a dispose line already written for that key
-
-#### Scenario: Reset closes the value before it reports dispose
-- **WHEN** `Reset` is called on a table that still has an incarnation
-- **THEN** that value's `Close()` has returned before `reclaim_dispose` is emitted for that key
-
-#### Scenario: Goroutines do not outlive the incarnation
-- **WHEN** many keys are opened, then every holder context is Done and every incarnation has ended
-- **THEN** the table owns no more goroutines than it did before those `Open` calls
