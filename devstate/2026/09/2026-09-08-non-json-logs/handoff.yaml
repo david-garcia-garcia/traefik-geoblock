@@ -8,6 +8,7 @@ destBranch: master
 qualify: qualified-with-gaps
 src: f90378f3413a3aa365305b3a9c60123eca4a25161bd9a96bbf01cff5f1feb4be
 comments: none
+explore: explore.md
 localTests: none
 pr:
   id: 81
