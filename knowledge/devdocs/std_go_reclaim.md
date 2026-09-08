@@ -14,6 +14,10 @@ _Avoid_: one `NewTable` per caller when they should share; unprefixed keys that 
 Create-once for a key (`create` takes no args — Yaegi assigns a `context.Context` arg onto the value). The caller passes a `*slog.Logger` (required; no table logger and no fallback). Later `Open` does not run create. If the value has `Close()`, the table calls it when the incarnation ends. `ctx` must not be nil. Traefik’s `New` ctx is `WithCancel`; the next dynamic config cancels it before the next `New`.
 _Avoid_: Put vs Bind as two public calls; a nil holder context; `func(context.Context) (any, error)` as create
 
+**Incarnation**:
+One instance of a value under a key: it begins at the `Open` that found the key absent and ran `create`, and ends when its lifetime is canceled. A reclaim keeps the same incarnation, so the caller gets the same pointer; a create after dispose is a different one. The log lines carry the key, not an instance id, so two incarnations of a key are told apart by the `reclaim_put` between them.
+_Avoid_: "the entry" or "the key" when you mean this instance; treating a reclaimed value as a new one
+
 **Grace**:
 Wait after the last bound context for a key is Done, before the incarnation lifetime is canceled. An `Open` in that window is a reclaim. Zero grace means no wait. Negative grace is `DefaultGrace` (10s).
 _Avoid_: passing `0` when you meant the product default
@@ -30,7 +34,7 @@ _Avoid_: a house `dispose func(any)` on `Open`
 
 ## How to use
 
-- Production: `reclaim.Open(ctx, key, logger, create)` (process table). Tests: `NewTable` with a short grace, or `ResetWith`. `logger` is required.
+- Production: `reclaim.Open(ctx, key, logger, create)` (process table). Tests: `NewTable` with a short grace, or `ResetWith`. `logger` is required. `Reset` and `ResetWith` block until every stored value's `Close()` has returned, so a test can use them as teardown that really stops the tickers it started.
 - Watch stable `msg` + `key`. All five (`reclaim_put`, `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`, `reclaim_dispose`) are debug. Put/bind/reclaim use that `Open`’s logger; orphan/dispose use the last `Open` on the key. A middleware `logLevel` of info hides them.
 - `ctx` is the host teardown context (Traefik `New` ctx), not `req.Context()`, not `context.Background()`.
 - Give the stored value a `Close()` method if it must stop when the incarnation ends. The table calls it once, and waits for it before logging `reclaim_dispose` — so that line means the value is already stopped. `Close()` must not block: it holds up the grace timer (or `Reset`). `create` takes no arguments.
