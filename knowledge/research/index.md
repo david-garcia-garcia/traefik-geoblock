@@ -1,5 +1,10 @@
 # Research
 
+## crowdsec
+priority: normal
+local: index_ext_crowdsec.md
+description: Official CrowdSec Hub parsers and log-processing behavior this product may interact with.
+
 ## ip2location
 priority: normal
 local: index_ext_ip2location.md

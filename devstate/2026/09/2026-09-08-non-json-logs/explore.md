@@ -38,8 +38,8 @@ No client-address / Host identity work. No `New` reclaim / `pkg/reclaim` change.
 ## Open questions
 
 - Q: Does current CrowdSec hub still UnmarshalJSON every Traefik line, or only lines that start with `{`?
-  Decision: assumed — hub master YAML uses `TrimSpace(evt.Parsed.message) startsWith "{"` before UnmarshalJSON; this run treats current hub as skip-non-JSON. Tests still lock our bytes so #67’s prefix cannot return and json format is valid JSON.
-  By: explore
+  Decision: resolved — hub v1.5 (`crowdsecurity/hub@ce8e034`) uses `TrimSpace(evt.Parsed.message) startsWith "{"` before UnmarshalJSON. Text is skipped. Tests still lock our bytes so #67’s prefix cannot return and json format is valid JSON.
+  By: propose
 
 - Q: Should CreateConfig default `logFormat` become `json`?
   Decision: assumed — no. The filed format is absent; flipping the default is extra. Operators who want JSON already have `logFormat`.
@@ -50,5 +50,5 @@ No client-address / Host identity work. No `New` reclaim / `pkg/reclaim` change.
   By: explore
 
 - Q: Does CrowdSec require Traefik access-log JSON fields on plugin lines, or is any JSON object enough to avoid the unmarshal warning?
-  Decision: assumed — any JSON object avoids UnmarshalJSON failure; access-log fields are for access events only. slog JSON (`time`, `level`, `msg`, `plugin`) is enough. We do not emit access-log keys.
-  By: explore
+  Decision: resolved — UnmarshalJSON accepts any JSON object (`crowdsec` `jsonextract`). Access-log keys are mapped after. slog JSON avoids unmarshal errors but can be mis-tagged as `http_access-log`. This run does not default to json.
+  By: propose
