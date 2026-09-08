@@ -2,6 +2,7 @@ package dbsource
 
 import (
 	"log/slog"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -78,9 +79,10 @@ func (u *Updater) UpdateIfNeeded() (string, error) {
 }
 
 // Start runs an immediate check and a 24h ticker. onUpdate is called with a new path.
-// A second Start while the loop is running is ignored; after Stop it starts a fresh loop.
+// A second Start while the loop is running is ignored; after Stop it starts a fresh loop, which
+// is how a wrapper wakes. Safe on a nil Updater, which is what a source with no URL has.
 func (u *Updater) Start(onUpdate func(path string)) {
-	if !u.CanDownload() {
+	if u == nil || !u.CanDownload() {
 		return
 	}
 	u.mu.Lock()
@@ -117,13 +119,30 @@ func (u *Updater) tick(stop <-chan struct{}, onUpdate func(path string)) {
 	}
 	path, err := u.UpdateIfNeeded()
 	if err != nil {
-		u.logger.Error("database update failed", "error", err)
+		u.logger.Error("database update failed", "key", u.cfg.Key, "error", withoutQuery(err, u.cfg.URL))
 		return
 	}
 	if path == "" || onUpdate == nil || stopped(stop) {
 		return
 	}
 	onUpdate(path)
+}
+
+// withoutQuery is err with every mention of rawURL cut back to scheme, host, and path. A
+// transport failure renders as `Get "<full URL>": ...`, and the download URL carries the
+// operator's API token in its query (ip2location, ipinfo), so the raw error cannot be logged.
+func withoutQuery(err error, rawURL string) string {
+	text := err.Error()
+	if rawURL == "" {
+		return text
+	}
+	parsed, parseErr := url.Parse(rawURL)
+	if parseErr != nil {
+		// Nothing reliable to redact down to, so name neither the URL nor the failure detail.
+		return "download failed"
+	}
+	parsed.RawQuery, parsed.Fragment, parsed.User = "", "", nil
+	return strings.ReplaceAll(text, rawURL, parsed.String())
 }
 
 // stopped reports whether the loop has been asked to end.

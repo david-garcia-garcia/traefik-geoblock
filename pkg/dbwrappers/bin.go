@@ -45,7 +45,8 @@ type BINConfig struct {
 type BIN struct {
 	cfg    BINConfig
 	logger *slog.Logger
-	// mu guards every field a hot swap, a sleep, or a wake replaces.
+	// mu guards db, path, version, sourceDbPath, and updater. currentLocalDbCopy is written by
+	// createLocalCopy before the swap and is not covered.
 	mu                 sync.RWMutex
 	db                 *ip2loc.DB
 	path               string
@@ -92,6 +93,9 @@ func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	if err := w.initialize(); err != nil {
 		return nil, err
 	}
+	// BIN is deliberately lenient where MMDB is fatal: a BIN can serve from the bundled or local
+	// file with no download configured at all, so a bad source config degrades to that rather
+	// than taking the middleware down. newMMDB returns the same error instead.
 	if err := w.startUpdate(); err != nil {
 		w.logger.Error("source updater", "error", err)
 	}
@@ -203,8 +207,8 @@ func binCopyName(token string, unixNano int64) string {
 	return fmt.Sprintf("bin_%s_%d.BIN", token, unixNano)
 }
 
-// startUpdate builds and starts the download ticker for this source. newBIN calls it once and
-// Wake calls it again after a sleep stopped it.
+// startUpdate builds and starts the download ticker for this source. Only the constructor calls
+// it: Wake restarts the updater this built rather than building another. No URL means no ticker.
 func (w *BIN) startUpdate() error {
 	updater, err := dbsource.Start(w.sourceCfg(), w.logger, w.onUpdate)
 	if err != nil {
@@ -336,19 +340,21 @@ func (w *BIN) SourcePath() string {
 // into the source directory while nobody holds this BIN. The file handle stays open, so Wake
 // cannot fail. The reclaim table calls this when the last holder is gone.
 func (w *BIN) Sleep() {
-	w.mu.Lock()
-	updater := w.updater
-	w.updater = nil
-	w.mu.Unlock()
-	updater.Stop()
+	w.currentUpdater().Stop()
 }
 
-// Wake restarts the download ticker. The reclaim table calls this before it hands a sleeping BIN
-// back to a caller.
+// Wake restarts the download ticker this BIN already has. The reclaim table calls this before it
+// hands a sleeping BIN back to a caller, so it cannot fail: the updater was built at construction
+// and Start on a stopped one runs a fresh loop over the same source config.
 func (w *BIN) Wake() {
-	if err := w.startUpdate(); err != nil {
-		w.logger.Error("source updater", "error", err)
-	}
+	w.currentUpdater().Start(w.onUpdate)
+}
+
+// currentUpdater is the download loop, or nil when this source has no URL to poll.
+func (w *BIN) currentUpdater() *dbsource.Updater {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.updater
 }
 
 // Close releases the file handle. The reclaim table calls this when the incarnation ends, always

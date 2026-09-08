@@ -67,14 +67,23 @@ func (c *counterClose) Close() { c.closes.Add(1) }
 type lifecycle struct {
 	mu     sync.Mutex
 	events []string
+	// onSleep runs inside Sleep, so a test can hold an Open inside the sleep transition. That is
+	// the only way to reach the sleeping window deterministically: an Open that merely races a
+	// cancel almost always arrives while the holder is still counted, and is a plain second bind.
+	onSleep func()
 	// onWake runs inside Wake, so a test can hold an Open inside the wake transition.
 	onWake func()
 	// onClose runs inside Close, so a test can see what the table had logged before it returned.
 	onClose func()
 }
 
-// Sleep records that the table put this value to sleep.
-func (l *lifecycle) Sleep() { l.record("sleep") }
+// Sleep records that the table put this value to sleep, after running any test hook.
+func (l *lifecycle) Sleep() {
+	if l.onSleep != nil {
+		l.onSleep()
+	}
+	l.record("sleep")
+}
 
 // Wake records that the table woke this value, after running any test hook.
 func (l *lifecycle) Wake() {
@@ -243,30 +252,30 @@ func waitKeyMsg(t *testing.T, h *recHandler, msg, key string) {
 	waitUntil(t, func() bool { return countKeyMsg(h.events(), msg, key) > 0 })
 }
 
-// mustSlot returns the mapped slot for key or fails.
+// mustSlot returns the mapped incarnation for key or fails.
 func mustSlot(t *testing.T, tab *Table, key string) *slot {
 	t.Helper()
 	tab.mu.Lock()
 	defer tab.mu.Unlock()
-	s := tab.items[key]
-	if s == nil {
+	incarnation := tab.items[key]
+	if incarnation == nil {
 		t.Fatalf("missing slot %s", key)
 	}
-	return s
+	return incarnation
 }
 
-// slotState reads one slot's state under the table mutex.
-func readState(tab *Table, s *slot) slotState {
+// readState reads one incarnation's state under the table mutex.
+func readState(tab *Table, incarnation *slot) slotState {
 	tab.mu.Lock()
 	defer tab.mu.Unlock()
-	return s.state
+	return incarnation.state
 }
 
-// holderCount reads one slot's holder count under the table mutex.
-func holderCount(tab *Table, s *slot) int {
+// holderCount reads one incarnation's holder count under the table mutex.
+func holderCount(tab *Table, incarnation *slot) int {
 	tab.mu.Lock()
 	defer tab.mu.Unlock()
-	return s.holders
+	return incarnation.holders
 }
 
 // mappedKeys is how many keys the table still stores.
@@ -702,33 +711,222 @@ func TestTable_ZeroGraceEndsImmediately(t *testing.T) {
 }
 
 func TestTable_ZeroGraceRacingOpenIsPlainBind(t *testing.T) {
-	const rounds = 60
+	h := &recHandler{}
+	tab := NewTable(0)
+	// Hold the first value inside Sleep, so the second Open is guaranteed to arrive in the
+	// window a zero-grace table must not keep. Racing two goroutines instead would let the Open
+	// win and be a plain second bind, which is not the case under test.
+	sleeping := make(chan struct{})
+	release := make(chan struct{})
+	first := &lifecycle{onSleep: func() { close(sleeping); <-release }}
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	if _, err := tab.Open(ctx1, "a", recLogger(h), func() (any, error) { return first, nil }); err != nil {
+		t.Fatalf("open 1: %v", err)
+	}
+	cancel1()
+	<-sleeping
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	second := &lifecycle{}
+	opened := make(chan any, 1)
+	go func() {
+		value, err := tab.Open(ctx2, "a", recLogger(h), func() (any, error) { return second, nil })
+		if err != nil {
+			t.Errorf("open 2: %v", err)
+		}
+		opened <- value
+	}()
+
+	// The second Open is parked on the sleeping slot and cannot be served yet.
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-opened:
+		t.Fatal("Open was served from a value that was still being slept")
+	default:
+	}
+
+	close(release)
+	got := <-opened
+	if got != any(second) {
+		t.Fatal("zero grace kept the sleeping value and handed it back")
+	}
+	if first.count("wake") != 0 {
+		t.Fatal("a zero-grace table woke a value it was supposed to drop")
+	}
+	// A zero-grace table has no grace window, so nothing can be reclaimed into one.
+	if n := countMsg(h.events(), MsgReclaim); n != 0 {
+		t.Fatalf("%d reclaim lines at zero grace, want 0 (sequence %v)", n, keySeq(h.events(), "a"))
+	}
+	want := []string{MsgPut, MsgBind, MsgOrphan, MsgDispose, MsgPut, MsgBind}
+	if seq := keySeq(h.events(), "a"); !reflect.DeepEqual(seq, want) {
+		t.Fatalf("sequence %v, want %v", seq, want)
+	}
+}
+
+func TestTable_ResetDuringSleepStillOrphansBeforeDispose(t *testing.T) {
+	h := &recHandler{}
+	tab := NewTable(graceNoRace)
+	sleeping := make(chan struct{})
+	release := make(chan struct{})
+	life := &lifecycle{onSleep: func() { close(sleeping); <-release }}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if _, err := tab.Open(ctx, "a", recLogger(h), func() (any, error) { return life, nil }); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	cancel()
+	<-sleeping
+
+	// Reset lands while the value is mid-sleep. It must leave this incarnation to the goroutine
+	// that owns the transition, or it writes reclaim_dispose before that goroutine's orphan line.
+	done := make(chan struct{})
+	go func() { tab.Reset(); close(done) }()
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	<-done
+
+	waitKeyMsg(t, h, MsgDispose, "a")
+	want := []string{MsgPut, MsgBind, MsgOrphan, MsgDispose}
+	if seq := keySeq(h.events(), "a"); !reflect.DeepEqual(seq, want) {
+		t.Fatalf("sequence %v, want %v", seq, want)
+	}
+	if got := life.count("close"); got != 1 {
+		t.Fatalf("close ran %d times, want 1", got)
+	}
+	if got := life.count("sleep"); got != 1 {
+		t.Fatalf("sleep ran %d times, want 1", got)
+	}
+	if mappedKeys(tab) != 0 {
+		t.Fatal("Reset left a key stored")
+	}
+}
+
+func TestTable_AnOpenThatOnlyWaitsDoesNotTakeTheLogger(t *testing.T) {
+	held := &recHandler{}
+	waiting := &recHandler{}
+	tab := NewTable(0)
+	sleeping := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	life := &lifecycle{onSleep: func() { once.Do(func() { close(sleeping); <-release }) }}
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	if _, err := tab.Open(ctx1, "a", recLogger(held), func() (any, error) { return life, nil }); err != nil {
+		t.Fatalf("open 1: %v", err)
+	}
+	cancel1()
+	<-sleeping
+
+	// This Open parks on the sleeping incarnation and then creates its own. It never binds to
+	// the first one, so the first one's orphan and dispose must not be routed to its logger.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	opened := make(chan struct{})
+	go func() {
+		defer close(opened)
+		if _, err := tab.Open(ctx2, "a", recLogger(waiting), func() (any, error) { return &lifecycle{}, nil }); err != nil {
+			t.Errorf("open 2: %v", err)
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	<-opened
+
+	waitKeyMsg(t, held, MsgDispose, "a")
+	if got := countKeyMsg(waiting.events(), MsgDispose, "a"); got != 0 {
+		t.Fatalf("%d dispose lines on the waiting Open's logger, want 0", got)
+	}
+	if got := countKeyMsg(waiting.events(), MsgOrphan, "a"); got != 0 {
+		t.Fatalf("%d orphan lines on the waiting Open's logger, want 0", got)
+	}
+	want := []string{MsgPut, MsgBind, MsgOrphan, MsgDispose}
+	if seq := keySeq(held.events(), "a"); !reflect.DeepEqual(seq, want) {
+		t.Fatalf("holder logger sequence %v, want %v", seq, want)
+	}
+}
+
+func TestTable_ResetRacingADropKeepsOrphanBeforeDispose(t *testing.T) {
+	const rounds = 400
 	for round := 0; round < rounds; round++ {
 		h := &recHandler{}
-		tab := NewTable(0)
-		ctx1, cancel1 := context.WithCancel(context.Background())
-		if _, err := tab.Open(ctx1, "a", recLogger(h), func() (any, error) { return &lifecycle{}, nil }); err != nil {
-			t.Fatalf("open 1: %v", err)
+		tab := NewTable(graceNoRace)
+		ctx, cancel := context.WithCancel(context.Background())
+		life := &lifecycle{}
+		if _, err := tab.Open(ctx, "a", recLogger(h), func() (any, error) { return life, nil }); err != nil {
+			t.Fatalf("round %d open: %v", round, err)
 		}
 
-		ctx2, cancel2 := context.WithCancel(context.Background())
+		// Reset and the last holder's drop both want to end this incarnation. Whichever writes
+		// reclaim_dispose, this incarnation's reclaim_orphan must already be there.
 		var wg sync.WaitGroup
 		wg.Add(2)
-		go func() { defer wg.Done(); cancel1() }()
-		go func() {
-			defer wg.Done()
-			if _, err := tab.Open(ctx2, "a", recLogger(h), func() (any, error) { return &lifecycle{}, nil }); err != nil {
-				t.Errorf("open 2: %v", err)
-			}
-		}()
+		go func() { defer wg.Done(); cancel() }()
+		go func() { defer wg.Done(); tab.Reset() }()
 		wg.Wait()
-		cancel2()
 
-		// A zero-grace table has no grace window, so nothing can be reclaimed into one.
-		if got := countMsg(h.events(), MsgReclaim); got != 0 {
-			t.Fatalf("round %d: %d reclaim lines at zero grace, want 0 (sequence %v)", round, got, keySeq(h.events(), "a"))
+		waitKeyMsg(t, h, MsgDispose, "a")
+		seq := keySeq(h.events(), "a")
+		want := []string{MsgPut, MsgBind, MsgOrphan, MsgDispose}
+		if !reflect.DeepEqual(seq, want) {
+			t.Fatalf("round %d: sequence %v, want %v", round, seq, want)
 		}
-		tab.Reset()
+		if got := life.count("close"); got != 1 {
+			t.Fatalf("round %d: close ran %d times, want 1", round, got)
+		}
+		if got := life.count("sleep"); got != 1 {
+			t.Fatalf("round %d: sleep ran %d times, want 1", round, got)
+		}
+	}
+}
+
+func TestTable_OpenWaitsForSleepThenWakes(t *testing.T) {
+	h := &recHandler{}
+	tab := NewTable(graceNoRace)
+	sleeping := make(chan struct{})
+	release := make(chan struct{})
+	// Only the first sleep is held: this value is slept again when the test's own holder goes.
+	var once sync.Once
+	life := &lifecycle{onSleep: func() { once.Do(func() { close(sleeping); <-release }) }}
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	if _, err := tab.Open(ctx1, "a", recLogger(h), func() (any, error) { return life, nil }); err != nil {
+		t.Fatalf("open 1: %v", err)
+	}
+	cancel1()
+	<-sleeping
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	opened := make(chan any, 1)
+	go func() {
+		value, err := tab.Open(ctx2, "a", recLogger(h), func() (any, error) { t.Error("create ran again"); return nil, nil })
+		if err != nil {
+			t.Errorf("open 2: %v", err)
+		}
+		opened <- value
+	}()
+
+	// A caller must never receive a value that is mid-sleep, so this Open waits.
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-opened:
+		t.Fatal("Open returned while Sleep was still running")
+	default:
+	}
+
+	close(release)
+	if got := <-opened; got != any(life) {
+		t.Fatal("Open returned a different value")
+	}
+	if seq := life.seq(); !reflect.DeepEqual(seq, []string{"sleep", "wake"}) {
+		t.Fatalf("lifecycle %v, want the sleep to finish and the value to be woken", seq)
+	}
+	want := []string{MsgPut, MsgBind, MsgOrphan, MsgReclaim, MsgBind}
+	if seq := keySeq(h.events(), "a"); !reflect.DeepEqual(seq, want) {
+		t.Fatalf("sequence %v, want %v", seq, want)
 	}
 }
 
@@ -1045,12 +1243,12 @@ func TestTable_ConcurrentOpenSameKeySharesOneIncarnation(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(time.Millisecond)
 	var created atomic.Int32
-	ctxs := make([]context.CancelFunc, openers)
+	cancels := make([]context.CancelFunc, openers)
 	values := make([]any, openers)
 	var wg sync.WaitGroup
 	for i := 0; i < openers; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
-		ctxs[i] = cancel
+		cancels[i] = cancel
 		wg.Add(1)
 		go func(i int, ctx context.Context) {
 			defer wg.Done()
@@ -1073,7 +1271,7 @@ func TestTable_ConcurrentOpenSameKeySharesOneIncarnation(t *testing.T) {
 			t.Fatalf("open %d returned a different value", i)
 		}
 	}
-	for _, cancel := range ctxs {
+	for _, cancel := range cancels {
 		cancel()
 	}
 	waitKeyMsg(t, h, MsgDispose, "a")

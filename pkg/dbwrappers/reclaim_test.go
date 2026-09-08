@@ -169,10 +169,17 @@ func TestOpenBIN_SleepStopsTheUpdateLoopAndWakeStartsAFreshOne(t *testing.T) {
 	}
 	waitRequests(t, requests, 1)
 
+	loop := binUpdater(first)
 	cancel1()
 	waitLogged(t, h, reclaim.MsgOrphan, key)
-	if got := binUpdater(first); got != nil {
-		t.Fatal("a sleeping wrapper still holds an update loop")
+	// A sleeping wrapper keeps its updater but the loop is stopped, so the source goes quiet.
+	if binUpdater(first) != loop {
+		t.Fatal("sleeping replaced the updater instead of stopping it")
+	}
+	asleep := requests.Load()
+	time.Sleep(100 * time.Millisecond)
+	if later := requests.Load(); later != asleep {
+		t.Fatalf("a sleeping wrapper asked the source again: %d then %d", asleep, later)
 	}
 
 	ctx2, cancel2 := context.WithCancel(context.Background())
@@ -227,10 +234,16 @@ func TestOpenMMDB_SleepStopsTheUpdateLoopAndWakeStartsAFreshOne(t *testing.T) {
 	}
 	waitRequests(t, requests, 1)
 
+	loop := mmdbUpdater(first)
 	cancel1()
 	waitLogged(t, h, reclaim.MsgOrphan, key)
-	if got := mmdbUpdater(first); got != nil {
-		t.Fatal("a sleeping wrapper still holds an update loop")
+	if mmdbUpdater(first) != loop {
+		t.Fatal("sleeping replaced the updater instead of stopping it")
+	}
+	asleep := requests.Load()
+	time.Sleep(100 * time.Millisecond)
+	if later := requests.Load(); later != asleep {
+		t.Fatalf("a sleeping wrapper asked the source again: %d then %d", asleep, later)
 	}
 
 	ctx2, cancel2 := context.WithCancel(context.Background())
@@ -286,10 +299,7 @@ func TestOpenBIN_SleepPrecedesClose(t *testing.T) {
 	cancel()
 	waitLogged(t, h, reclaim.MsgDispose, key)
 
-	// Close never sees a running loop, because sleep always ran first.
-	if got := binUpdater(wrapper); got != nil {
-		t.Fatal("a disposed wrapper still holds an update loop")
-	}
+	// Close never has a running loop to stop, because sleep always ran first.
 	if _, err := wrapper.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil {
 		t.Fatal("a disposed wrapper still answers lookups")
 	}

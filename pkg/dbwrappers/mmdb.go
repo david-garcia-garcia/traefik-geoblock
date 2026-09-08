@@ -74,14 +74,16 @@ func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	if err := w.open(path); err != nil {
 		return nil, err
 	}
+	// MMDB has no bundled fallback, so a bad source config is fatal here. newBIN logs the same
+	// error and carries on instead, because a BIN can serve from its local file.
 	if err := w.startUpdate(); err != nil {
 		return nil, err
 	}
 	return w, nil
 }
 
-// startUpdate builds and starts the download ticker for this source. newMMDB calls it once and
-// Wake calls it again after a sleep stopped it. No URL means no ticker.
+// startUpdate builds and starts the download ticker for this source. Only the constructor calls
+// it: Wake restarts the updater this built rather than building another. No URL means no ticker.
 func (w *MMDB) startUpdate() error {
 	updater, err := dbsource.Start(w.sourceCfg(), w.logger, w.onUpdate)
 	if err != nil {
@@ -173,19 +175,21 @@ func (w *MMDB) Lookup(ip string, dest any) error {
 // into the source directory while nobody holds this MMDB. The reader stays open, so Wake cannot
 // fail. The reclaim table calls this when the last holder is gone.
 func (w *MMDB) Sleep() {
-	w.mu.Lock()
-	updater := w.updater
-	w.updater = nil
-	w.mu.Unlock()
-	updater.Stop()
+	w.currentUpdater().Stop()
 }
 
-// Wake restarts the download ticker. The reclaim table calls this before it hands a sleeping
-// MMDB back to a caller.
+// Wake restarts the download ticker this MMDB already has. The reclaim table calls this before it
+// hands a sleeping MMDB back to a caller, so it cannot fail: the updater was built at
+// construction and Start on a stopped one runs a fresh loop over the same source config.
 func (w *MMDB) Wake() {
-	if err := w.startUpdate(); err != nil {
-		w.logger.Error("source updater", "error", err)
-	}
+	w.currentUpdater().Start(w.onUpdate)
+}
+
+// currentUpdater is the download loop, or nil when this source has no URL to poll.
+func (w *MMDB) currentUpdater() *dbsource.Updater {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.updater
 }
 
 // Close releases the reader. The reclaim table calls this when the incarnation ends, always

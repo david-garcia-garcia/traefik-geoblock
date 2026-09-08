@@ -1,10 +1,12 @@
 package dbsource
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -99,21 +101,21 @@ func TestUpdater_StopWaitsForTheUpdateLoop(t *testing.T) {
 	updater.Start(nil)
 	<-source.entered
 
-	stopped := make(chan struct{})
+	stopReturned := make(chan struct{})
 	go func() {
 		updater.Stop()
-		close(stopped)
+		close(stopReturned)
 	}()
 
 	select {
-	case <-stopped:
+	case <-stopReturned:
 		t.Fatal("Stop returned while a download was still in flight")
 	case <-time.After(80 * time.Millisecond):
 	}
 
 	source.releaseAll()
 	select {
-	case <-stopped:
+	case <-stopReturned:
 	case <-time.After(10 * time.Second):
 		t.Fatal("Stop never returned after the download finished")
 	}
@@ -226,6 +228,44 @@ func TestUpdater_StoppingTwiceIsSafe(t *testing.T) {
 	fresh.Stop()
 	var missing *Updater
 	missing.Stop()
+}
+
+func TestUpdater_FailedDownloadDoesNotLogTheToken(t *testing.T) {
+	// A server that is up long enough to be addressed and then gone, so the GET fails at the
+	// transport layer. That error renders as `Get "<full URL>": ...`, token and all.
+	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	deadURL := dead.URL
+	dead.Close()
+
+	var logged strings.Builder
+	updater, err := newUpdater(Config{
+		Key:          "probe",
+		URL:          deadURL + "/db.mmdb?token=SUPERSECRETTOKEN&file=lite",
+		DatabaseType: TypeMMDB,
+		Archive:      ArchiveNone,
+		Dir:          t.TempDir(),
+		MinAge:       time.Hour,
+	}, slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	if err != nil {
+		t.Fatalf("new updater: %v", err)
+	}
+
+	updater.tick(make(chan struct{}), nil)
+
+	written := logged.String()
+	if written == "" {
+		t.Fatal("a failed download logged nothing")
+	}
+	if strings.Contains(written, "SUPERSECRETTOKEN") {
+		t.Fatalf("the download token reached the log: %s", written)
+	}
+	// The operator still needs to know which source failed and where it was pointed.
+	if !strings.Contains(written, "probe") {
+		t.Fatalf("the log does not name the source: %s", written)
+	}
+	if !strings.Contains(written, strings.TrimPrefix(deadURL, "http://")) {
+		t.Fatalf("the log does not name the host: %s", written)
+	}
 }
 
 // waitRequests fails if source has not seen want requests within ten seconds.
