@@ -7,7 +7,7 @@ repoSlug: traefik-geoblock
 destBranch: master
 qualify: qualified
 src: local-spec-2026-09-08-reclaim-lifecycle+d10ad52
-localTests: none
+localTests: passed
 requirement: requirement.md
 comments: none
 explore: explore.md
