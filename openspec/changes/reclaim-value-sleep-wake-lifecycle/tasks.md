@@ -37,7 +37,7 @@
 
 ## 5. Docs, verification, and follow-ups
 
-- [ ] 5.1 Update `knowledge/devdocs/std_go_reclaim.md`: add the sleep/wake language, redefine Grace, remove the Lifetime term, and add the gotchas this change creates.
+- [x] 5.1 Update `knowledge/devdocs/std_go_reclaim.md`: add the sleep/wake language, redefine Grace, remove the Lifetime term, and add the gotchas this change creates.
 - [x] 5.2 Record the "release the wrapper database handle on sleep" follow-up as `knowledge/debt/` plus a `devstate/issues.md` row.
 - [x] 5.3 Run `go build ./...` and `go vet ./...`, then the full suite, then `pkg/reclaim` under CPU contention with `GOMAXPROCS=2` and a high `-count`.
 - [x] 5.4 Verify formatting with `gofmt -d` on LF copies outside the repo (the checkout is `core.autocrlf=true`), and run `openspec validate --strict reclaim-value-sleep-wake-lifecycle`.
