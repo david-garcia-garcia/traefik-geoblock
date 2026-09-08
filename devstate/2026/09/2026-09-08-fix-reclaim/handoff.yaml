@@ -12,4 +12,6 @@ localTests: none
 requirement: requirement.md
 explore: none
 change: none
-pr: none
+pr:
+  id: 82
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/82
