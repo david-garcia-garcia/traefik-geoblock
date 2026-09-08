@@ -9,3 +9,9 @@ phase: explore
 findings: #67 INFO: GeoBlock prefix not in tree; default still slog text; tests do not lock prefix or JSON lines
 fixed: explore.md decisions; debt note for bootstrap/owner logFormat
 skipped: default flip; bootstrap/owner format parameter
+
+## propose (2026-09-08)
+phase: propose
+findings: fold observability leaf; tests not applied
+fixed: change crowdsec-compatible-stdout-logs (proposal, spec delta, design, tasks)
+skipped: default json; bootstrap/owner format
