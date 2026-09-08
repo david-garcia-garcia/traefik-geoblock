@@ -6,7 +6,7 @@ JobName: 2026-09-08-reclaim-lifecycle
 |-------|------|------|----|
 | prepare | [x] | [x] | 2026-09-08T21:03:38Z |
 | explore | [x] | [x] | 2026-09-08T21:13:16Z |
-| propose | [ ] | [ ] | |
+| propose | [x] | [x] | 2026-09-08T21:19:33Z |
 | implement | [ ] | [ ] | |
 | codereview | [ ] | [ ] | |
 | devdocsimpact | [ ] | [ ] | |
