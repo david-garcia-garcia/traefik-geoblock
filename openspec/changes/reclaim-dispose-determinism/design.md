@@ -21,7 +21,7 @@ The current end-of-incarnation path is: `fire` (or `Reset`) cancels the lifetime
 
 **Non-Goals:**
 - No removal or reshaping of anything the package already does. The incarnation lifetime context, its cancel, and the goroutine that watches it all stay.
-- No change to `Open`'s signature, the five message constants, `DefaultGrace`, or how `pkg/dbwrappers` builds keys.
+- No change to the five message constants, `DefaultGrace`, or how `pkg/dbwrappers` builds keys. `Open` does gain a `grace` argument (see the decision below); that is the one signature change, and it is additive in behavior — the existing callers pass `TableGrace` and keep today's grace.
 - No `-race` flag in CI and no test-only hook or fake clock injected into `Table`. The fix must hold for the production timer.
 - The holder `watch` goroutine for a `context.Background()` holder still parks forever; that is a Yaegi accommodation, not this change.
 
@@ -64,6 +64,14 @@ The zero-grace path is already ordered — it logs orphan and then calls `fire` 
 `TestTable_ReclaimRacesFire` keeps its stress loop but adopts the shape its sibling `TestTable_ZeroGraceOpenRacesCancel` already uses: branch on which outcome occurred, then assert what must be true in that outcome. Same pointer means the incarnation must still be alive while a holder is live; a different pointer means the grace timer won and the old value must have been closed. The "a late `fire` must not dispose a live incarnation" invariant stays covered deterministically by `TestTable_StaleFireAfterReclaimNoops`, which calls `fire` directly with a stale generation and needs no timing at all.
 
 Tests that assert the reclaim *branch* rather than the race (`TestTable_OpenDuringGraceReclaims`) get a grace long enough that the branch is certain. The rule for this package: a test either uses a grace long enough that the intended branch cannot lose, or it accepts both outcomes. No test may need a specific timer to win.
+
+### Grace moves onto the slot, with the table as the default
+
+`slot` gets a `grace`, set once by the `Open` that created the value, and `drop` reads `e.grace` where it read `t.grace`. `Open` takes a `grace` argument; `TableGrace` (declared as `-1`, and any negative duration behaves the same) means "take the table's". That mirrors the rule `NewTable` already has for a negative grace, so there is one convention in the package rather than two.
+
+Why the creating `Open` fixes it and a reclaiming one cannot change it: grace is a property of the thing being kept alive, not of the caller that happens to hold it now. A reclaiming `Open` already cannot re-run `create` or replace the lifetime; letting it move the grace would mean the value a caller reclaims can outlive — or fail to outlive — what its creator asked for, decided by whichever middleware instance bound last. The logger is the deliberate exception (orphan and dispose follow the last binder) because a log line belongs to whoever is watching; a lifetime does not.
+
+Why a signature change in a package that is additive by rule: this one adds a parameter rather than removing behavior, every existing call keeps its exact semantics by passing `TableGrace`, and the port to `traefik-modsecurity` stays a file copy plus the same one-word edit at its call sites.
 
 ### Test-only hardening in `pkg/dbwrappers`
 

@@ -56,6 +56,15 @@
 - [x] 7.1 Give `useShortLeases` a grace argument; use a lease the reclaim tests cannot lose in `TestOpenBIN_SameHashReclaimKeepsTicker` and `TestOpenMMDB_SameHashReclaimKeepsTicker`
 - [x] 7.2 Replace the fixed 80 ms sleeps in `TestOpenBIN_HashChangeDisposesOld` and `TestOpenMMDB_HashChangeDisposesOld` with a poll for `reclaim_dispose` on the old key
 
+## 9. Grace belongs to the incarnation
+
+- [x] 9.1 Add a `grace time.Duration` field to `slot`, set once by the `Open` that creates the value
+- [x] 9.2 Add a `grace` parameter to `Table.Open` and the `reclaim.Open` façade, and a `TableGrace` constant (any negative duration) meaning "take the table's grace"
+- [x] 9.3 Read `e.grace` in `drop` instead of `t.grace`, for both the zero-grace inline path and the armed timer
+- [x] 9.4 Leave the reclaim path alone: an `Open` that binds an existing incarnation does not touch its grace, the same way it does not re-run `create`
+- [x] 9.5 Pass `reclaim.TableGrace` at the three production call sites (`plugin.go`, `pkg/dbwrappers/bin.go`, `pkg/dbwrappers/mmdb.go`) so their behavior is unchanged
+- [x] 9.6 Test two keys with different graces on one table, a negative `Open` grace taking the table's, and a reclaim that names a different grace leaving the incarnation's unchanged
+
 ## 8. Docs and verification
 
 - [x] 8.1 Update `knowledge/devdocs/std_go_reclaim.md`: the shared-copy sync rule, dispose implies Close has returned, `Close()` must not block, and the grace-edge rule for tests

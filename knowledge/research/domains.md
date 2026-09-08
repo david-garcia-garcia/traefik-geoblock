@@ -6,3 +6,4 @@
 - ipinfo
 - maxmind
 - traefik
+- traefik-modsecurity

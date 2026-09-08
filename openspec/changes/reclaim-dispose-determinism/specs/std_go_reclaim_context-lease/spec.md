@@ -28,6 +28,58 @@ An `Open` that races the end of grace for the same key SHALL either reclaim the 
 
 ## MODIFIED Requirements
 
+### Requirement: Open creates once and binds a context
+`Open(ctx, key, logger, grace, create)` SHALL create the value on the first call for a key, store it, and bind `ctx` as a holder. `Open` SHALL panic if `ctx` is nil. `Open` SHALL return an error if `logger` is nil. The table MUST NOT keep a logger of its own; `logger` is the only logger for that Open. `grace` is the grace for the incarnation this call may create, and is governed by the grace requirement below. A holder whose `Done` is nil (`context.Background`) SHALL be treated as live until `ctx.Err()` is set. `create` SHALL take no arguments (Yaegi cannot call `func(context.Context) (any, error)`). If the stored value has `Close()`, the table SHALL call it when this incarnation ends. If `create` runs and another Open already stored the key, the table MUST cancel that create’s lifetime immediately and MUST NOT store that value. A later `Open` for the same key (live or in grace) SHALL return the stored value, bind the new context, and MUST NOT run `create` or replace the lifetime. The lifetime SHALL be canceled at most once per incarnation. Two live contexts on one key SHALL keep the value until both are Done. A stale holder drop from a previous incarnation or from `Reset` MUST NOT change a later slot for the same key.
+
+#### Scenario: Two holders one dispose
+- **WHEN** `Open` creates a value for a key
+- **AND** a second `Open` attaches another live context to that key
+- **THEN** the lifetime is not canceled while either context is not Done
+
+#### Scenario: Second create dispose is ignored
+- **WHEN** a key already has an incarnation
+- **AND** `Open` is called again
+- **THEN** `create` does not run
+- **AND** the original lifetime remains the one that will be canceled
+
+#### Scenario: Lost create race
+- **WHEN** two first `Open` calls for the same key run `create` concurrently
+- **THEN** both return the stored value
+- **AND** the losing create’s lifetime is canceled
+- **AND** that losing value is not stored
+
+#### Scenario: Missing context panics
+- **WHEN** `Open` is called with a nil context
+- **THEN** `Open` panics
+
+#### Scenario: Nil logger is rejected
+- **WHEN** `Open` is called with a nil logger
+- **THEN** `Open` returns an error
+- **AND** no incarnation is stored
+
+### Requirement: Grace is configurable
+Grace SHALL belong to the incarnation, not to the table. The `Open` that creates a value SHALL fix that incarnation's grace from its `grace` argument; a negative `grace` (spelled `TableGrace`) SHALL mean the table's grace. An `Open` that binds or reclaims an existing incarnation MUST NOT change that incarnation's grace, whatever it passes. Two keys on one table MAY therefore have different graces. The table's grace is the default for every `Open` that names none: it is supplied at `NewTable`, and a negative value there SHALL become the product default of 10 seconds (`DefaultGrace`), which is what the process table is constructed with. A zero grace SHALL cancel the lifetime as soon as the last holder is gone (no wait).
+
+#### Scenario: Default grace
+- **WHEN** a table is created with a negative grace
+- **THEN** grace is 10 seconds
+
+#### Scenario: Zero grace
+- **WHEN** a table is created with a zero grace
+- **AND** the last holder context is Done
+- **THEN** the lifetime is canceled without waiting
+
+#### Scenario: One key names its own grace
+- **WHEN** two keys are opened on one table, one with a zero grace and one with `TableGrace`
+- **AND** both holder contexts are Done
+- **THEN** the zero-grace key's lifetime is canceled without waiting
+- **AND** the other key's lifetime is not canceled before the table's grace elapses
+
+#### Scenario: Reclaim does not change the grace
+- **WHEN** a key is created by an `Open` naming one grace
+- **AND** a later `Open` reclaims that incarnation naming a different grace
+- **THEN** the incarnation keeps the grace of the `Open` that created it
+
 ### Requirement: Lifecycle events are logged
 The table SHALL emit a structured log line for each of: incarnation created (`Open` create), holder attached, last holder gone and grace started (orphan), holder attached during grace (reclaim), and lifetime canceled. Each line MUST include the key. Message strings SHALL be stable package constants (`reclaim_put`, `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`, `reclaim_dispose`). All five messages SHALL be logged at debug. Put, bind, and reclaim SHALL use the logger passed to the `Open` that caused them. Orphan and dispose SHALL use the logger from the last `Open` that bound that key. `Reset` SHALL emit `reclaim_dispose` for each canceled key using that slot’s last Open logger. Log lines MUST NOT be emitted while the table mutex is held. `reclaim_orphan` SHALL be emitted before the grace period starts. So for one incarnation `reclaim_orphan` always precedes the `reclaim_dispose` that ends grace, at every grace duration including zero, and always precedes the `reclaim_reclaim` of an `Open` that lands in that grace window. Two narrow cases are outside that ordering, and both are stated so a reader does not treat them as defects: a `Reset` cancels every mapped incarnation at once, so it MAY emit `reclaim_dispose` before an orphan line that a concurrent last-holder cancel has not finished writing; and an `Open` that binds in the instant between the last holder going and the orphan line being written MAY record its `reclaim_reclaim` before that line.
 

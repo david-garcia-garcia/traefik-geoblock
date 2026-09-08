@@ -182,7 +182,7 @@ func TestTable_OpenCancelDispose(t *testing.T) {
 	var ended atomic.Bool
 	ctx, cancel := context.WithCancel(context.Background())
 
-	if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &ended), nil
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
@@ -209,7 +209,7 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	tab := NewTable(graceNoRace)
 	var ended atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	first, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+	first, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &ended), nil
 	})
 	if err != nil {
@@ -220,7 +220,7 @@ func TestTable_OpenDuringGraceReclaims(t *testing.T) {
 	waitKeyMsg(t, h, MsgOrphan, "a")
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	second, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+	second, err := tab.Open(ctx2, "a", slog.New(h), TableGrace, func() (any, error) {
 		return &box{n: 2}, nil
 	})
 	if err != nil {
@@ -257,13 +257,13 @@ func TestTable_SecondCreateDisposeIgnored(t *testing.T) {
 	var ended atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) {
 		created.Add(1)
 		return ending(1, &ended), nil
 	}); err != nil {
 		t.Fatalf("Open 1: %v", err)
 	}
-	if _, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx2, "a", slog.New(h), TableGrace, func() (any, error) {
 		created.Add(1)
 		return ending(2, &ended), nil
 	}); err != nil {
@@ -286,12 +286,12 @@ func TestTable_TwoOpensOneDispose(t *testing.T) {
 	var ended atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &ended), nil
 	}); err != nil {
 		t.Fatalf("Open 1: %v", err)
 	}
-	if _, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx2, "a", slog.New(h), TableGrace, func() (any, error) {
 		return &box{n: 2}, nil
 	}); err != nil {
 		t.Fatalf("Open 2: %v", err)
@@ -319,6 +319,117 @@ func TestTable_NegativeGraceUsesDefault(t *testing.T) {
 	}
 }
 
+// TestTable_GraceIsPerIncarnation checks that the grace an Open names governs that key alone, and
+// that a key opened with TableGrace on the same table still waits the table's grace.
+func TestTable_GraceIsPerIncarnation(t *testing.T) {
+	h := &recHandler{}
+	tab := NewTable(graceNoRace)
+	defer tab.Reset()
+	var fastEnded, slowEnded atomic.Bool
+
+	fastCtx, cancelFast := context.WithCancel(context.Background())
+	if _, err := tab.Open(fastCtx, "fast", slog.New(h), 0, func() (any, error) {
+		return ending(1, &fastEnded), nil
+	}); err != nil {
+		cancelFast()
+		t.Fatalf("Open fast: %v", err)
+	}
+	slowCtx, cancelSlow := context.WithCancel(context.Background())
+	if _, err := tab.Open(slowCtx, "slow", slog.New(h), TableGrace, func() (any, error) {
+		return ending(2, &slowEnded), nil
+	}); err != nil {
+		cancelFast()
+		cancelSlow()
+		t.Fatalf("Open slow: %v", err)
+	}
+
+	// The zero-grace key ends the moment its holder goes, on a table whose own grace is 5 s.
+	cancelFast()
+	requireDisposeAfterClose(t, h, "fast", &fastEnded)
+
+	// The key that named no grace takes the table's, so it is still alive well past the other's end.
+	cancelSlow()
+	waitKeyMsg(t, h, MsgOrphan, "slow")
+	time.Sleep(50 * time.Millisecond)
+	if slowEnded.Load() {
+		t.Fatal("a key opened with TableGrace must wait the table's grace, not another key's")
+	}
+	if got := countKeyMsg(h.events(), MsgDispose, "slow"); got != 0 {
+		t.Fatalf("dispose slow = %d, want 0 while its own grace runs", got)
+	}
+}
+
+// TestTable_OpenGraceBelowZeroTakesTheTable checks that TableGrace is a spelling, not a magic number:
+// any negative grace means the table's.
+func TestTable_OpenGraceBelowZeroTakesTheTable(t *testing.T) {
+	h := &recHandler{}
+	tab := NewTable(graceNoRace)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if _, err := tab.Open(ctx, "a", slog.New(h), -time.Hour, func() (any, error) {
+		return &box{n: 1}, nil
+	}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	e := mustSlotA(t, tab)
+	tab.mu.Lock()
+	got := e.grace
+	tab.mu.Unlock()
+	if got != graceNoRace {
+		t.Fatalf("grace = %v, want the table's %v", got, graceNoRace)
+	}
+}
+
+// TestTable_ReclaimDoesNotChangeTheGrace checks that grace belongs to the incarnation: it is fixed by
+// the Open that created the value, and an Open that reclaims it cannot shorten or extend it.
+func TestTable_ReclaimDoesNotChangeTheGrace(t *testing.T) {
+	h := &recHandler{}
+	tab := NewTable(time.Millisecond)
+	defer tab.Reset()
+	var ended atomic.Bool
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	first, err := tab.Open(ctx1, "a", slog.New(h), graceNoRace, func() (any, error) {
+		return ending(1, &ended), nil
+	})
+	if err != nil {
+		cancel1()
+		t.Fatalf("Open 1: %v", err)
+	}
+	cancel1()
+	waitKeyMsg(t, h, MsgOrphan, "a")
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	second, err := tab.Open(ctx2, "a", slog.New(h), 0, func() (any, error) {
+		t.Error("an Open inside grace must reclaim, not create")
+		return &box{n: 2}, nil
+	})
+	if err != nil {
+		cancel2()
+		t.Fatalf("Open 2: %v", err)
+	}
+	if second != first {
+		cancel2()
+		t.Fatal("expected a reclaim of the stored incarnation")
+	}
+	e := mustSlotA(t, tab)
+	tab.mu.Lock()
+	got := e.grace
+	tab.mu.Unlock()
+	if got != graceNoRace {
+		t.Fatalf("grace = %v, want the creating Open's %v", got, graceNoRace)
+	}
+
+	// The reclaiming Open asked for zero grace. If that had taken, this second orphan would
+	// dispose on the spot.
+	cancel2()
+	waitUntil(t, func() bool { return countKeyMsg(h.events(), MsgOrphan, "a") == 2 })
+	time.Sleep(50 * time.Millisecond)
+	if ended.Load() {
+		t.Fatal("a reclaiming Open must not change the incarnation's grace")
+	}
+}
+
 // TestTable_ZeroGraceEndsImmediately checks that zero grace cancels as soon as the last holder is gone.
 func TestTable_ZeroGraceEndsImmediately(t *testing.T) {
 	h := &recHandler{}
@@ -328,7 +439,7 @@ func TestTable_ZeroGraceEndsImmediately(t *testing.T) {
 	}
 	var ended atomic.Bool
 	ctx, cancel := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &ended), nil
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
@@ -367,7 +478,7 @@ func TestTable_HashChangeProof(t *testing.T) {
 	var mu sync.Mutex
 
 	ctxA, cancelA := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctxA, "A", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctxA, "A", slog.New(h), TableGrace, func() (any, error) {
 		return &namedEnd{name: "A", mu: &mu, ended: &ended}, nil
 	}); err != nil {
 		t.Fatalf("Open A: %v", err)
@@ -377,7 +488,7 @@ func TestTable_HashChangeProof(t *testing.T) {
 	cancelA()
 	ctxB, cancelB := context.WithCancel(context.Background())
 	defer cancelB()
-	if _, err := tab.Open(ctxB, "B", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctxB, "B", slog.New(h), TableGrace, func() (any, error) {
 		return &namedEnd{name: "B", mu: &mu, ended: &ended}, nil
 	}); err != nil {
 		t.Fatalf("Open B: %v", err)
@@ -411,11 +522,11 @@ func TestDefault_OpenSharesIncarnation(t *testing.T) {
 	t.Cleanup(Reset)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	a, err := Open(ctx, "k", slog.Default(), func() (any, error) { return &box{n: 7}, nil })
+	a, err := Open(ctx, "k", slog.Default(), TableGrace, func() (any, error) { return &box{n: 7}, nil })
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	b, err := Default().Open(ctx, "k", slog.Default(), func() (any, error) { return &box{n: 8}, nil })
+	b, err := Default().Open(ctx, "k", slog.Default(), TableGrace, func() (any, error) { return &box{n: 8}, nil })
 	if err != nil {
 		t.Fatalf("Default.Open: %v", err)
 	}
@@ -435,14 +546,14 @@ func TestTable_OpenNilContextPanics(t *testing.T) {
 			t.Fatal("expected panic")
 		}
 	}()
-	_, _ = tab.Open(nil, "a", slog.Default(), func() (any, error) { return &box{n: 1}, nil }) //nolint:staticcheck // Open must panic on nil
+	_, _ = tab.Open(nil, "a", slog.Default(), TableGrace, func() (any, error) { return &box{n: 1}, nil }) //nolint:staticcheck // Open must panic on nil
 }
 
 // TestTable_OpenBackgroundDoesNotPanic checks that Background is accepted (Yaegi Done is often nil).
 func TestTable_OpenBackgroundDoesNotPanic(t *testing.T) {
 	tab := NewTable(time.Millisecond)
 	ctx := context.Background()
-	if _, err := tab.Open(ctx, "a", slog.Default(), func() (any, error) { return &box{n: 1}, nil }); err != nil {
+	if _, err := tab.Open(ctx, "a", slog.Default(), TableGrace, func() (any, error) { return &box{n: 1}, nil }); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 }
@@ -453,7 +564,7 @@ func TestTable_CreateErrorCancelsLife(t *testing.T) {
 	tab := NewTable(20 * time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) {
+	_, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) {
 		return nil, errors.New("boom")
 	})
 	if err == nil || err.Error() != "boom" {
@@ -463,7 +574,7 @@ func TestTable_CreateErrorCancelsLife(t *testing.T) {
 		t.Fatalf("failed create must not put: %+v", h.events())
 	}
 
-	v, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) { return &box{n: 2}, nil })
+	v, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) { return &box{n: 2}, nil })
 	if err != nil {
 		t.Fatalf("retry Open: %v", err)
 	}
@@ -500,11 +611,11 @@ func TestTable_LostCreateRaceCancelsLoser(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		got[0], errs[0] = tab.Open(ctx0, "a", slog.New(h), create(0))
+		got[0], errs[0] = tab.Open(ctx0, "a", slog.New(h), TableGrace, create(0))
 	}()
 	go func() {
 		defer wg.Done()
-		got[1], errs[1] = tab.Open(ctx1, "a", slog.New(h), create(1))
+		got[1], errs[1] = tab.Open(ctx1, "a", slog.New(h), TableGrace, create(1))
 	}()
 	started.Wait()
 	close(gate)
@@ -532,7 +643,7 @@ func TestTable_ResetLogsDisposeAndKeepsNextIncarnation(t *testing.T) {
 	tab := NewTable(20 * time.Millisecond)
 	var firstEnded, secondEnded atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &firstEnded), nil
 	}); err != nil {
 		t.Fatalf("Open 1: %v", err)
@@ -546,7 +657,7 @@ func TestTable_ResetLogsDisposeAndKeepsNextIncarnation(t *testing.T) {
 
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	v, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+	v, err := tab.Open(ctx2, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(2, &secondEnded), nil
 	})
 	if err != nil {
@@ -574,7 +685,7 @@ func TestTable_ResetStopsArmedTimer(t *testing.T) {
 	tab := NewTable(time.Second)
 	var ended atomic.Bool
 	ctx, cancel := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &ended), nil
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
@@ -605,7 +716,7 @@ func TestTable_ConcurrentOpenSameKeySharesOneIncarnation(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			var err error
-			vals[i], err = tab.Open(ctxs[i], "a", slog.New(h), func() (any, error) {
+			vals[i], err = tab.Open(ctxs[i], "a", slog.New(h), TableGrace, func() (any, error) {
 				created.Add(1)
 				return &box{n: 1}, nil
 			})
@@ -638,7 +749,7 @@ func TestTable_NilTableOpenErrors(t *testing.T) {
 	var tab *Table
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := tab.Open(ctx, "a", slog.Default(), func() (any, error) { return &box{n: 1}, nil }); err == nil {
+	if _, err := tab.Open(ctx, "a", slog.Default(), TableGrace, func() (any, error) { return &box{n: 1}, nil }); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -648,7 +759,7 @@ func TestTable_NilOpenLoggerRejected(t *testing.T) {
 	tab := NewTable(time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := tab.Open(ctx, "a", nil, func() (any, error) { return &box{n: 1}, nil }); err == nil {
+	if _, err := tab.Open(ctx, "a", nil, TableGrace, func() (any, error) { return &box{n: 1}, nil }); err == nil {
 		t.Fatal("expected nil logger error")
 	}
 }
@@ -659,7 +770,7 @@ func TestTable_StaleFireAfterReclaimNoops(t *testing.T) {
 	tab := NewTable(time.Second)
 	var ended atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	first, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+	first, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &ended), nil
 	})
 	if err != nil {
@@ -672,7 +783,7 @@ func TestTable_StaleFireAfterReclaimNoops(t *testing.T) {
 
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	second, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) { return &box{n: 2}, nil })
+	second, err := tab.Open(ctx2, "a", slog.New(h), TableGrace, func() (any, error) { return &box{n: 2}, nil })
 	if err != nil {
 		t.Fatalf("Open 2: %v", err)
 	}
@@ -699,7 +810,7 @@ func TestTable_StaleFireWhileHeldNoops(t *testing.T) {
 	var ended atomic.Bool
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &ended), nil
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
@@ -721,7 +832,7 @@ func TestTable_StaleFireAfterResetNoops(t *testing.T) {
 	var firstEnded, secondEnded atomic.Bool
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	defer cancel1()
-	if _, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &firstEnded), nil
 	}); err != nil {
 		t.Fatalf("Open 1: %v", err)
@@ -733,7 +844,7 @@ func TestTable_StaleFireAfterResetNoops(t *testing.T) {
 
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	if _, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx2, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(2, &secondEnded), nil
 	}); err != nil {
 		t.Fatalf("Open 2: %v", err)
@@ -758,7 +869,7 @@ func TestTable_ConcurrentCancelLastHolders(t *testing.T) {
 	for i := 0; i < n; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancels[i] = cancel
-		if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) {
+		if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) {
 			if i == 0 {
 				return ending(1, &ended), nil
 			}
@@ -799,7 +910,7 @@ func TestTable_ReclaimRacesFire(t *testing.T) {
 		var firstEnded, secondEnded atomic.Bool
 		var creates atomic.Int32
 		ctx1, cancel1 := context.WithCancel(context.Background())
-		first, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+		first, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) {
 			creates.Add(1)
 			return ending(1, &firstEnded), nil
 		})
@@ -810,7 +921,7 @@ func TestTable_ReclaimRacesFire(t *testing.T) {
 		waitKeyMsg(t, h, MsgOrphan, "a")
 
 		ctx2, cancel2 := context.WithCancel(context.Background())
-		second, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+		second, err := tab.Open(ctx2, "a", slog.New(h), TableGrace, func() (any, error) {
 			creates.Add(1)
 			return ending(2, &secondEnded), nil
 		})
@@ -872,7 +983,7 @@ func TestTable_ZeroGraceOpenRacesCancel(t *testing.T) {
 		tab := NewTable(0)
 		var ended, secondEnded atomic.Bool
 		ctx1, cancel1 := context.WithCancel(context.Background())
-		first, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+		first, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) {
 			return ending(1, &ended), nil
 		})
 		if err != nil {
@@ -890,7 +1001,7 @@ func TestTable_ZeroGraceOpenRacesCancel(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			second, openErr = tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+			second, openErr = tab.Open(ctx2, "a", slog.New(h), TableGrace, func() (any, error) {
 				return ending(2, &secondEnded), nil
 			})
 		}()
@@ -947,7 +1058,7 @@ func TestTable_OpenLoggerLevelGatesPutDispose(t *testing.T) {
 	infoH := &levelGate{min: slog.LevelInfo}
 	tab := NewTable(time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx, "a", slog.New(infoH), func() (any, error) { return &box{n: 1}, nil }); err != nil {
+	if _, err := tab.Open(ctx, "a", slog.New(infoH), TableGrace, func() (any, error) { return &box{n: 1}, nil }); err != nil {
 		t.Fatalf("info Open: %v", err)
 	}
 	cancel()
@@ -958,7 +1069,7 @@ func TestTable_OpenLoggerLevelGatesPutDispose(t *testing.T) {
 
 	debugH := &levelGate{min: slog.LevelDebug}
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx2, "b", slog.New(debugH), func() (any, error) { return &box{n: 2}, nil }); err != nil {
+	if _, err := tab.Open(ctx2, "b", slog.New(debugH), TableGrace, func() (any, error) { return &box{n: 2}, nil }); err != nil {
 		t.Fatalf("debug Open: %v", err)
 	}
 	cancel2()
@@ -987,7 +1098,7 @@ func TestTable_DisposeLogFollowsClose(t *testing.T) {
 	tab := NewTable(5 * time.Millisecond)
 	probe := &closeProbe{handler: h, key: "a"}
 	ctx, cancel := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) { return probe, nil }); err != nil {
+	if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) { return probe, nil }); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 
@@ -1008,7 +1119,7 @@ func TestTable_ResetDisposeLogFollowsClose(t *testing.T) {
 	probe := &closeProbe{handler: h, key: "a"}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) { return probe, nil }); err != nil {
+	if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) { return probe, nil }); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 
@@ -1032,7 +1143,7 @@ func TestTable_OrphanPrecedesDisposeAtTinyGrace(t *testing.T) {
 		h := &recHandler{}
 		tab := NewTable(time.Nanosecond)
 		ctx, cancel := context.WithCancel(context.Background())
-		if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) { return &box{n: 1}, nil }); err != nil {
+		if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) { return &box{n: 1}, nil }); err != nil {
 			cancel()
 			t.Fatalf("round %d Open: %v", i, err)
 		}
@@ -1051,7 +1162,7 @@ func TestTable_BindWhileArmingReclaims(t *testing.T) {
 	tab := NewTable(time.Minute)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) { return &box{n: 1}, nil }); err != nil {
+	if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) { return &box{n: 1}, nil }); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	e := mustSlotA(t, tab)
@@ -1103,7 +1214,7 @@ func TestTable_ReclaimAndReleaseInsideOrphanWindowStillArms(t *testing.T) {
 	var ended atomic.Bool
 
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &ended), nil
 	}); err != nil {
 		cancel1()
@@ -1119,7 +1230,7 @@ func TestTable_ReclaimAndReleaseInsideOrphanWindowStillArms(t *testing.T) {
 	// while arming is still set and returns early.
 	doneCtx, cancelDone := context.WithCancel(context.Background())
 	cancelDone()
-	if _, err := tab.Open(doneCtx, "a", slog.New(h), func() (any, error) { return &box{n: 2}, nil }); err != nil {
+	if _, err := tab.Open(doneCtx, "a", slog.New(h), TableGrace, func() (any, error) { return &box{n: 2}, nil }); err != nil {
 		close(h.release)
 		t.Fatalf("Open 2: %v", err)
 	}
@@ -1153,7 +1264,7 @@ func TestTable_OpenInsideOrphanWindowKeepsIncarnationLive(t *testing.T) {
 	var ended atomic.Bool
 
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	first, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) { return ending(1, &ended), nil })
+	first, err := tab.Open(ctx1, "a", slog.New(h), TableGrace, func() (any, error) { return ending(1, &ended), nil })
 	if err != nil {
 		cancel1()
 		t.Fatalf("Open 1: %v", err)
@@ -1165,7 +1276,7 @@ func TestTable_OpenInsideOrphanWindowKeepsIncarnationLive(t *testing.T) {
 	<-h.entered
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
-	second, err := tab.Open(ctx2, "a", slog.New(h), func() (any, error) {
+	second, err := tab.Open(ctx2, "a", slog.New(h), TableGrace, func() (any, error) {
 		t.Error("an Open inside the orphan window must reclaim, not create")
 		return &box{n: 2}, nil
 	})
@@ -1229,7 +1340,7 @@ func TestTable_GoroutinesReturnToBaseline(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	for i := 0; i < keys; i++ {
 		key := "k" + strconv.Itoa(i)
-		if _, err := tab.Open(ctx, key, slog.New(h), func() (any, error) { return &box{n: i}, nil }); err != nil {
+		if _, err := tab.Open(ctx, key, slog.New(h), TableGrace, func() (any, error) { return &box{n: i}, nil }); err != nil {
 			cancel()
 			t.Fatalf("Open %s: %v", key, err)
 		}
@@ -1290,7 +1401,7 @@ func TestTable_HolderWithoutDoneChannelIsPolled(t *testing.T) {
 	tab := NewTable(time.Millisecond)
 	var ended atomic.Bool
 	holder := &nilDoneCtx{}
-	if _, err := tab.Open(holder, "a", slog.New(h), func() (any, error) {
+	if _, err := tab.Open(holder, "a", slog.New(h), TableGrace, func() (any, error) {
 		return ending(1, &ended), nil
 	}); err != nil {
 		t.Fatalf("Open: %v", err)
@@ -1312,7 +1423,7 @@ func TestTable_ValueWithoutCloseStillDisposes(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
-	stored, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) { return "no closer here", nil })
+	stored, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) { return "no closer here", nil })
 	if err != nil {
 		cancel()
 		t.Fatalf("Open: %v", err)
@@ -1375,7 +1486,7 @@ func TestTable_RepeatedReclaimCyclesKeepOneIncarnation(t *testing.T) {
 		return ending(1, &ended), nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	first, err := tab.Open(ctx, "a", slog.New(h), create)
+	first, err := tab.Open(ctx, "a", slog.New(h), TableGrace, create)
 	if err != nil {
 		cancel()
 		t.Fatalf("Open: %v", err)
@@ -1387,7 +1498,7 @@ func TestTable_RepeatedReclaimCyclesKeepOneIncarnation(t *testing.T) {
 		waitUntil(t, func() bool { return countKeyMsg(h.events(), MsgOrphan, "a") == cycle+1 })
 
 		next, nextCancel := context.WithCancel(context.Background())
-		stored, err := tab.Open(next, "a", slog.New(h), create)
+		stored, err := tab.Open(next, "a", slog.New(h), TableGrace, create)
 		if err != nil {
 			nextCancel()
 			t.Fatalf("cycle %d Open: %v", cycle, err)
@@ -1430,13 +1541,13 @@ func TestTable_HolderIdsAreReleased(t *testing.T) {
 	tab := NewTable(graceNoRace)
 	keepAlive, keepAliveCancel := context.WithCancel(context.Background())
 	defer keepAliveCancel()
-	if _, err := tab.Open(keepAlive, "a", slog.New(h), func() (any, error) { return &box{n: 1}, nil }); err != nil {
+	if _, err := tab.Open(keepAlive, "a", slog.New(h), TableGrace, func() (any, error) { return &box{n: 1}, nil }); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 
 	for i := 0; i < holders; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
-		if _, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) { return &box{n: 2}, nil }); err != nil {
+		if _, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) { return &box{n: 2}, nil }); err != nil {
 			cancel()
 			t.Fatalf("Open %d: %v", i, err)
 		}
@@ -1458,11 +1569,11 @@ func TestTable_OrphanAndDisposeUseTheLastBindingLogger(t *testing.T) {
 	secondLog := &recHandler{}
 	tab := NewTable(time.Millisecond)
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx1, "a", slog.New(firstLog), func() (any, error) { return &box{n: 1}, nil }); err != nil {
+	if _, err := tab.Open(ctx1, "a", slog.New(firstLog), TableGrace, func() (any, error) { return &box{n: 1}, nil }); err != nil {
 		t.Fatalf("Open 1: %v", err)
 	}
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	if _, err := tab.Open(ctx2, "a", slog.New(secondLog), func() (any, error) { return &box{n: 2}, nil }); err != nil {
+	if _, err := tab.Open(ctx2, "a", slog.New(secondLog), TableGrace, func() (any, error) { return &box{n: 2}, nil }); err != nil {
 		t.Fatalf("Open 2: %v", err)
 	}
 
@@ -1491,12 +1602,12 @@ func TestTable_ManyKeysDisposeIndependently(t *testing.T) {
 
 	for i := 1; i < keys; i++ {
 		key := "k" + strconv.Itoa(i)
-		if _, err := tab.Open(keep, key, slog.New(h), func() (any, error) { return &box{n: i}, nil }); err != nil {
+		if _, err := tab.Open(keep, key, slog.New(h), TableGrace, func() (any, error) { return &box{n: i}, nil }); err != nil {
 			t.Fatalf("Open %s: %v", key, err)
 		}
 	}
 	goneCtx, goneCancel := context.WithCancel(context.Background())
-	if _, err := tab.Open(goneCtx, "k0", slog.New(h), func() (any, error) { return &box{n: 0}, nil }); err != nil {
+	if _, err := tab.Open(goneCtx, "k0", slog.New(h), TableGrace, func() (any, error) { return &box{n: 0}, nil }); err != nil {
 		goneCancel()
 		t.Fatalf("Open k0: %v", err)
 	}
@@ -1529,7 +1640,7 @@ func TestTable_ResetRacingOpenClosesEveryValue(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			_, err := tab.Open(ctx, "a", slog.New(h), func() (any, error) {
+			_, err := tab.Open(ctx, "a", slog.New(h), TableGrace, func() (any, error) {
 				v := &counterClose{}
 				mu.Lock()
 				values = append(values, v)

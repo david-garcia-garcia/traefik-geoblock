@@ -23,10 +23,11 @@ func Default() *Table {
 }
 
 // Open is Default().Open: create-once for key on the process table and bind ctx.
-// logger is required. If the value has Close(), the table calls it when the incarnation ends,
-// and waits for it to return before logging dispose. Close() must not block.
-func Open(ctx context.Context, key string, logger *slog.Logger, create func() (any, error)) (any, error) {
-	return Default().Open(ctx, key, logger, create)
+// logger is required. grace is this incarnation's own, and TableGrace takes the process table's
+// (DefaultGrace unless a test replaced it with ResetWith). If the value has Close(), the table calls
+// it when the incarnation ends, and waits for it to return before logging dispose. Close() must not block.
+func Open(ctx context.Context, key string, logger *slog.Logger, grace time.Duration, create func() (any, error)) (any, error) {
+	return Default().Open(ctx, key, logger, grace, create)
 }
 
 // Reset tears down the process table (cancels every lifetime) and installs a fresh one. Tests only.

@@ -11,6 +11,10 @@ import (
 const (
 	DefaultGrace = 10 * time.Second
 
+	// TableGrace is the grace an Open passes to take the table's grace instead of naming its own.
+	// Any negative duration means the same; this is the spelling to use.
+	TableGrace time.Duration = -1
+
 	MsgPut     = "reclaim_put"
 	MsgBind    = "reclaim_bind"
 	MsgOrphan  = "reclaim_orphan"
@@ -49,6 +53,9 @@ type slot struct {
 	cancel  context.CancelFunc
 	holders map[uint64]struct{}
 	nextID  uint64
+	// grace is this incarnation's wait after its last holder goes, fixed by the Open that created
+	// it. The table's grace is what an Open takes when it names none. A later Open never changes it.
+	grace time.Duration
 	// valueClosed is closed by the lifetime goroutine once it has run Close on the value.
 	// fire and Reset receive on it before they log dispose, so every slot must have one.
 	valueClosed chan struct{}
@@ -104,8 +111,10 @@ func stopValue(value any) {
 // Open returns the stored value for key, creating it once, and tracks ctx until it is done.
 // create takes no arguments: Yaegi cannot call func(context.Context) (any, error) (it assigns life onto the value).
 // logger is required; it is the only logger for this Open and is stored on the slot for orphan and dispose.
+// grace is this incarnation's wait after its last holder goes; pass TableGrace to take the table's.
+// It applies only when this Open creates the value — an Open that finds one keeps that incarnation's grace.
 // If the value has Close(), the table calls it when this incarnation ends, before it logs dispose.
-func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, create func() (any, error)) (any, error) {
+func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, grace time.Duration, create func() (any, error)) (any, error) {
 	if t == nil {
 		return nil, fmt.Errorf("reclaim: open %q: nil table", key)
 	}
@@ -150,12 +159,16 @@ func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, creat
 	}
 
 	// First put for this key. Close the value when life is canceled (fire / Reset).
+	if grace < 0 {
+		grace = t.grace
+	}
 	e := &slot{
-		value:   created,
-		cancel:  cancel,
-		holders: map[uint64]struct{}{},
+		value:       created,
+		cancel:      cancel,
+		holders:     map[uint64]struct{}{},
+		grace:       grace,
 		valueClosed: make(chan struct{}),
-		logger:  logger,
+		logger:      logger,
 	}
 	t.items[key] = e
 	id, _ := t.bindLocked(e)
@@ -241,16 +254,17 @@ func (t *Table) drop(key string, id uint64, e *slot) {
 	// the one logged above: an Open can have reclaimed and released the slot during that line,
 	// and its own drop returned early on the arming window, leaving the arm to this one.
 	gen := e.graceGen
+	// This incarnation's own grace, not the table's: the Open that created it may have named one.
 	// Zero grace ends the incarnation right here, on this watcher goroutine: fire runs the value's
 	// Close and blocks until it returns, so a slow Close holds up this drop rather than a timer.
-	if t.grace == 0 {
+	if e.grace == 0 {
 		t.mu.Unlock()
 		t.fire(key, e, gen)
 		return
 	}
 	// Grace is armed for this generation only. A later reclaim bumps the generation, which is what
 	// makes the queued fire a no-op even though the timer still runs.
-	e.graceTimer = time.AfterFunc(t.grace, func() { t.fire(key, e, gen) })
+	e.graceTimer = time.AfterFunc(e.grace, func() { t.fire(key, e, gen) })
 	t.mu.Unlock()
 }
 
