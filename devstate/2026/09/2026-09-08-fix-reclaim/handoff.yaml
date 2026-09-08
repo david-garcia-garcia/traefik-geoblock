@@ -11,7 +11,7 @@ comments: none
 localTests: none
 requirement: requirement.md
 explore: explore.md
-change: none
+change: reclaim-dispose-determinism
 pr:
   id: 82
   url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/82
