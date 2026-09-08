@@ -4,8 +4,8 @@ JobName: 2026-09-08-reclaim-lifecycle
 
 | Phase | Work | Card | At |
 |-------|------|------|----|
-| prepare | [ ] | [ ] | |
-| explore | [ ] | [ ] | |
+| prepare | [x] | [x] | 2026-09-08T21:03:38Z |
+| explore | [x] | [x] | 2026-09-08T21:13:16Z |
 | propose | [ ] | [ ] | |
 | implement | [ ] | [ ] | |
 | codereview | [ ] | [ ] | |
