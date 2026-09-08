@@ -20,21 +20,21 @@ const (
 
 // Table stores one value per key and drives it through create, sleep, wake, and close.
 //
-//	         Open, key absent
-//	                |
-//	            create()                 Wake()
-//	                v                       |
-//	  Open ------> AWAKE                    |
-//	                |                       |
-//	   last holder Done                     |
-//	                v                       |
-//	            Sleep()                     |
-//	                v                       |
-//	             ASLEEP ---- Open before ---+
-//	                |         grace ends
-//	   grace elapsed / Reset / grace == 0
-//	                v
-//	             Close()  key deleted
+//	       Open, key absent
+//	              |
+//	          create()                 Wake()
+//	              v                       |
+//	Open ------> AWAKE                    |
+//	              |                       |
+//	 last holder Done                     |
+//	              v                       |
+//	          Sleep()                     |
+//	              v                       |
+//	           ASLEEP ---- Open before ---+
+//	              |         grace ends
+//	 grace elapsed / Reset / grace == 0
+//	              v
+//	           Close()  key deleted
 //
 // Every state change happens under t.mu; every call into the value (create, Wake, Sleep, Close)
 // happens outside it with the slot parked in slotBusy. One key's transitions are therefore
@@ -202,6 +202,12 @@ func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, creat
 			if err != nil {
 				return nil, err
 			}
+		case slotGone:
+			// This incarnation has ended. Take the key back and create a fresh one.
+			if t.items[key] == s {
+				delete(t.items, key)
+			}
+			t.mu.Unlock()
 		}
 	}
 }
@@ -375,6 +381,9 @@ func (t *Table) Reset() {
 			dispose(key, value, logger)
 		case slotAsleep:
 			dispose(key, value, logger)
+		case slotBusy, slotGone:
+			// The goroutine that owns this transition ends the incarnation itself: it finds the
+			// slot unmapped, or its grace wait already released by the loop above.
 		}
 	}
 }

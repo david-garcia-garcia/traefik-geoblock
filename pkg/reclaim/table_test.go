@@ -850,11 +850,8 @@ func TestTable_HashChangeProof(t *testing.T) {
 	if got := keySeq(h.events(), "a"); !reflect.DeepEqual(got, []string{MsgPut, MsgBind, MsgOrphan, MsgDispose}) {
 		t.Fatalf("a sequence %v", got)
 	}
-	if countKeyMsg(h.events(), MsgDispose, "b") != 0 {
-		t.Fatal("b was disposed")
-	}
-	if countKeyMsg(h.events(), MsgPut, "b") != 1 {
-		t.Fatal("b was created more than once")
+	if got := keySeq(h.events(), "b"); !reflect.DeepEqual(got, []string{MsgPut, MsgBind}) {
+		t.Fatalf("b sequence %v, want the still-held key to be untouched by a's ending", got)
 	}
 }
 
