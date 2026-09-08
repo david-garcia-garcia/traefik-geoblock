@@ -9,6 +9,6 @@ JobName: 2026-09-08-non-json-logs
 | propose | [x] | [x] | 2026-09-08T12:48:26Z |
 | implement | [x] | [x] | 2026-09-08T12:50:49Z |
 | codereview | [x] | [x] | 2026-09-08T12:54:19Z |
-| devdocsimpact | [x] | [ ] | |
-| archive | [ ] | [ ] | |
-| pullrequest | [ ] | [ ] | |
+| devdocsimpact | [x] | [x] | 2026-09-08T12:57:32Z |
+| archive | [x] | [x] | 2026-09-08T12:57:32Z |
+| pullrequest | [x] | [x] | 2026-09-08T12:57:32Z |

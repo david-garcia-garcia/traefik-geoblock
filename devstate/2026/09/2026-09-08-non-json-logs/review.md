@@ -27,3 +27,21 @@ phase: codereview
 findings: P3 0 hard; Standards 4 judgement skipped
 fixed: none
 skipped: helper rename, shared capture extract
+
+## devdocsimpact (2026-09-08)
+phase: devdocsimpact
+findings: none
+fixed: none
+skipped: no usage packet; calling logging.New already documented by tests
+
+## archive (2026-09-08)
+phase: archive
+findings: fold observability leaf
+fixed: synced ADDED requirement; moved to archive/2026-09-08-crowdsec-compatible-stdout-logs
+skipped: none
+
+## pullrequest (2026-09-08)
+phase: pullrequest
+findings: CI green
+fixed: title ✅ test(logging): lock CrowdSec-safe stdout line shapes
+skipped: upstream issue status comment
