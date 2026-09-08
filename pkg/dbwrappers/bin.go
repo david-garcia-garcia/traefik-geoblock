@@ -67,7 +67,7 @@ func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, err
 	if cfg.OwnerPlugin != "" {
 		wrap = logging.NewOwner(cfg.OwnerPlugin, cfg.OwnerLevel)
 	}
-	v, err := reclaim.Open(ctx, key, logger, func() (any, error) {
+	v, err := reclaim.Open(ctx, key, logger, reclaim.TableGrace, func() (any, error) {
 		return newBIN(cfg, wrap)
 	})
 	if err != nil {

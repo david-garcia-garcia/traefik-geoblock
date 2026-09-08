@@ -69,11 +69,58 @@ func hasSubseq(got [][2]string, want [][2]string) bool {
 	return i == len(want)
 }
 
-func useShortLeases(t *testing.T) *recHandler {
+// graceNoRace is long enough that a test asserting the reclaim branch cannot lose the grace timer.
+// Same role, and deliberately the same name, as graceNoRace in pkg/reclaim.
+const graceNoRace = 5 * time.Second
+
+// graceDisposeFast lets an unreclaimed key reach dispose quickly; wait for the event, never a fixed sleep.
+const graceDisposeFast = 25 * time.Millisecond
+
+// waitBudget is a timeout guard, not an assertion: long enough that a loaded runner cannot exhaust it.
+const waitBudget = 10 * time.Second
+
+// resetTableWithRecorder resets the process table to grace and returns a handler recording its reclaim lines.
+func resetTableWithRecorder(t *testing.T, grace time.Duration) *recHandler {
 	t.Helper()
 	h := &recHandler{}
-	ResetWith(25 * time.Millisecond)
+	ResetWith(grace)
 	return h
+}
+
+// settleFirstTick gives a wrapper's initial update tick time to finish before the test returns.
+//
+// It is a sleep because there is nothing to wait on. `Updater.Start` runs the first tick on a new
+// goroutine, `tick` does not check for stop before it downloads, and `Updater.Stop` only closes a
+// channel — so a disposed wrapper can still write into its directory, and on a loaded runner that
+// write races the RemoveAll that `t.TempDir` registers. Fixing that belongs in `pkg/dbsource`
+// (cancel the in-flight request and wait for the goroutine); see the card follow-up.
+func settleFirstTick() {
+	time.Sleep(50 * time.Millisecond)
+}
+
+// releaseLeases ends the given leases and then closes every wrapper the process table still holds.
+// Reset waits for each Close, so the update tickers are stopped before the test's TempDir and test
+// server are torn down. Without this the wrapper outlives the test by a whole grace period and its
+// ticker writes into a directory t.TempDir is trying to remove.
+func releaseLeases(cancels ...context.CancelFunc) {
+	for _, cancel := range cancels {
+		cancel()
+	}
+	Reset()
+}
+
+// waitKeyMsg fails if msg for key is still missing after waitBudget.
+// Same role, and deliberately the same name, as waitKeyMsg in pkg/reclaim.
+func waitKeyMsg(t *testing.T, h *recHandler, msg, key string) {
+	t.Helper()
+	deadline := time.Now().Add(waitBudget)
+	for time.Now().Before(deadline) {
+		if hasEvent(h.events(), msg, key) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for %s on %s: %+v", msg, key, h.events())
 }
 
 func silentTickerURL(t *testing.T) string {
@@ -88,7 +135,7 @@ func silentTickerURL(t *testing.T) string {
 func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	useShortLeases(t)
+	h := resetTableWithRecorder(t, graceNoRace)
 	cfg := BINConfig{
 		Dir: t.TempDir(),
 		Source: dbsource.Config{
@@ -99,8 +146,10 @@ func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {
 		},
 		MinAge: 365 * 24 * time.Hour,
 	}
+	key := binKey(cfg)
+	spy := slog.New(h)
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	a, err := OpenBIN(ctx1, cfg, testLogger())
+	a, err := OpenBIN(ctx1, cfg, spy)
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
@@ -108,9 +157,12 @@ func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {
 		t.Fatal("expected keep-current loop")
 	}
 	cancel1()
+	// Wait for the orphan line: without it the second Open often lands before the first holder's
+	// watcher has dropped, so it is a plain bind and the reclaim branch is never taken.
+	waitKeyMsg(t, h, reclaim.MsgOrphan, key)
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
-	b, err := OpenBIN(ctx2, cfg, testLogger())
+	defer releaseLeases(cancel2)
+	b, err := OpenBIN(ctx2, cfg, spy)
 	if err != nil {
 		t.Fatalf("OpenBIN reclaim: %v", err)
 	}
@@ -120,21 +172,31 @@ func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {
 	if a.updater != b.updater {
 		t.Fatal("expected one ticker")
 	}
+	// The table took the reclaim branch, and this incarnation is the one it kept: dispose for the
+	// key would mean the wrapper the test is about to use had its Close run.
+	waitKeyMsg(t, h, reclaim.MsgReclaim, key)
+	if hasEvent(h.events(), reclaim.MsgDispose, key) {
+		t.Fatalf("reclaimed handle must not be disposed: %+v", h.events())
+	}
 	rec := testBINRecord(t, b)
 	if rec.Country != "US" {
 		t.Fatalf("lookup: %+v", rec)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// The reclaimed wrapper stays usable while ctx2 holds it.
 	rec = testBINRecord(t, b)
 	if rec.Country != "US" {
-		t.Fatalf("after grace: %+v", rec)
+		t.Fatalf("after reclaim: %+v", rec)
 	}
+	if hasEvent(h.events(), reclaim.MsgDispose, key) {
+		t.Fatalf("reclaimed handle disposed while held: %+v", h.events())
+	}
+	settleFirstTick()
 }
 
 func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	h := useShortLeases(t)
+	h := resetTableWithRecorder(t, graceDisposeFast)
 	cfg1 := BINConfig{
 		Dir: t.TempDir(),
 		Source: dbsource.Config{
@@ -182,12 +244,13 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 	}
 	cancel1()
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
+	defer releaseLeases(cancel2)
 	h2, err := OpenBIN(ctx2, cfg2, spy)
 	if err != nil {
 		t.Fatalf("H2: %v", err)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// Dispose is logged only after the old wrapper's Close returned, so H1 is stopped by now.
+	waitKeyMsg(t, h, reclaim.MsgDispose, key1)
 	if _, err := h1.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil {
 		t.Fatal("H1 loop must be stopped")
 	}
@@ -208,7 +271,7 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 func TestOpenMMDB_SameHashReclaimKeepsTicker(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	useShortLeases(t)
+	h := resetTableWithRecorder(t, graceNoRace)
 	cfg := MMDBConfig{
 		Dir: t.TempDir(),
 		Source: dbsource.Config{
@@ -219,8 +282,10 @@ func TestOpenMMDB_SameHashReclaimKeepsTicker(t *testing.T) {
 		},
 		MinAge: 365 * 24 * time.Hour,
 	}
+	key := mmdbKey(cfg)
+	spy := slog.New(h)
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	a, err := OpenMMDB(ctx1, cfg, testLogger())
+	a, err := OpenMMDB(ctx1, cfg, spy)
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
@@ -228,14 +293,23 @@ func TestOpenMMDB_SameHashReclaimKeepsTicker(t *testing.T) {
 		t.Fatal("expected keep-current loop")
 	}
 	cancel1()
+	// Wait for the orphan line: without it the second Open often lands before the first holder's
+	// watcher has dropped, so it is a plain bind and the reclaim branch is never taken.
+	waitKeyMsg(t, h, reclaim.MsgOrphan, key)
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
-	b, err := OpenMMDB(ctx2, cfg, testLogger())
+	defer releaseLeases(cancel2)
+	b, err := OpenMMDB(ctx2, cfg, spy)
 	if err != nil {
 		t.Fatalf("OpenMMDB reclaim: %v", err)
 	}
 	if a != b || a.updater != b.updater {
 		t.Fatal("expected one wrapper and one ticker")
+	}
+	// The table took the reclaim branch, and this incarnation is the one it kept: dispose for the
+	// key would mean the wrapper the test is about to use had its Close run.
+	waitKeyMsg(t, h, reclaim.MsgReclaim, key)
+	if hasEvent(h.events(), reclaim.MsgDispose, key) {
+		t.Fatalf("reclaimed handle must not be disposed: %+v", h.events())
 	}
 	var rec struct {
 		CountryCode string `maxminddb:"country_code"`
@@ -243,16 +317,20 @@ func TestOpenMMDB_SameHashReclaimKeepsTicker(t *testing.T) {
 	if err := b.Lookup("8.8.8.8", &rec); err != nil || rec.CountryCode != "US" {
 		t.Fatalf("lookup: %+v %v", rec, err)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// The reclaimed wrapper stays usable while ctx2 holds it.
 	if err := b.Lookup("8.8.8.8", &rec); err != nil || rec.CountryCode != "US" {
-		t.Fatalf("after grace: %+v %v", rec, err)
+		t.Fatalf("after reclaim: %+v %v", rec, err)
 	}
+	if hasEvent(h.events(), reclaim.MsgDispose, key) {
+		t.Fatalf("reclaimed handle disposed while held: %+v", h.events())
+	}
+	settleFirstTick()
 }
 
 func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
-	h := useShortLeases(t)
+	h := resetTableWithRecorder(t, graceDisposeFast)
 	lite := testLiteMMDB(t)
 	cfg1 := MMDBConfig{
 		Dir: t.TempDir(),
@@ -301,12 +379,13 @@ func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 	}
 	cancel1()
 	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
+	defer releaseLeases(cancel2)
 	h2, err := OpenMMDB(ctx2, cfg2, spy)
 	if err != nil {
 		t.Fatalf("H2: %v", err)
 	}
-	time.Sleep(80 * time.Millisecond)
+	// Dispose is logged only after the old wrapper's Close returned, so H1 is stopped by now.
+	waitKeyMsg(t, h, reclaim.MsgDispose, key1)
 	var rec struct {
 		CountryCode string `maxminddb:"country_code"`
 	}

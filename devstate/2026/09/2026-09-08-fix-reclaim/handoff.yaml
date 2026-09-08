@@ -1,0 +1,20 @@
+issueKey: 2026-09-08-fix-reclaim
+jobName: 2026-09-08-fix-reclaim
+issueHost: local
+issueRef: none
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified-with-gaps
+src: d7ccd2fc8a8380a495f8f5e3b1ce1bf5df212068bb6159211d51006bbf6a6545
+comments: none
+localTests: pass
+requirement: requirement.md
+explore: explore.md
+change: archive/2026-09-08-reclaim-dispose-determinism
+pr:
+  id: 82
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/82
+ci: success
+ciRun: https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34254850208
+reviewedHead: ec6db3eada429a47e4eff66d218311d9b44d9462
