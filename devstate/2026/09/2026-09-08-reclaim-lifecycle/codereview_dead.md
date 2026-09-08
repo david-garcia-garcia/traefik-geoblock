@@ -20,8 +20,8 @@
 
    Marked judgement, not hard: `Updater`, `Start`, and `Stop` are exported on an exported type, and a deletion here is not a safe unattended apply — dropping the guard turns any future double `Start` into a leaked ticker goroutine. Record the contract mismatch instead of removing the code.
    → Either make `Wake` reuse the stored `*Updater` (`w.updater.Start(w.onUpdate)`) so the restart path this diff documents and tests is the production path, or drop the restart claim from the `Updater` and `Start` doc comments, delete the `u.stop != nil` guard together with the ticker/stop reset in `Stop`, and retarget `TestUpdater_StopThenStartRunsAFreshLoop` at the sleep/wake cycle in `pkg/dbwrappers/reclaim_test.go`, which is what production actually does.
-   Status: open
-   Argument: none.
+   Status: done
+   Argument: Applied the first of the two options: Wake now restarts the updater the constructor built (w.currentUpdater().Start(w.onUpdate)) instead of building a fresh one through startUpdate (ad8402b), so the restart path the Updater documents and tests is the production path. Updater.Start is now nil-safe, matching Stop, because a source with no URL has no updater. As a side effect Wake no longer has an error to swallow, so it is infallible in code and not only by contract.
 
 ## Checked and clean
 

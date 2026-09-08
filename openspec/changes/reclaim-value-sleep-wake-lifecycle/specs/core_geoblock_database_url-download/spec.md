@@ -28,3 +28,14 @@ the previous run.
 - **WHEN** a source is stopped and then stopped again
 - **THEN** neither call panics
 - **AND** the loop is still finished
+
+### Requirement: A failed update does not log the download credentials
+The download URL carries the operator's API token in its query. When an update loop reports a
+failed update, the log line SHALL NOT contain the URL's query or userinfo, from any failure
+including a transport failure whose error text embeds the requested URL. The line SHALL still
+name the source key and the host it failed to reach, so the operator can act on it.
+
+#### Scenario: A transport failure keeps the token out of the log
+- **WHEN** an update for a source whose URL carries a token fails to reach the server
+- **THEN** the logged error does not contain the token
+- **AND** it names the source key and the host

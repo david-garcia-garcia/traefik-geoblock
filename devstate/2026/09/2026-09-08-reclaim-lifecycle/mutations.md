@@ -30,9 +30,31 @@ database, so `Update` failed at the build-date read and the callback could never
 `TestUpdater_RunningTickInvokesTheCallback` is the positive control that now keeps that honest,
 and the gated server serves the real seed MMDB.
 
+## Post-review mutations
+
+Added while applying the code review findings, so each fix has a test that fails without it.
+
+| # | Mutation | Caught by |
+| --- | --- | --- |
+| M9 | `reclaim_orphan` written after the slot leaves `slotBusy` (the Reset window the Spec axis found) | `ResetRacingADropKeepsOrphanBeforeDispose` — round 128 of 400, sequence `put bind dispose orphan` |
+| M10 | `Reset` also ends a busy incarnation instead of leaving it to the goroutine that owns it | `ResetDuringSleepStillOrphansBeforeDispose` |
+| M11 | every `Open` takes the slot logger, including one that never binds | `AnOpenThatOnlyWaitsDoesNotTakeTheLogger` |
+| M12 | `tick` logs the raw transport error | `FailedDownloadDoesNotLogTheToken` — printed the live token |
+| M4b | zero grace leaves the key mapped, against the rewritten deterministic test | `ZeroGraceRacingOpenIsPlainBind` |
+
+M4's original test did catch M4, contrary to the Coverage axis's reasoning, but it caught it by
+winning a race. The rewrite holds the value inside `Sleep()` so the window is entered every run.
+
 ## Contention run
 
-`GOMAXPROCS=2` with 12 hidden `Start-Process` CPU burners:
+`GOMAXPROCS=2` with 12 hidden `Start-Process` CPU burners.
+
+Before the review fixes:
 
 - `go test ./pkg/reclaim/ -count=60` — ok, 44.8s
 - `go test ./pkg/dbwrappers/ ./pkg/dbsource/ -count=10` — ok, 23.0s and 24.8s
+
+After:
+
+- `go test ./pkg/reclaim/ -count=40` — ok, 35.6s
+- `go test ./pkg/dbwrappers/ ./pkg/dbsource/ -count=8` — ok, 10.6s and 9.6s
