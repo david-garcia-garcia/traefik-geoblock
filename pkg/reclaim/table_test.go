@@ -813,14 +813,12 @@ func TestTable_ReclaimRacesFire(t *testing.T) {
 
 		reclaimed := second == first
 		if reclaimed {
-			// The queued fire must leave an incarnation with a live holder alone.
-			deadline := time.Now().Add(grace * 6)
-			for time.Now().Before(deadline) {
-				if firstEnded.Load() {
-					cancel2()
-					t.Fatalf("round %d late fire disposed a live incarnation", i)
-				}
-				time.Sleep(time.Millisecond)
+			// The queued fire must leave an incarnation with a live holder alone. Both flags are
+			// monotonic, so one wait past the grace edge catches a wrong dispose as well as polling.
+			time.Sleep(grace * 2)
+			if firstEnded.Load() {
+				cancel2()
+				t.Fatalf("round %d late fire disposed a live incarnation", i)
 			}
 			if secondEnded.Load() {
 				cancel2()
@@ -1029,16 +1027,87 @@ func TestTable_BindWhileArmingReclaims(t *testing.T) {
 
 	tab.mu.Lock()
 	e.arming = true
-	armingGen := e.graceGen
+	genBeforeBind := e.graceGen
 	_, reclaimed := tab.bindLocked(e)
-	stillArmingGen := e.graceGen
+	genAfterBind := e.graceGen
 	tab.mu.Unlock()
 
 	if !reclaimed {
 		t.Fatal("a bind inside the arming window must report a reclaim")
 	}
-	if stillArmingGen == armingGen {
+	if genAfterBind == genBeforeBind {
 		t.Fatal("a bind inside the arming window must bump the grace generation so the arm is skipped")
+	}
+}
+
+// gateHandler records like recHandler and holds the first line whose message is gate,
+// so a test can stop the table inside the window between the orphan line and the arm.
+type gateHandler struct {
+	recHandler
+	gate    string
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+// Handle records the line, then blocks the first gate line until the test releases it.
+func (h *gateHandler) Handle(ctx context.Context, r slog.Record) error {
+	err := h.recHandler.Handle(ctx, r)
+	if r.Message == h.gate {
+		h.once.Do(func() {
+			close(h.entered)
+			<-h.release
+		})
+	}
+	return err
+}
+
+// TestTable_ReclaimAndReleaseInsideOrphanWindowStillArms pins the interleaving that can strand an
+// incarnation: a drop claims the orphan window, an Open reclaims and its already-Done holder drops
+// again inside that window, so that second drop returns early. The first drop still owns the arm,
+// and without it the slot would stay mapped forever with no holders, no timer, and Close never run.
+func TestTable_ReclaimAndReleaseInsideOrphanWindowStillArms(t *testing.T) {
+	h := &gateHandler{gate: MsgOrphan, entered: make(chan struct{}), release: make(chan struct{})}
+	tab := NewTable(5 * time.Millisecond)
+	var ended atomic.Bool
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	if _, err := tab.Open(ctx1, "a", slog.New(h), func() (any, error) {
+		return ending(1, &ended), nil
+	}); err != nil {
+		cancel1()
+		t.Fatalf("Open 1: %v", err)
+	}
+	e := mustSlotA(t, tab)
+
+	// Hold the first drop between the orphan line and the arm.
+	cancel1()
+	<-h.entered
+
+	// Reclaim inside that window with a holder that is already Done, so its own drop runs
+	// while arming is still set and returns early.
+	doneCtx, cancelDone := context.WithCancel(context.Background())
+	cancelDone()
+	if _, err := tab.Open(doneCtx, "a", slog.New(h), func() (any, error) { return &box{n: 2}, nil }); err != nil {
+		close(h.release)
+		t.Fatalf("Open 2: %v", err)
+	}
+	waitUntil(t, func() bool {
+		tab.mu.Lock()
+		defer tab.mu.Unlock()
+		return len(e.holders) == 0
+	})
+
+	close(h.release)
+	waitKeyMsg(t, &h.recHandler, MsgDispose, "a")
+	if !ended.Load() {
+		t.Fatal("the stranded incarnation must still be closed")
+	}
+	tab.mu.Lock()
+	_, mapped := tab.items["a"]
+	tab.mu.Unlock()
+	if mapped {
+		t.Fatal("the key must be evicted, not left mapped with no holders and no timer")
 	}
 }
 
@@ -1083,9 +1152,9 @@ func countMsg(ev [][2]string, msg string) int {
 }
 
 // nilDoneCtx is a holder context with no Done channel, the shape Yaegi hands a plugin.
-// It reports an error only after end is called.
+// It reports an error only after cancel is called.
 type nilDoneCtx struct {
-	ended atomic.Bool
+	canceled atomic.Bool
 }
 
 // Deadline reports no deadline.
@@ -1094,9 +1163,9 @@ func (c *nilDoneCtx) Deadline() (time.Time, bool) { return time.Time{}, false }
 // Done is nil, so the table must poll Err instead of selecting.
 func (c *nilDoneCtx) Done() <-chan struct{} { return nil }
 
-// Err reports canceled once end has been called.
+// Err reports canceled once cancel has been called.
 func (c *nilDoneCtx) Err() error {
-	if c.ended.Load() {
+	if c.canceled.Load() {
 		return context.Canceled
 	}
 	return nil
@@ -1105,8 +1174,8 @@ func (c *nilDoneCtx) Err() error {
 // Value carries nothing.
 func (c *nilDoneCtx) Value(any) any { return nil }
 
-// end makes this holder look Done to the polling watcher.
-func (c *nilDoneCtx) end() { c.ended.Store(true) }
+// cancel makes this holder look Done to the polling watcher.
+func (c *nilDoneCtx) cancel() { c.canceled.Store(true) }
 
 // TestTable_HolderWithoutDoneChannelIsPolled checks the polling branch for a holder whose
 // Done() is nil: the incarnation lives until that context reports an error.
@@ -1126,14 +1195,14 @@ func TestTable_HolderWithoutDoneChannelIsPolled(t *testing.T) {
 		t.Fatal("a holder that reports no error must keep the incarnation")
 	}
 
-	holder.end()
+	holder.cancel()
 	waitUntil(t, ended.Load)
 	waitKeyMsg(t, h, MsgDispose, "a")
 }
 
-// TestTable_ValueWithoutCloseDisposesQuietly checks that a stored value with no Close method
+// TestTable_ValueWithoutCloseStillDisposes checks that a stored value with no Close method
 // still ends its incarnation and logs dispose.
-func TestTable_ValueWithoutCloseDisposesQuietly(t *testing.T) {
+func TestTable_ValueWithoutCloseStillDisposes(t *testing.T) {
 	h := &recHandler{}
 	tab := NewTable(time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())

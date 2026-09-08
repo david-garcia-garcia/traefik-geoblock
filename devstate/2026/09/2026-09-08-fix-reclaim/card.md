@@ -1,4 +1,4 @@
-Developer review: in progress — 2026-09-08T15:52:00Z
+Developer review: in progress — 2026-09-08T15:04:21Z
 
 ## What this changes
 **Operators.** A `reclaim_dispose` line in the logs now means the database handle behind that key is already closed, and it can no longer appear before the `reclaim_orphan` line for the same key. No configuration changes.
@@ -55,27 +55,27 @@ sequenceDiagram
 ```
 
 ## Merge readiness
-Implement is complete: all 8 task groups are checked, the full local suite is green, and 25 stressed runs under eight CPU burners are green where `master` failed within two. Code review has not run yet; CI on the new head has not been measured. 2 items remain.
+Implement is complete: all 8 task groups are checked, the full local suite is green, 25 stressed runs under eight CPU burners are green where `master` failed within two, and all three CI jobs are green on this head. Code review is running. 1 item remains.
 
 Priority: P2 — a coin-flip red `Test` job on every PR, plus a `reclaim_dispose` line that can precede both the orphan line and the actual `Close()`; the workaround today is re-running CI.
-Reviewed head: 049a130
+Reviewed head: 995849a
 Owner decision: Not required for the code. One decision was taken by the human this round and is recorded below.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 5/6 | Fixed, proven against `master`, and stress-clean; code review and CI on this head are the remaining gates |
-| CI proof | N/A | Not yet measured on 049a130 |
+| Overall readiness | 5/6 | Fixed, proven against `master`, stress-clean, and CI-green; code review is the remaining gate |
+| CI proof | 6/6 | Run 34241944768 on 995849a: Test, Lint, and Integration Tests all success — https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34241944768 |
 | Local tests proof | 6/6 | `go test ./...` green; `-count=25` on `pkg/reclaim` + `pkg/dbwrappers` green under eight CPU burners |
 | Review resolution | 6/6 | No reviewer comments on PR #82 |
 
 ## Verification
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Branch | 2026-09-08-fix-reclaim pushed | `git push` (049a130) |
+| Branch | 2026-09-08-fix-reclaim pushed | `git push` (995849a) |
 | OpenSpec | reclaim-dispose-determinism valid | `openspec validate --strict reclaim-dispose-determinism` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/82 | pr-host List/Create |
-| CI | not measured on this head | pr-host check runs |
+| CI | run 34241944768 success on 995849a (Test, Lint, Integration Tests) https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34241944768 | pr-host check runs |
 | Local tests | `go test ./...` all 10 packages ok; `-count=25` stressed green | shell, this worktree |
 | Regression proof | 4 new tests fail on `origin/master`'s `table.go` in all 3 runs; a 5th fails within 57 rounds | scratch module `tmp-reclaim-proof2` |
 | Lint | no findings; `golangci-lint` gofmt hits are the CRLF working tree and include untouched `default.go` | `golangci-lint run ./pkg/reclaim/... ./pkg/dbwrappers/...`, `gofmt -l` on LF copies is empty |
@@ -109,7 +109,7 @@ Local ticket `2026-09-08-fix-reclaim` runs in its own worktree on branch `2026-0
 - [x] [P3] Add the missing coverage (nil-`Done` holder, `ResetWith` grace, logger ownership, goroutine leak guard, repeated reclaim cycles)
 - [x] [P3] Harden the 25 ms lease windows and fixed 80 ms sleeps in `pkg/dbwrappers/reclaim_test.go`
 - [ ] [P2] Code review of the component change
-- [ ] [P2] Green CI on PR #82
+- [x] [P2] Green CI on PR #82 — run 34241944768 on 995849a, all three jobs success
 
 ## Findings
 | Finding | Where | Why it matters |
@@ -128,7 +128,7 @@ Not run yet — code review is the next phase.
 | Tests in `pkg/reclaim` | 22 → 35 | The component this PR is about had no coverage of its own end-of-incarnation ordering |
 | New tests that fail on `master` | 5 | A test that passes on the buggy code proves nothing |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 049a1306e0fd49d6154fd2a1b0f793f4a37c0f0d | Card must match the branch you measured |
+| Reviewed head | 995849afe7752553e22c4514eccc8f733d90bb67 | Card must match the branch you measured |
 
 ### Stored data model
 None.

@@ -49,11 +49,13 @@ Cost accepted: a value whose `Close()` blocks now blocks the grace-timer gorouti
 
 ### Order the orphan log with the generation counter, not the mutex
 
-`drop` sets `e.arming = true` under the lock (alongside the `graceGen++` it already does), releases the lock, logs `reclaim_orphan`, then re-acquires the lock and arms `time.AfterFunc` only if the slot is still the mapped one and `graceGen` is unchanged. `bindLocked` treats `arming` exactly as it treats an armed timer: it is a reclaim, and it bumps `graceGen`.
+`drop` sets `e.arming = true` under the lock (alongside the `graceGen++` it already does), releases the lock, logs `reclaim_orphan`, then re-acquires the lock and arms `time.AfterFunc` only if the slot is still the mapped one and still has no holders. `bindLocked` treats `arming` exactly as it treats an armed timer: it is a reclaim, and it bumps `graceGen`.
 
-Why this works: grace cannot start before the orphan line is emitted, and `fire` can only run from a timer armed after that line, so `reclaim_orphan` → `reclaim_dispose` is guaranteed. An `Open` that lands in the arming window bumps the generation, so the arm is skipped, the slot stays live, and `reclaim_reclaim` is logged after `reclaim_orphan` — the same sequence the spec already describes.
+Why this works: grace cannot start before the orphan line is emitted, and `fire` can only run from a timer armed after that line, so `reclaim_orphan` → `reclaim_dispose` is guaranteed for the dispose that ends grace. An `Open` that lands in the arming window is a reclaim and keeps the slot live. It is **not** ordered against the orphan line — the bind takes the mutex `drop` released in order to log, so the recorded order can be `reclaim, bind, orphan`. Only a bind that lands after the arm is ordered, because it must take the mutex after `drop`'s second critical section, which is sequenced after the log. That is the ordering the spec states, and it is the one an operator reads: a reclaim inside the arming window is a sub-millisecond window that no configuration reaches deliberately.
 
-Why over the alternatives: logging inside the critical section is forbidden by the spec. Re-checking only `t.items[key] == e` without the generation would re-arm a slot that a concurrent `Open` had already reclaimed, which would drop `reclaim_reclaim` and leave a timer racing a live holder.
+Why over the alternatives: logging inside the critical section is forbidden by the spec.
+
+What the second critical section must **not** do is decide on the generation it logged for. An `Open` can reclaim the slot during the orphan line and its holder can then go away, and that holder's own `drop` returns early because `arming` is still set — so if this `drop` bails on the generation mismatch, nobody arms grace and the slot is stranded: mapped, no holders, no timer, `Close()` never called, `t.items` entry never evicted. So the re-lock checks the state it actually cares about (still mapped, still no holders) and arms against the generation it reads at that moment. `TestTable_ReclaimAndReleaseInsideOrphanWindowStillArms` drives exactly that interleaving with a log handler that blocks on the orphan line.
 
 The zero-grace path is already ordered — it logs orphan and then calls `fire` on the same goroutine — and keeps that shape.
 

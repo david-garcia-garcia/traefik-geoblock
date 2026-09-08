@@ -32,7 +32,9 @@ Reproduction (this worktree, 8 background CPU burners on an 8-thread box, `go te
     table_test.go:372: ended: []
 ```
 
-Decision: fix the component, not the test. `fire` and `Reset` will call `stopValue(value)` **synchronously** after `cancel()` and **before** the `reclaim_dispose` log, and the per-slot `waitCtx(life)` goroutine goes away. That makes `reclaim_dispose` a real completion signal ("Close has returned"), removes one goroutine per incarnation, and matches what the lost-create-race path already does synchronously at `pkg/reclaim/table.go:140`. Cost: a slow `Close()` now blocks the timer goroutine (or `Reset`) instead of a throwaway goroutine — acceptable for this table (one entry per database, `Close` stops a ticker), and it is the same exposure the lost-create path already has.
+Decision: fix the component, not the test — `reclaim_dispose` must be a real completion signal ("Close has returned"). Implemented additively, after the human ruled that this package is a copy shared across projects and nothing may be removed (see the resolved question below): the lifetime context, its cancel, and the `waitCtx(life)` goroutine all stay, the slot gains a `closed` channel that the goroutine closes after `stopValue`, and `fire` and `Reset` wait on it before logging dispose. Cost: a slow `Close()` now blocks the timer goroutine (or `Reset`) instead of a detached one — acceptable for this table (one entry per database, `Close` stops a ticker), and it is the same exposure the lost-create path already has at `pkg/reclaim/table.go:140`.
+
+An earlier draft of this decision said `fire` and `Reset` would call `stopValue` inline and the goroutine would go away. That was reversed; it is kept in `design.md` as the rejected alternative.
 
 Consequence: upstream's `waitUntil` becomes redundant here. Keep the strict immediate read so a regression fails, and add a dedicated invariant test.
 
@@ -52,11 +54,13 @@ Same defect class, same fix, in tests that assert the reclaim branch on a timer 
 
 The spec forbids the obvious fix: `openspec/specs/std_go_reclaim_context-lease/spec.md` — "Log lines MUST NOT be emitted while the table mutex is held."
 
-Decision: order it without logging under the mutex, using the generation counter that already exists. `drop` marks the slot as *arming* under the lock, unlocks, logs `reclaim_orphan`, then re-locks and arms the timer only if the slot is still mapped and `graceGen` has not moved. `bindLocked` treats `arming` exactly like an armed timer (reclaim). A bind that lands in the window bumps `graceGen`, so the arm is skipped and the slot stays live with `reclaim_reclaim` logged after `reclaim_orphan`. Grace therefore starts after the orphan line, and `reclaim_dispose` can only follow it.
+Decision: order it without logging under the mutex. `drop` marks the slot as *arming* under the lock, unlocks, logs `reclaim_orphan`, then re-locks and arms the timer only if the slot is still mapped and still has no holders. `bindLocked` treats `arming` exactly like an armed timer (reclaim), so a bind that lands in the window keeps the slot live. Grace therefore starts after the orphan line, and `reclaim_dispose` can only follow it.
+
+Two corrections came out of code review. First, the re-lock must not bail on the generation it logged for: an `Open` can reclaim during the orphan line and release again, and that holder's own `drop` returns early on `arming`, so bailing strands the slot mapped with no holders and no timer, and its value is never closed. It arms against the generation it reads at re-lock instead. Second, the arming-window bind is *not* ordered against the orphan line — the bind takes the mutex that `drop` released in order to log — so neither the spec nor a test claims that order.
 
 ### Test coverage the ticket asks for
 
-Untested surface on `origin/master`, to be added: the `waitCtx` nil-`Done` polling branch (`table.go:76-83`, only reachable with a context whose `Done()` is nil), `stopValue` on a value without `Close()`, `ResetWith` grace actually applied to the new process table, `Default()` under concurrent first use, repeated orphan → reclaim → orphan → dispose cycles on one key, holder-map cleanup across many opens, the logger-ownership rule (orphan/dispose use the *last* `Open`'s logger) which the spec states but no test checks, key independence at scale, concurrent `Reset` against in-flight `Open`, and a goroutine-count check that proves the per-slot goroutine is gone.
+Untested surface on `origin/master`, to be added: the `waitCtx` nil-`Done` polling branch (`table.go:76-83`, only reachable with a context whose `Done()` is nil), `stopValue` on a value without `Close()`, `ResetWith` grace actually applied to the new process table, `Default()` under concurrent first use, repeated orphan → reclaim → orphan → dispose cycles on one key, holder-map cleanup across many opens, the logger-ownership rule (orphan/dispose use the *last* `Open`'s logger) which the spec states but no test checks, key independence at scale, concurrent `Reset` against in-flight `Open`, and a goroutine-count check that proves no goroutine outlives the key.
 
 Also raising `waitBudget` (`table_test.go:17`) from 2 s: it is a timeout guard, not an assertion, and 2 s of 1 ms polls is thin on a loaded runner.
 

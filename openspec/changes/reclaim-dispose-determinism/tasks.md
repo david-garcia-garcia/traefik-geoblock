@@ -35,7 +35,8 @@
 
 - [x] 5.1 Assert `Close()` has returned when `reclaim_dispose` is observed, for both the grace path and `Reset`
 - [x] 5.2 Assert the recorded order is `reclaim_orphan` then `reclaim_dispose` at a sub-millisecond grace
-- [x] 5.3 Assert an `Open` that lands in the arming window reclaims the slot and logs `reclaim_reclaim` after `reclaim_orphan`
+- [x] 5.3 Assert an `Open` that lands in the arming window reclaims the slot (that bind is not ordered against the orphan line, so do not assert an order it cannot hold)
+- [x] 5.5 Assert that a reclaim plus release inside the arming window still ends with grace armed, so the slot cannot be stranded mapped with no holders and no timer
 - [x] 5.4 Assert the goroutine count returns to its pre-`Open` level after many keys end (leak guard for both the watcher and the lifetime goroutine)
 
 ## 6. Tests: close the coverage gaps
