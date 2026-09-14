@@ -7,7 +7,7 @@ JobName: 2026-09-14-updater-after-close
 | prepare | [x] | [x] | 2026-09-14T21:17:58.295Z |
 | explore | [x] | [x] | 2026-09-14T21:26:52.590Z |
 | propose | [x] | [x] | 2026-09-14T21:34:33.149Z |
-| implement | [ ] | [ ] | |
+| implement | [x] | [x] | 2026-09-14T21:53:14.351Z |
 | codereview | [ ] | [ ] | |
 | devdocsimpact | [ ] | [ ] | |
 | archive | [ ] | [ ] | |

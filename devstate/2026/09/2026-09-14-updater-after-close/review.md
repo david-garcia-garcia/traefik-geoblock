@@ -15,3 +15,9 @@ phase: propose
 findings: folded join/ignore-after-close into core_geoblock_database_wrapper-reclaim
 fixed: none
 skipped: none
+
+## implement (2026-09-14)
+phase: implement
+findings: Stop joins; tick skips onUpdate after stop; BIN/MMDB ignore after close
+fixed: updater.go join; bin.go atomic closed; mmdb.go closed flag; delayed_close_test.go; updater_test.go
+skipped: HTTPGet context; F-1 LookupRecord mutex
