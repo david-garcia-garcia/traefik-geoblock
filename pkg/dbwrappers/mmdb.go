@@ -17,7 +17,7 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim"
 )
 
 // MMDBConfig is one MMDB file to resolve, open, and keep current.
@@ -48,17 +48,27 @@ func mmdbKey(cfg MMDBConfig) string {
 // OpenMMDB returns the singleton MMDB for cfg and binds ctx on the process table.
 func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	key := mmdbKey(cfg)
-	v, err := reclaim.Open(ctx, key, logger, func() (any, error) {
-		return newMMDB(cfg, logger)
+	var w *MMDB
+	v, err := currentTable().Open(ctx, key, logger, func() (any, error) {
+		created, err := newMMDB(cfg, logger)
+		if err != nil {
+			return nil, err
+		}
+		w = created
+		return created, nil
+	}, reclaim.Hooks{
+		Sleep: func() { w.sleep() },
+		Wake:  func() { w.wake() },
+		Close: func() { w.close() },
 	})
 	if err != nil {
 		return nil, err
 	}
-	w, ok := v.(*MMDB)
+	typed, ok := v.(*MMDB)
 	if !ok {
 		return nil, fmt.Errorf("reclaim: %s: want *MMDB, got %T", key, v)
 	}
-	return w, nil
+	return typed, nil
 }
 
 func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
@@ -74,6 +84,23 @@ func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	if err := w.open(path); err != nil {
 		return nil, err
 	}
+	w.startUpdate()
+	return w, nil
+}
+
+// sleep stops the keep-current ticker while this wrapper is parked in grace.
+func (w *MMDB) sleep() {
+	if w.updater != nil {
+		w.updater.Stop()
+	}
+}
+
+// wake starts the keep-current ticker after a reclaim.
+func (w *MMDB) wake() {
+	w.startUpdate()
+}
+
+func (w *MMDB) startUpdate() {
 	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
 		if path == "" || path == w.Path() {
 			return
@@ -83,10 +110,10 @@ func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 		}
 	})
 	if err != nil {
-		return nil, err
+		w.logger.Error("source updater", "error", err)
+		return
 	}
 	w.updater = updater
-	return w, nil
 }
 
 func (w *MMDB) sourceCfg() dbsource.Config {
@@ -106,11 +133,7 @@ func (w *MMDB) open(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open MMDB %s: %w", path, err)
 	}
-	w.mu.Lock()
-	old := w.db
-	w.db = db
-	w.path = path
-	w.mu.Unlock()
+	old := w.swapReader(db, path)
 	if old != nil {
 		_ = old.Close()
 	}
@@ -118,9 +141,21 @@ func (w *MMDB) open(path string) error {
 	return nil
 }
 
+// swapReader stores db at path and returns the previous reader. Caller Closes that reader.
+func (w *MMDB) swapReader(db *maxminddb.Reader, path string) *maxminddb.Reader {
+	w.mu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer w.mu.Unlock()
+	old := w.db
+	w.db = db
+	w.path = path
+	return old
+}
+
 // Path is the file last opened.
 func (w *MMDB) Path() string {
 	w.mu.RLock()
+	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
 	defer w.mu.RUnlock()
 	return w.path
 }
@@ -147,28 +182,27 @@ func (w *MMDB) Lookup(ip string, dest any) error {
 		return fmt.Errorf("invalid IP address: %s", ip)
 	}
 	w.mu.RLock()
-	db := w.db
-	w.mu.RUnlock()
-	if db == nil {
+	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
+	defer w.mu.RUnlock()
+	if w.db == nil {
 		return fmt.Errorf("MMDB is not open")
 	}
-	return db.Lookup(parsed, dest)
+	return w.db.Lookup(parsed, dest)
 }
 
-// Close stops the updater and the reader. The reclaim table calls this when the incarnation ends.
+// Close stops the updater and the reader. Tests may call this; production Close is the reclaim Hooks.Close.
 func (w *MMDB) Close() {
 	w.close()
 }
 
+// close stops the updater and the reader.
 func (w *MMDB) close() {
 	if w.updater != nil {
 		w.updater.Stop()
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.db != nil {
-		_ = w.db.Close()
-		w.db = nil
+	old := w.swapReader(nil, "")
+	if old != nil {
+		_ = old.Close()
 	}
 }
 

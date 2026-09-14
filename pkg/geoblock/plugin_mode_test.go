@@ -320,7 +320,7 @@ func TestMode_UnresolvedPublicIPFollowsDefaultAllow(t *testing.T) {
 	// not null or "": those route to the banIfError branch in blockFromHeader.
 	// Memoised: every construction opens the seed database, and `go test ./...` runs
 	// packages in parallel, so building one per subtest adds enough CPU pressure to
-	// upset the grace-window tests in pkg/reclaim on a two-core runner.
+	// upset the wrapper reclaim grace-window tests on a two-core runner.
 	built := map[string]http.Handler{}
 	newPlugin := func(t *testing.T, defaultAllow bool, strategy string, allowed, blocked []string) http.Handler {
 		t.Helper()

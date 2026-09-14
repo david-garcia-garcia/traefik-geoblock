@@ -82,16 +82,22 @@ var (
 // SetTestPluginLogger makes PluginLogger return logger until SetTestPluginLogger(nil). Tests only.
 func SetTestPluginLogger(logger *slog.Logger) {
 	testPluginLoggerMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer testPluginLoggerMu.Unlock()
 	testPluginLogger = logger
-	testPluginLoggerMu.Unlock()
+}
+
+// testPluginLoggerOverride is the logger SetTestPluginLogger installed, or nil.
+func testPluginLoggerOverride() *slog.Logger {
+	testPluginLoggerMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer testPluginLoggerMu.Unlock()
+	return testPluginLogger
 }
 
 // PluginLogger is the slog logger for this middleware name and config.
 func PluginLogger(name string, cfg *Config) *slog.Logger {
-	testPluginLoggerMu.Lock()
-	override := testPluginLogger
-	testPluginLoggerMu.Unlock()
-	if override != nil {
+	if override := testPluginLoggerOverride(); override != nil {
 		return override
 	}
 	bootstrap := logging.NewBootstrap(name, cfg.LogLevel)

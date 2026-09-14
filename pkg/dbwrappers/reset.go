@@ -1,17 +1,38 @@
 package dbwrappers
 
 import (
+	"sync"
 	"time"
 
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim"
 )
+
+var (
+	tableMu sync.Mutex
+	table   = reclaim.New(reclaim.Config{Grace: reclaim.DefaultGrace})
+)
+
+// currentTable is the wrappers reclaim table, replaced by ResetWith.
+func currentTable() *reclaim.Table {
+	tableMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer tableMu.Unlock()
+	return table
+}
 
 // Reset disposes every singleton wrapper. Tests only.
 func Reset() {
-	reclaim.Reset()
+	tableMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer tableMu.Unlock()
+	table.Reset()
 }
 
-// ResetWith is Reset with a grace. Tests only.
+// ResetWith is Reset then a new table with grace. Tests only.
 func ResetWith(grace time.Duration) {
-	reclaim.ResetWith(grace)
+	tableMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer tableMu.Unlock()
+	table.Reset()
+	table = reclaim.New(reclaim.Config{Grace: grace})
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/geoblock"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim"
 )
 
 // instanceLog captures reclaim slog records for instance-reuse tests.
@@ -29,8 +29,9 @@ func (h *instanceLog) Enabled(context.Context, slog.Level) bool { return true } 
 // Handle stores a clone of each record.
 func (h *instanceLog) Handle(_ context.Context, r slog.Record) error {
 	h.mu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer h.mu.Unlock()
 	h.recs = append(h.recs, r.Clone())
-	h.mu.Unlock()
 	return nil
 }
 
@@ -40,6 +41,7 @@ func (h *instanceLog) WithGroup(string) slog.Handler      { return h } // same s
 // events is each record’s message plus its key attr.
 func (h *instanceLog) events() [][2]string {
 	h.mu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer h.mu.Unlock()
 	out := make([][2]string, 0, len(h.recs))
 	for _, r := range h.recs {
@@ -85,12 +87,15 @@ func countInstanceMsg(ev [][2]string, msg string) int {
 // shortInstanceLeases resets the process table to a 25ms grace and captures logs.
 func shortInstanceLeases(t *testing.T) *instanceLog {
 	t.Helper()
+	ResetForTest()
+	t.Cleanup(ResetForTest)
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
 	h := &instanceLog{}
 	spy := slog.New(h)
 	geoblock.SetTestPluginLogger(spy)
 	t.Cleanup(func() { geoblock.SetTestPluginLogger(nil) })
+	ResetForTestWith(100 * time.Millisecond)
 	dbwrappers.ResetWith(100 * time.Millisecond)
 	return h
 }

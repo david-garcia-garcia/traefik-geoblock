@@ -1,0 +1,6 @@
+{
+  "model_basic": "cursor-grok-4.6-high",
+  "model_implementation": "cursor-grok-4.6-high",
+  "interaction_language": "en",
+  "coding_language": "en"
+}

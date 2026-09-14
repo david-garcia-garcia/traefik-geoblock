@@ -17,7 +17,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim"
 )
 
 const (
@@ -67,17 +67,27 @@ func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, err
 	if cfg.OwnerPlugin != "" {
 		wrap = logging.NewOwner(cfg.OwnerPlugin, cfg.OwnerLevel)
 	}
-	v, err := reclaim.Open(ctx, key, logger, func() (any, error) {
-		return newBIN(cfg, wrap)
+	var w *BIN
+	v, err := currentTable().Open(ctx, key, logger, func() (any, error) {
+		created, err := newBIN(cfg, wrap)
+		if err != nil {
+			return nil, err
+		}
+		w = created
+		return created, nil
+	}, reclaim.Hooks{
+		Sleep: func() { w.sleep() },
+		Wake:  func() { w.wake() },
+		Close: func() { w.close() },
 	})
 	if err != nil {
 		return nil, err
 	}
-	w, ok := v.(*BIN)
+	typed, ok := v.(*BIN)
 	if !ok {
 		return nil, fmt.Errorf("reclaim: %s: want *BIN, got %T", key, v)
 	}
-	return w, nil
+	return typed, nil
 }
 
 func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
@@ -200,6 +210,18 @@ func binCopyName(token string, unixNano int64) string {
 	return fmt.Sprintf("bin_%s_%d.BIN", token, unixNano)
 }
 
+// sleep stops the keep-current ticker while this wrapper is parked in grace.
+func (w *BIN) sleep() {
+	if w.updater != nil {
+		w.updater.Stop()
+	}
+}
+
+// wake starts the keep-current ticker after a reclaim.
+func (w *BIN) wake() {
+	w.startUpdate()
+}
+
 func (w *BIN) startUpdate() {
 	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
 		if path == "" || path == w.sourceDbPath {
@@ -308,11 +330,12 @@ func (w *BIN) SourcePath() string {
 	return w.sourceDbPath
 }
 
-// Close stops the updater and the file handle. The reclaim table calls this when the incarnation ends.
+// Close stops the updater and the file handle. Tests may call this; production Close is the reclaim Hooks.Close.
 func (w *BIN) Close() {
 	w.close()
 }
 
+// close stops the updater and the file handle.
 func (w *BIN) close() {
 	if w.updater != nil {
 		w.updater.Stop()
