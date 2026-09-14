@@ -1,11 +1,11 @@
-Developer review: in progress — 2026-09-14T21:53:56Z
+Developer review: in progress — 2026-09-14T21:59:18Z
 
 ## What this changes
 **Operators.** None.
 
 **Admin users.** None.
 
-**Developers.** `BIN` now serializes the published handle with `sync.RWMutex` and `swapHandle`. `LookupRecord` holds `RLock` for the nil check and one `Get_all`. Concurrent lookup vs hot-swap/close tests live in `pkg/dbwrappers/bin_handle_test.go`. OpenSpec change `bin-rwmutex-published-handle` folds those rules onto `core_geoblock_database_wrapper-reclaim` and `core_geoblock_database_lookup`. Usage packet `knowledge/devdocs/core_geoblock_database_wrapper.md` notes the RWMutex / Yaegi-defer gotcha. CI `-race` stays a follow-up via `knowledge/debt/2026-09-14-ci-go-race-detector.md`.
+**Developers.** `BIN` now serializes the published handle with `sync.RWMutex` and `swapHandle`. `LookupRecord` holds `RLock` for the nil check and one `Get_all`. Concurrent lookup vs hot-swap/close tests live in `pkg/dbwrappers/bin_handle_test.go`. OpenSpec change `bin-rwmutex-published-handle` folds those rules onto `core_geoblock_database_wrapper-reclaim` and `core_geoblock_database_lookup`. Usage packet `knowledge/devdocs/core_geoblock_database_wrapper.md` names **Published handle** and the RWMutex / Yaegi-defer gotcha including Path/Version/SourcePath. CI `-race` stays a follow-up via `knowledge/debt/2026-09-14-ci-go-race-detector.md`.
 
 **End users.** BIN-backed allow/block no longer races a torn handle or panics on a nil Get_all during reclaim or hot-swap.
 
@@ -28,17 +28,17 @@ sequenceDiagram
 ```
 
 ## Merge readiness
-Seven-axis review applied two hard nits. CI on the review-fix push is still in progress. 1 item remains.
+Usage packet Language and getter Gotchas are produced. Archive has not run. CI on the latest push is still in progress. 1 item remains.
 
 Priority: P1 — Production is unsafe, or serving a wrong public contract today
-Reviewed head: 14dee85
+Reviewed head: 019e2ec
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 3/6 | CI in progress after review-fix push |
-| CI proof | 3/6 | Lint, Test, and Integration Tests in progress on run 34901269836 |
+| Overall readiness | 3/6 | CI in progress after usage-packet push |
+| CI proof | 3/6 | Test succeeded; Lint and Integration Tests in progress on run 34901712244 |
 | Local tests proof | N/A | Remote PR; CI proof covers it (handoff localTests: passed) |
 | Review resolution | 6/6 | OPEN PR, no review comments |
 
@@ -48,7 +48,7 @@ Owner decision: Required. See Explore Decisions.
 | Branch | 2026-09-14-bin-handle-race pushed | `git` origin/2026-09-14-bin-handle-race |
 | OpenSpec | bin-rwmutex-published-handle | `openspec/changes/bin-rwmutex-published-handle/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/85 | pr-host List |
-| CI | build 34901269836 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901269836 | pr-host CI |
+| CI | build 34901712244 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901712244 | pr-host CI |
 | Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | no comments.md |
 
@@ -63,7 +63,7 @@ Owner decision: Required. See Explore Decisions.
 - [ ] [Enable the Go race detector in CI](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/knowledge/debt/2026-09-14-ci-go-race-detector.md) — adding `-race` to CI is not a one-line flag that already works; logging tests race and Yaegi skips.
 
 ## How this fits together
-Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the BIN mutex has landed, and seven-axis review applied two nits. Devdocs impact is next.
+Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the BIN mutex has landed, and the wrapper usage packet caught up. Archive is next.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -103,7 +103,7 @@ Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the 
 | --- | --- | --- |
 | Specs in this PR | 0 added / 2 modified | Same list as ## Specs; do not paste diff --stat |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 14dee85c9b3c05c20ab7e405883fc9a2a56a7939 | Card must match the branch you measured |
+| Reviewed head | 019e2ecc9e9f4644856df88427a1c93985d72ca0 | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -119,7 +119,8 @@ Is this the best way to solve the issue? Yes versus `master`: MMDB already owns 
 What I checked:
 - Seven axis files under the run root; Standards 1 done, Nitpicks 1 done, other axes none
 - Review-fix SHA 04190b9
-- CI in progress on run 34901269836 (HEAD 14dee85)
+- CI in progress on run 34901712244 (HEAD 019e2ec)
+- Devdocs impact: language-gap and stale-usage produced on `core_geoblock_database_wrapper`
 
 ### Rank-up moves
 None.

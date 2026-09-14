@@ -29,3 +29,9 @@ phase: codereview
 findings: P3 2
 fixed: startUpdate comment; hotSwap oldDB renamed to old (04190b9)
 skipped: none
+
+## devdocsimpact (2026-09-14)
+phase: devdocsimpact
+findings: language-gap, stale-usage
+fixed: Published handle Language; Path/Version/SourcePath Gotcha
+skipped: none
