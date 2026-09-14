@@ -61,3 +61,15 @@ ci: build 34902064718 Lint/Test/Integration success
 localTests: passed
 open-questions: 5 (3 assumed, 2 resolved)
 reviewed-head: 8def523
+
+## archive (2026-09-14)
+phase: archive
+findings: none
+fixed: synced core_geoblock_iplookup_family-match into live catalog; moved change to openspec/changes/archive/2026-09-14-cidr-family-isolation
+skipped: none
+pr: 86
+ci: build 34902799987 in progress
+localTests: passed
+open-questions: 5 (3 assumed, 2 resolved)
+reviewed-head: ac994c6
+archived: openspec/changes/archive/2026-09-14-cidr-family-isolation

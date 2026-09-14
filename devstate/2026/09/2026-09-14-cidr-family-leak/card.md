@@ -1,11 +1,11 @@
-Developer review: ready for review — 2026-09-14T21:57:06.386Z
+Developer review: in progress — 2026-09-14T22:11:42.103Z
 
 ## What this changes
 **Operators.** A CIDR in `allowedIPBlocks` / `blockedIPBlocks` (and the matching directory lists) matches only the address family it was written for; list both families when both should match.
 
 **Admin users.** None.
 
-**Developers.** `IpLookupHelper` stores IPv4 and IPv6 on separate trees; `AddCIDR` / `IsContained` still classify with `ip.To4() != nil`. Product tests cover colliding prefixes (`1.2.3.4/32` vs `102:304::1`, `808:808::/32` vs `8.8.8.8`) and a request-path IPv6 allow vs blocked-country IPv4.
+**Developers.** `IpLookupHelper` stores IPv4 and IPv6 on separate trees; `AddCIDR` / `IsContained` still classify with `ip.To4() != nil`. The live catalog now has `core_geoblock_iplookup_family-match`. Product tests cover colliding prefixes (`1.2.3.4/32` vs `102:304::1`, `808:808::/32` vs `8.8.8.8`) and a request-path IPv6 allow vs blocked-country IPv4.
 
 **End users.** An IPv6 office allow-list no longer lets colliding IPv4 through as `pass:allowed_ip_block`; the mirror case no longer blocks innocent IPv4.
 
@@ -29,17 +29,17 @@ flowchart TD
 ```
 
 ## Merge readiness
-Family isolation is on `origin/master...HEAD`. Seven-axis review found none. 0 items remain.
+Family isolation and the live catalog fold are on `origin/master...HEAD`. CI on the archive commit is still running. 1 item remains.
 
 Priority: P1 — Production is serving a wrong public contract today
-Reviewed head: 423d837
+Reviewed head: ac994c6
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 6/6 | CI succeeded and no open review comments |
-| CI proof | 6/6 | Lint, Test, and Integration Tests succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901260180 |
+| Overall readiness | 3/6 | CI on the archive head is still running |
+| CI proof | 3/6 | Lint, Test, and Integration Tests in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34902799987 |
 | Local tests proof | N/A | Remote PR — CI covers this |
 | Review resolution | 6/6 | OPEN PR, no review comments |
 
@@ -47,14 +47,14 @@ Owner decision: Required. See Explore Decisions.
 | Check | Result | Evidence |
 | --- | --- | --- |
 | Branch | 2026-09-14-cidr-family-leak pushed | git / GitHub |
-| OpenSpec | cidr-family-isolation | `openspec/` |
+| OpenSpec | cidr-family-isolation | `openspec/changes/archive/2026-09-14-cidr-family-isolation/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/86 | GitHub |
-| CI | build 34901260180 success https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901260180 | GitHub checks |
+| CI | build 34902799987 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34902799987 | GitHub checks |
 | Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | inventory empty |
 
 ## Specs
-- [core_geoblock_iplookup_family-match](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/openspec/changes/cidr-family-isolation/proposal.md) — added
+- [core_geoblock_iplookup_family-match](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/openspec/changes/archive/2026-09-14-cidr-family-isolation/proposal.md) — added
 
 ## Deviations from the ask
 None.
@@ -63,7 +63,7 @@ None.
 - [ ] [`decide` `/0` sentinel vs longest-prefix](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/knowledge/debt/2026-09-14-decide-slash-zero-sentinel.md) — `decide` treats `/0` as a sentinel so a catch-all allow beats a more specific block.
 
 ## How this fits together
-Local ticket 2026-09-14-cidr-family-leak is on branch `2026-09-14-cidr-family-leak` and PR 86. Code review of `origin/master...HEAD` found no axis items. CI run 34901260180 succeeded on 423d837.
+Local ticket 2026-09-14-cidr-family-leak is on branch `2026-09-14-cidr-family-leak` and PR 86. Archive folded `core_geoblock_iplookup_family-match` into the live catalog. CI run 34902799987 is in progress on ac994c6.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -73,7 +73,7 @@ Local ticket 2026-09-14-cidr-family-leak is on branch `2026-09-14-cidr-family-le
 | How should IPv4-mapped IPv6 CIDRs and lookups (`::ffff:a.b.c.d`) be classified? | additive incidental | assumed — keep `To4() != nil` as IPv4. Do not add a third family or a plugin-level mapped check. | propose |
 
 ## Before merge
-None.
+- [ ] CI on ac994c6 (run 34902799987)
 
 ## Findings
 None.
@@ -94,7 +94,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 1 added / 0 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 423d837268e04d8f8a7b17d8d950278d83ef3093 | Card must match the branch you measured |
+| Reviewed head | ac994c6e6ddb9995c10202857b73a31631fec54f | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -108,10 +108,12 @@ Is this the best way to solve the issue? Yes — insert and contains already bra
 
 ### Evidence
 What I checked:
-- `origin/master...HEAD` `IpLookupHelper` has `ipv4Tree` / `ipv6Tree` (path, 423d837)
+- `origin/master...HEAD` live spec `core_geoblock_iplookup_family-match` plus two family trees on `IpLookupHelper` (path, ac994c6)
+- Archive folder `openspec/changes/archive/2026-09-14-cidr-family-isolation/`
+- `validate_spec_map` write then verify OK; `validate_artifact_names` OK
 - Seven-axis files all `none.` (0 total / 0 pending / 0 completed)
 - OPEN PR 86, comment inventory empty
-- CI run 34901260180: Lint success, Test success, Integration Tests success https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901260180
+- CI run 34902799987: Lint, Test, Integration Tests in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34902799987
 - `handoff.yaml` `localTests: passed`
 
 ### Rank-up moves
