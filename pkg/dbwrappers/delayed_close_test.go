@@ -136,3 +136,51 @@ func TestOpenMMDB_DelayedDownloadAfterClose(t *testing.T) {
 		t.Fatal("Lookup succeeded after Close")
 	}
 }
+
+// TestOpenBIN_HotSwapAfterClose calls hotSwap after Close so the closed
+// fail-closed branch is proven even when tick already skipped onUpdate.
+func TestOpenBIN_HotSwapAfterClose(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	const catalogKey = "swap-after-close-bin"
+	w, err := OpenBIN(holdCtx(t), BINConfig{
+		Source: dbsource.Config{Path: testBIN, Key: catalogKey},
+	}, testLogger())
+	if err != nil {
+		t.Fatalf("OpenBIN: %v", err)
+	}
+	w.Close()
+	if err := w.hotSwap(testBIN); err != nil {
+		t.Fatalf("hotSwap after Close: %v", err)
+	}
+	if _, err := w.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil {
+		t.Fatal("LookupRecord succeeded after hotSwap on a closed BIN")
+	}
+	if leftover := leftoverBINCopies(catalogKey); len(leftover) > 0 {
+		t.Fatalf("hotSwap after Close left a BIN temp copy: %v", leftover)
+	}
+}
+
+// TestOpenMMDB_OpenAfterClose calls open after Close so swapReader refuse is
+// proven even when tick already skipped onUpdate.
+func TestOpenMMDB_OpenAfterClose(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	seed := testLiteMMDB(t)
+	w, err := OpenMMDB(holdCtx(t), MMDBConfig{
+		Source: dbsource.Config{Path: seed},
+	}, testLogger())
+	if err != nil {
+		t.Fatalf("OpenMMDB: %v", err)
+	}
+	w.Close()
+	if err := w.open(seed); err != nil {
+		t.Fatalf("open after Close: %v", err)
+	}
+	var rec struct {
+		CountryCode string `maxminddb:"country_code"`
+	}
+	if err := w.Lookup("8.8.8.8", &rec); err == nil {
+		t.Fatal("Lookup succeeded after open on a closed MMDB")
+	}
+}
