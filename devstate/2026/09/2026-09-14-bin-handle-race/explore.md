@@ -40,29 +40,29 @@ LookupRecord: w.db.Get_all(ip)           hotSwap: w.db = newDB  (unlocked)
 - Q: Does `LookupRecord` hold `RLock` for `Get_all`, or snapshot `*ip2loc.DB` and unlock first?
   Rank: bounded asked — existing `BIN.LookupRecord` (1 production Bind in `pkg/geoblock/plugin.go`; tests in `bin_test.go`, `bin_record_test.go`, `reclaim_test.go`, `plugin_lifecycle_test.go`); Desired “takes the handle once (read lock + one use of that handle for Get_all), matching MMDB.Lookup”
   Decision: assumed — RLock for nil-check + `Get_all` (defer RUnlock, Yaegi), then map columns. Do not snapshot-and-unlock (weaker than MMDB; `close` can Close under `query`).
-  By: explore
+  By: propose
 
 - Q: What publishes the BIN handle — `swapHandle`, `swapReader`, or a helper shared with MMDB?
   Rank: additive asked — new method this change creates; Tension “Matching MMDB may mean reusing that shape/name pattern, not a second helper name”; Desired “Do not change MMDB unless a shared helper requires a symmetric edit”
   Decision: assumed — BIN-local `swapHandle` with `MMDB.swapReader` shape. Do not name it `swapReader` (that is `*maxminddb.Reader`). Do not extract a shared helper; leave `mmdb.go` unchanged.
-  By: explore
+  By: propose
 
 - Q: Do `Path` / `Version` / `SourcePath` take the same mutex as `db`?
   Rank: bounded asked — Affected “Path/Version/SourcePath if they share the published fields”; call sites `bin_test.go` Version/Path/SourcePath and `bin.go` `startUpdate` `w.sourceDbPath`; MMDB `Path` already RLock
   Decision: assumed — yes. RLock on those getters; `startUpdate` compares via `SourcePath()`.
-  By: explore
+  By: propose
 
 - Q: After `swapHandle`, does BIN still delay-Close the old handle by 10s, or Close immediately like MMDB?
   Rank: bounded incidental — `hotSwap` post-swap Close goroutine only (production `startUpdate` + tests `TestOpenBIN_HotSwap` / `TestOpenBIN_InitLogsDatedCopy`); no criterion names the delay; 10s is existing BIN behavior
   Decision: assumed — keep the 10s delayed Close of the old handle. Mutex already waits in-flight `Get_all` before swap. Do not reshape hot-swap timing to match MMDB.
-  By: explore
+  By: propose
 
 - Q: Where do the new concurrent lookup vs hot-swap/close tests live?
   Rank: additive asked — Desired “Write proper product tests for the concurrent lookup vs hot-swap / close paths” and “new BIN concurrency tests next to the wrapper”; “Do not copy caller-workspace zzz_proof_*”
   Decision: assumed — add package tests in `pkg/dbwrappers` (not `zzz_proof_*`, not `pkg/geoblock`). Keep the two existing lifecycle tests as the race-detector gate.
-  By: explore
+  By: propose
 
 - Q: Add `go test -race` to CI / Makefile in this change?
   Rank: additive incidental — Out of scope “CI / Makefile -race overhaul when it is not a one-line flag that already works”; Unknowns park logging-test races
   Decision: assumed — do not add the flag. Follow-up remains `knowledge/debt/2026-09-14-ci-go-race-detector.md`.
-  By: explore
+  By: propose
