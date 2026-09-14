@@ -70,12 +70,12 @@ No active OpenSpec change (`openspec list --json` → `changes: []`). Usage gap:
 - Q: Two internal trees or a family discriminator on the shared endpoint?
   Rank: additive asked — Desired names both options and asks explore to pick against `IpLookupHelper` / `ipRadixTree`; adding unexported tree fields on that helper; existing `AddCIDR` / `IsContained` callers keep working (3 production `IsContained` sites: `file_monitor.go`, `plugin.go` ×2; `insert`/`contains` only in `iplookup.go`)
   Decision: assumed — two internal trees. A discriminator must special-case the shared root so `0.0.0.0/0` and `::/0` do not overwrite one endpoint; two trees reuse the existing `To4()` branch and leave `ipRadixTree` family-agnostic.
-  By: explore
+  By: propose
 
 - Q: Is a found/length split in `contains` required to keep current `/0` tests passing after family isolation?
   Rank: additive asked — Unknowns names this; `contains` already returns `(found, prefixLength)` and EdgeCases inserts both family catch-alls
   Decision: assumed — no split and no `decide` edit. Two family trees return `(true, 0)` for a same-family `/0` and `false` for the other family. EdgeCases and PrefixLengthAccuracy stay valid without an API change.
-  By: explore
+  By: propose
 
 - Q: Who already owns the client address and the CIDR family of a match?
   Rank: additive asked — identity/family of the hop and of the rule; Desired keeps `IpLookupHelper` as match owner
@@ -90,4 +90,4 @@ No active OpenSpec change (`openspec list --json` → `changes: []`). Usage gap:
 - Q: How should IPv4-mapped IPv6 CIDRs and lookups (`::ffff:a.b.c.d`) be classified?
   Rank: additive incidental — no criterion names mapped-form CIDRs; keep the existing `To4()` branch in `insert`/`contains`
   Decision: assumed — keep `To4() != nil` as IPv4. Do not add a third family or a plugin-level mapped check.
-  By: explore
+  By: propose
