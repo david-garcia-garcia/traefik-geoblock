@@ -5,7 +5,7 @@ JobName: 2026-09-14-updater-after-close
 | Phase | Work | Card | At |
 |-------|------|------|----|
 | prepare | [x] | [x] | 2026-09-14T21:17:58.295Z |
-| explore | [ ] | [ ] | |
+| explore | [x] | [x] | 2026-09-14T21:26:52.590Z |
 | propose | [ ] | [ ] | |
 | implement | [ ] | [ ] | |
 | codereview | [ ] | [ ] | |
