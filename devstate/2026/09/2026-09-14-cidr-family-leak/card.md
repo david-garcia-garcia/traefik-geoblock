@@ -1,4 +1,4 @@
-Developer review: needs changes — 2026-09-14T21:46:21.149Z
+Developer review: ready for review — 2026-09-14T21:57:06.386Z
 
 ## What this changes
 **Operators.** A CIDR in `allowedIPBlocks` / `blockedIPBlocks` (and the matching directory lists) matches only the address family it was written for; list both families when both should match.
@@ -29,17 +29,17 @@ flowchart TD
 ```
 
 ## Merge readiness
-Family isolation landed on the helper. CI Test failed on this head. 1 item remains.
+Family isolation is on `origin/master...HEAD`. Seven-axis review found none. 0 items remain.
 
 Priority: P1 — Production is serving a wrong public contract today
-Reviewed head: 108264b
+Reviewed head: 423d837
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 2/6 | CI Test failed |
-| CI proof | 2/6 | Test failed, Lint and Integration Tests succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34900132878 |
+| Overall readiness | 6/6 | CI succeeded and no open review comments |
+| CI proof | 6/6 | Lint, Test, and Integration Tests succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901260180 |
 | Local tests proof | N/A | Remote PR — CI covers this |
 | Review resolution | 6/6 | OPEN PR, no review comments |
 
@@ -49,7 +49,7 @@ Owner decision: Required. See Explore Decisions.
 | Branch | 2026-09-14-cidr-family-leak pushed | git / GitHub |
 | OpenSpec | cidr-family-isolation | `openspec/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/86 | GitHub |
-| CI | build 34900132878 failure https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34900132878 | GitHub checks |
+| CI | build 34901260180 success https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901260180 | GitHub checks |
 | Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | inventory empty |
 
@@ -63,7 +63,7 @@ None.
 - [ ] [`decide` `/0` sentinel vs longest-prefix](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/knowledge/debt/2026-09-14-decide-slash-zero-sentinel.md) — `decide` treats `/0` as a sentinel so a catch-all allow beats a more specific block.
 
 ## How this fits together
-Local ticket 2026-09-14-cidr-family-leak is on branch `2026-09-14-cidr-family-leak` and PR 86. Implement split the CIDR helper onto family trees. Local `go test ./...` passed; CI Test on this head failed.
+Local ticket 2026-09-14-cidr-family-leak is on branch `2026-09-14-cidr-family-leak` and PR 86. Code review of `origin/master...HEAD` found no axis items. CI run 34901260180 succeeded on 423d837.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -73,14 +73,19 @@ Local ticket 2026-09-14-cidr-family-leak is on branch `2026-09-14-cidr-family-le
 | How should IPv4-mapped IPv6 CIDRs and lookups (`::ffff:a.b.c.d`) be classified? | additive incidental | assumed — keep `To4() != nil` as IPv4. Do not add a third family or a plugin-level mapped check. | propose |
 
 ## Before merge
-- [x] Keep CIDR allow and deny matching only the address family the rule was written for [P1]
-- [ ] Green CI Test on this head [P1]
+None.
 
 ## Findings
 None.
 
 ## Axis review
-None.
+[Standards](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/devstate/2026/09/2026-09-14-cidr-family-leak/codereview_standards.md) — 0 total, 0 pending, 0 completed
+[Nitpicks](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/devstate/2026/09/2026-09-14-cidr-family-leak/codereview_nitpicks.md) — 0 total, 0 pending, 0 completed
+[Spec](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/devstate/2026/09/2026-09-14-cidr-family-leak/codereview_spec.md) — 0 total, 0 pending, 0 completed
+[Security](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/devstate/2026/09/2026-09-14-cidr-family-leak/codereview_security.md) — 0 total, 0 pending, 0 completed
+[Performance](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/devstate/2026/09/2026-09-14-cidr-family-leak/codereview_performance.md) — 0 total, 0 pending, 0 completed
+[Dead](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/devstate/2026/09/2026-09-14-cidr-family-leak/codereview_dead.md) — 0 total, 0 pending, 0 completed
+[Test coverage](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-cidr-family-leak/devstate/2026/09/2026-09-14-cidr-family-leak/codereview_coverage.md) — 0 total, 0 pending, 0 completed
 
 ## Agent review details
 
@@ -89,7 +94,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 1 added / 0 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 108264bfe1cf3432843cc9abc906dcd07931d920 | Card must match the branch you measured |
+| Reviewed head | 423d837268e04d8f8a7b17d8d950278d83ef3093 | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -103,11 +108,13 @@ Is this the best way to solve the issue? Yes — insert and contains already bra
 
 ### Evidence
 What I checked:
-- `pkg/iplookup/iplookup.go` `IpLookupHelper` now has `ipv4Tree` / `ipv6Tree` (path, 108264b)
-- `go test ./...` passed locally; `golang:1.21` docker `go test ./...` passed
-- `decide` in `pkg/geoblock/plugin.go` was not edited
+- `origin/master...HEAD` `IpLookupHelper` has `ipv4Tree` / `ipv6Tree` (path, 423d837)
+- Seven-axis files all `none.` (0 total / 0 pending / 0 completed)
 - OPEN PR 86, comment inventory empty
-- CI run 34900132878: Lint success, Test failure, Integration Tests success https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34900132878
+- CI run 34901260180: Lint success, Test success, Integration Tests success https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901260180
+- `handoff.yaml` `localTests: passed`
 
 ### Rank-up moves
-- Read the Test job log (sign-in required) and rerun if the fail is a runner flake; docker Go 1.21 on this tree was green.
+None.
+
+[sgsi-dev-ticket-status:2026-09-14-cidr-family-leak]
