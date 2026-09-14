@@ -44,3 +44,14 @@ ci: succeeded (run 34901700998)
 localTests: passed
 open-questions: 6 assumed
 head: 8aae6ade760ab40ce7b48671c0ae3ddba5e2354b
+
+## devdocsimpact (2026-09-14)
+phase: devdocsimpact
+findings: P2 1 (CI Test failed)
+fixed: request-mode usage packet (stale-usage)
+skipped: archive
+pr: 87
+ci: Test failed (run 34902603070); Lint and Integration Tests succeeded
+localTests: passed
+open-questions: 6 assumed
+head: 95c8768ebf6c0df596ae823422cf00530c3aaa64
