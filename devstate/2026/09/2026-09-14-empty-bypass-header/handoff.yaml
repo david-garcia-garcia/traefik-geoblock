@@ -8,7 +8,7 @@ destBranch: master
 qualify: qualified-with-gaps
 src: fb6f4bd4517ad1019ec6922ca3451f9e48485762d7de8cb750788efed9a1494a
 comments: none
-localTests: none
+localTests: passed
 requirement: requirement.md
 explore: explore.md
 change: reject-empty-bypass-header-values
