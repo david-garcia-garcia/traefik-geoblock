@@ -39,3 +39,9 @@ phase: archive
 findings: folded delta into core_geoblock_database_wrapper-reclaim
 fixed: live spec sync; moved to openspec/changes/archive/2026-09-14-disposed-generation-stays-disposed
 skipped: none
+
+## pullrequest (2026-09-14)
+phase: pullrequest
+findings: none
+fixed: ready title; CI succeeded on run 34902945919
+skipped: none
