@@ -1,4 +1,4 @@
-Developer review: in progress — 2026-09-14T17:57:52.510Z
+Developer review: in progress — 2026-09-14T18:04:44.467Z
 
 ## What this changes
 **Operators.** None.
@@ -24,17 +24,17 @@ flowchart LR
 ```
 
 ## Merge readiness
-Prepare grounded; product import not started. 2 items remain.
+Explore recorded copy-into-pkg/reclaim with Close-only Hooks; product import not started. 2 items remain.
 
 Priority: P3 — spec and internal table copy, no current user or operator harm
-Reviewed head: 832a533
-Owner decision: None.
+Reviewed head: fe58d45
+Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 6/6 | Stub CI succeeded and there are no open PR comments |
-| CI proof | 6/6 | Lint, Test, and Integration Tests succeeded |
+| Overall readiness | 3/6 | CI on the explore head is still running |
+| CI proof | 3/6 | Lint, Test, and Integration Tests in progress |
 | Local tests proof | N/A | Before implement on a remote PR |
 | Review resolution | 6/6 | No open PR comments |
 
@@ -44,7 +44,7 @@ Owner decision: None.
 | Branch | 2026-09-14-import-reclaim-table pushed | `git` tracking origin |
 | OpenSpec | none | `openspec/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/84 | pr-host |
-| CI | build 34877638824 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34877638824 | GitHub check runs |
+| CI | build 34878552875 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34878552875 | GitHub check runs |
 | Local tests | none | handoff.yaml localTests |
 | PR comments | no comments | pull_request_read |
 
@@ -58,17 +58,22 @@ None.
 None.
 
 ## How this fits together
-Local ticket on branch `2026-09-14-import-reclaim-table`, stub PR 84, CI green on the prepare commits.
+Local ticket on branch `2026-09-14-import-reclaim-table`, stub PR 84, explore decisions recorded, CI in progress on fe58d45.
 
 ## Explore Decisions
-None.
+| Question | Rank | Decision | By |
+| --- | --- | --- | --- |
+| Copy v1.0.1 into `pkg/reclaim`, or `go.mod` require `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`? | structural asked | assumed — copy the pinned v1.0.1 sources into `pkg/reclaim`. Do not add a module require. | explore |
+| Which of Plugin / BIN / MMDB need non-nil Sleep and Wake versus a Close-only `Hooks{Close: ...}` once the API is `Hooks`? | bounded asked | assumed — Close-only for all three. Sleep and Wake stay nil. | explore |
+| After Default goes away, who holds the `*Table`, and how do tests that call `dbwrappers.Reset` / `ResetWith` still tear down plugin and wrapper incarnations? | bounded asked | assumed — plugin root holds one table; `pkg/dbwrappers` holds one table. Plugin tests that called `dbwrappers.Reset` for `plugin:` keys must also Reset the plugin-root table. | explore |
+| Should any caller set `Hooks.EnforceCloseBeforeOpen`? | additive asked | assumed — false for Plugin, BIN, and MMDB (remote default). | explore |
 
 ## Before merge
 - [ ] Replace `pkg/reclaim` with the v1.0.1 shape including Sleep, Wake, and Close hooks
-- [ ] Wire `plugin.go`, `OpenBIN`, and `OpenMMDB` to `Hooks`
+- [ ] Wire `plugin.go`, `OpenBIN`, and `OpenMMDB` to Close-only `Hooks`
 - [x] Requirement grounded (`qualified-with-gaps`)
+- [x] Explore recorded (copy in-tree, Close-only Hooks, two caller-owned tables)
 - [x] Stub PR opened
-- [x] CI succeeded on head `832a533`
 
 ## Findings
 None.
@@ -83,22 +88,22 @@ None.
 | --- | --- | --- |
 | Specs in this PR | none | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 832a5334c699983baa661a2c195a9301b76908d5 | Card must match the branch you measured |
+| Reviewed head | fe58d45c45428b716f75b31ef24045c1011b7f9a | Card must match the branch you measured |
 
 ### Stored data model
 None.
 
 ### Technical review
-Best possible solution: DestBranch still owns a Close-only in-tree table; this head only records the v1.0.1 contract to import.
+Best possible solution: DestBranch still owns a Close-only in-tree table; this head records the v1.0.1 contract and how callers will pass Close-only Hooks.
 
 Do we have a high-confidence way to reproduce? Yes, `pkg/reclaim/table.go` Open has no Hooks argument and `stopValue` discovers Close.
 
-Is this the best way to solve the issue? Not yet applied — prepare only grounded the import.
+Is this the best way to solve the issue? Not yet applied — explore chose an in-tree copy matching Yaegi plugin packaging.
 
 ### Evidence
 What I checked:
-- Requirement names Sleep, Wake, and Close hooks (`requirement.md`, 832a533)
-- Check runs Lint, Test, Integration Tests success (build 34877638824)
+- `explore.md` Open questions (fe58d45)
+- Check runs Lint, Test, Integration Tests in progress (build 34878552875)
 - Product delta vs origin/master is research notes only (`git diff origin/master...HEAD`)
 
 ### Rank-up moves
