@@ -56,29 +56,29 @@ Prepare(cfg)                    ServeHTTP (mode blocks)
 - Q: Reject empty `bypassHeaders` values in `Prepare`, ignore them at request time, or both?
   Rank: bounded asked — existing `Prepare` / `blockSkipReason` contracts; 6 `Prepare` call sites (searched `**/*.go` for `Prepare(` and `geoblock.Prepare(`): `plugin.go` `New`, `newTestPlugin`, four in `plugin_mode_test.go`) and 1 `blockSkipReason` caller (`ServeHTTP` in `pkg/geoblock/plugin.go`; searched `**/*.go`); Desired names loud-fail in `Prepare` shaped like `IPHeaders` and also require the header present via `Values`
   Decision: assumed — both. `Prepare` rejects empty values so a Traefik/`New` config cannot load. `blockSkipReason` requires `Values` non-empty before compare so a leftover empty map entry cannot match an absent header. Ignore-only would still apply a broken config. Reject-only would still open the gate if `NewCore` ran without `Prepare`. Do not also skip empty `expectedValue` at request time; `Prepare` owns empty config.
-  By: explore
+  By: propose
 
 - Q: Are whitespace-only bypass values empty?
   Rank: additive incidental — new check inside the `Prepare` validation this change adds; Unknowns asks whether whitespace-only should count as empty, no In-scope line names `TrimSpace`
   Decision: assumed — yes; `strings.TrimSpace(value) == ""` is empty and fails `Prepare`. Ticket names a trimmed secret as a producer of `""`. `CountryHeader` already uses `TrimSpace` for empty. Spaces-only would not match `Get` on an absent header, but rejecting it fails the same leftover-secret class at load.
-  By: explore
+  By: propose
 
 - Q: Is an empty bypass header *name* with a non-empty value in scope?
   Rank: additive incidental — extra `Prepare` check this change could add in the same loop; Unknowns says the ticket is empty *value*
   Decision: assumed — no. Do not reject empty names. Bound the ask to empty values.
-  By: explore
+  By: propose
 
 - Q: Does Traefik/Yaegi YAML `X-Bypass:` (nothing after the colon) materialize as `""` in the map, or omit the key?
   Rank: additive asked — Unknowns names YAML decode; Desired is that an empty value cannot silently disable blocking, which is the Go map after decode
   Decision: assumed — do not depend on YAML omit vs `""`. Validate whatever lands in `BypassHeaders`. Present-header covers a leftover empty entry. `index_ext_traefik.md` has no YAML-decode finding; no research folder this phase.
-  By: explore
+  By: propose
 
 - Q: Should `Prepare` reject empty bypass values when `mode` is `disabled`?
   Rank: additive incidental — extra work on the `ModeDisabled` early return; no criterion names it
   Decision: assumed — no. Keep the existing early return; `IPHeaders` is also skipped when disabled. A later mode change goes through `New`/`Prepare` again.
-  By: explore
+  By: propose
 
 - Q: Document the operator-facing empty-value reject in `README.md`?
   Rank: additive asked — Affected lists `README.md` bypassHeaders contract if operator-facing reject is documented; `ipHeaders` already documents cannot-be-empty
   Decision: assumed — yes. One sentence next to the `bypassHeaders` example that empty values are rejected at plugin creation, matching the `ipHeaders` empty-reject line. Do not rewrite processing order in this change (README lists bypass before ignore verbs; code is the reverse).
-  By: explore
+  By: propose

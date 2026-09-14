@@ -11,7 +11,7 @@ comments: none
 localTests: none
 requirement: requirement.md
 explore: explore.md
-change: none
+change: reject-empty-bypass-header-values
 pr:
   id: 87
   url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/87
