@@ -468,7 +468,7 @@ excludedPathsRegex: "^[^/]*/(health|ready|live)$"
 | `allowedCountries` / `blockedCountries` | ISO 3166-1 alpha-2 |
 | `defaultAllow` | When no country or CIDR rule matches |
 | `allowPrivate` | RFC 1918 / loopback (country `PRIVATE`) |
-| `allowedIPBlocks` / `blockedIPBlocks` | CIDR allow / deny (more specific prefix wins) |
+| `allowedIPBlocks` / `blockedIPBlocks` | CIDR allow / deny (more specific prefix wins; a CIDR matches only its address family) |
 | `allowedIPBlocksDir` / `blockedIPBlocksDir` | Shared `.txt` CIDR files, loaded at start |
 | `ipHeaders` | Where to read client IPs (`remoteAddress` is the direct connection) |
 | `ipHeaderStrategy` | Which hop to evaluate when several IPs are present |

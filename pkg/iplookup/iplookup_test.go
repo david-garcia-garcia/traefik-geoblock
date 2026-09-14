@@ -154,6 +154,145 @@ func TestIpLookupHelper_MixedIPv4AndIPv6(t *testing.T) {
 	}
 }
 
+func TestIpLookupHelper_FamilyIsolation(t *testing.T) {
+	tests := []struct {
+		name           string
+		cidrBlocks     []string
+		ip             string
+		shouldMatch    bool
+		expectedPrefix int
+	}{
+		{
+			name:           "IPv4 slash-32 does not match colliding IPv6",
+			cidrBlocks:     []string{"1.2.3.4/32"},
+			ip:             "102:304::1",
+			shouldMatch:    false,
+			expectedPrefix: 0,
+		},
+		{
+			name:           "IPv4 slash-32 still matches IPv4",
+			cidrBlocks:     []string{"1.2.3.4/32"},
+			ip:             "1.2.3.4",
+			shouldMatch:    true,
+			expectedPrefix: 32,
+		},
+		{
+			name:           "IPv6 slash-32 does not match colliding IPv4",
+			cidrBlocks:     []string{"808:808::/32"},
+			ip:             "8.8.8.8",
+			shouldMatch:    false,
+			expectedPrefix: 0,
+		},
+		{
+			name:           "IPv6 slash-32 still matches IPv6",
+			cidrBlocks:     []string{"808:808::/32"},
+			ip:             "808:808::1",
+			shouldMatch:    true,
+			expectedPrefix: 32,
+		},
+		{
+			name:           "IPv4-mapped lookup follows IPv4",
+			cidrBlocks:     []string{"1.2.3.4/32"},
+			ip:             "::ffff:1.2.3.4",
+			shouldMatch:    true,
+			expectedPrefix: 32,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper, err := NewIpLookupHelper(tt.cidrBlocks)
+			if err != nil {
+				t.Fatalf("Failed to create IpLookupHelper: %v", err)
+			}
+
+			ip := net.ParseIP(tt.ip)
+			if ip == nil {
+				t.Fatalf("Invalid IP address: %s", tt.ip)
+			}
+
+			found, prefixLen, err := helper.IsContained(ip)
+			if err != nil {
+				t.Errorf("IsContained returned error: %v", err)
+			}
+
+			if found != tt.shouldMatch {
+				t.Errorf("IsContained(%s) = %v, want %v", tt.ip, found, tt.shouldMatch)
+			}
+
+			if found && prefixLen != tt.expectedPrefix {
+				t.Errorf("IsContained(%s) prefix = %d, want %d", tt.ip, prefixLen, tt.expectedPrefix)
+			}
+		})
+	}
+}
+
+func TestIpLookupHelper_CatchAllIsFamilyLocal(t *testing.T) {
+	tests := []struct {
+		name           string
+		cidrBlocks     []string
+		ip             string
+		shouldMatch    bool
+		expectedPrefix int
+	}{
+		{
+			name:           "IPv4 catch-all does not match IPv6",
+			cidrBlocks:     []string{"0.0.0.0/0"},
+			ip:             "2001:db8::1",
+			shouldMatch:    false,
+			expectedPrefix: 0,
+		},
+		{
+			name:           "IPv6 catch-all does not match IPv4",
+			cidrBlocks:     []string{"::/0"},
+			ip:             "8.8.8.8",
+			shouldMatch:    false,
+			expectedPrefix: 0,
+		},
+		{
+			name:           "same-family catch-alls still match",
+			cidrBlocks:     []string{"0.0.0.0/0", "::/0"},
+			ip:             "8.8.8.8",
+			shouldMatch:    true,
+			expectedPrefix: 0,
+		},
+		{
+			name:           "same-family IPv6 catch-all still matches",
+			cidrBlocks:     []string{"0.0.0.0/0", "::/0"},
+			ip:             "2001:db8::1",
+			shouldMatch:    true,
+			expectedPrefix: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper, err := NewIpLookupHelper(tt.cidrBlocks)
+			if err != nil {
+				t.Fatalf("Failed to create IpLookupHelper: %v", err)
+			}
+
+			ip := net.ParseIP(tt.ip)
+			if ip == nil {
+				t.Fatalf("Invalid IP address: %s", tt.ip)
+			}
+
+			found, prefixLen, err := helper.IsContained(ip)
+			if err != nil {
+				t.Errorf("IsContained returned error: %v", err)
+			}
+
+			if found != tt.shouldMatch {
+				t.Errorf("IsContained(%s) = %v, want %v", tt.ip, found, tt.shouldMatch)
+			}
+
+			if found && prefixLen != tt.expectedPrefix {
+				t.Errorf("IsContained(%s) prefix = %d, want %d", tt.ip, prefixLen, tt.expectedPrefix)
+			}
+		})
+	}
+}
+
 func TestIpLookupHelper_EmptyHelper(t *testing.T) {
 	helper, err := NewIpLookupHelper([]string{})
 	if err != nil {

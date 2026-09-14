@@ -132,18 +132,28 @@ func (tree *ipRadixTree) contains(ip net.IP) (bool, int) {
 	return found, longestMatch
 }
 
-// IpLookupHelper provides fast IP block lookups using radix trees
-// Optimized for O(32) IPv4 and O(128) IPv6 lookups instead of O(n) linear search
+// IpLookupHelper provides fast IP block lookups using radix trees.
+// IPv4 and IPv6 CIDRs live on separate trees so a prefix cannot match the other family.
 type IpLookupHelper struct {
-	tree  *ipRadixTree
-	count int // Number of CIDR blocks stored
+	ipv4Tree *ipRadixTree
+	ipv6Tree *ipRadixTree
+	count    int // Number of CIDR blocks stored across both trees
 }
 
 // NewEmptyIpLookupHelper creates a new empty IP lookup helper
 func NewEmptyIpLookupHelper() *IpLookupHelper {
 	return &IpLookupHelper{
-		tree: newIPRadixTree(),
+		ipv4Tree: newIPRadixTree(),
+		ipv6Tree: newIPRadixTree(),
 	}
+}
+
+// treeFor returns the IPv4 tree when ip is IPv4 (including IPv4-mapped IPv6), else the IPv6 tree.
+func (helper *IpLookupHelper) treeFor(ip net.IP) *ipRadixTree {
+	if ip.To4() != nil {
+		return helper.ipv4Tree
+	}
+	return helper.ipv6Tree
 }
 
 // AddCIDR adds a single CIDR block to the helper
@@ -152,7 +162,7 @@ func (helper *IpLookupHelper) AddCIDR(cidr string) error {
 	if err != nil {
 		return fmt.Errorf("parse error on CIDR %q: %v", cidr, err)
 	}
-	helper.tree.insert(block)
+	helper.treeFor(block.IP).insert(block)
 	helper.count++
 	return nil
 }
@@ -182,6 +192,6 @@ func (helper *IpLookupHelper) IsContained(ipAddr net.IP) (bool, int, error) {
 	if ipAddr == nil {
 		return false, 0, fmt.Errorf("IP address is nil")
 	}
-	found, prefixLen := helper.tree.contains(ipAddr)
+	found, prefixLen := helper.treeFor(ipAddr).contains(ipAddr)
 	return found, prefixLen, nil
 }

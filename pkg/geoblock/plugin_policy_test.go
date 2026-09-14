@@ -210,6 +210,49 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		testRequest(t, "Non-US IP blocked when not in whitelist", cfg, "1.1.1.1", http.StatusForbidden)
 	})
 
+	t.Run("IPv6AllowDoesNotExemptCollidingIPv4", func(t *testing.T) {
+		cfg := &Config{
+			Mode:                  ModeEnrichAndBlock,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			AllowedIPBlocks:       []string{"808:808::/32"},
+			BlockedCountries:      []string{"US"},
+			DefaultAllow:          true,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+		}
+
+		testRequest(t, "Colliding IPv4 stays country-blocked", cfg, "8.8.8.8", http.StatusForbidden)
+
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
+		if err != nil {
+			t.Fatalf("expected no error, but got: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if got := req.Header.Get("X-Geoblock-Decision"); got != LogStatusBlock+":"+PhaseBlockedCountry {
+			t.Errorf("decision %q want %q", got, LogStatusBlock+":"+PhaseBlockedCountry)
+		}
+
+		cfg.DefaultAllow = false
+		testRequest(t, "Same-family IPv6 CIDR still allows", cfg, "808:808::1", http.StatusTeapot)
+
+		plugin, err = newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
+		if err != nil {
+			t.Fatalf("expected no error, but got: %v", err)
+		}
+		req = httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "808:808::1")
+		rr = httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req)
+		if got := req.Header.Get("X-Geoblock-Decision"); got != LogStatusPass+":"+PhaseAllowedIPBlock {
+			t.Errorf("decision %q want %q", got, LogStatusPass+":"+PhaseAllowedIPBlock)
+		}
+	})
+
 	t.Run("BypassHeaders", func(t *testing.T) {
 		cfg := &Config{
 			Mode:                 ModeEnrichAndBlock,
