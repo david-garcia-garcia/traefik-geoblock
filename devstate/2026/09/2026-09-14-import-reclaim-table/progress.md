@@ -4,7 +4,7 @@ JobName: 2026-09-14-import-reclaim-table
 
 | Phase | Work | Card | At |
 |-------|------|------|----|
-| prepare | [x] | [ ] | 2026-09-14T17:54:32.218Z |
+| prepare | [x] | [x] | 2026-09-14T17:57:52.510Z |
 | explore | [ ] | [ ] | |
 | propose | [ ] | [ ] | |
 | implement | [ ] | [ ] | |
