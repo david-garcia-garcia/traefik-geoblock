@@ -11,6 +11,7 @@ localTests: none
 requirement: requirement.md
 comments: none
 explore: explore.md
+change: import-reclaim-table
 pr:
   id: 84
   url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/84

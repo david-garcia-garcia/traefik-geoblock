@@ -39,7 +39,7 @@ Production `reclaim.Open` call sites (searched `*.go` excluding `vendor/`): `plu
 
 - Import the v1.0.1 `Hooks` API. Sleep, Wake, and Close exist on the table. Close-only method discovery (`closer` / `stopValue`) is not the target. Human Desired closed this.
 - Copy v1.0.1 into `pkg/reclaim` (replace `table.go`, drop `default.go` Default / package `Open` / `ResetWith` / `NewTable`). Do not `go.mod` require `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`. Yaegi loads this module’s `pkg/` as GOPATH subpackages (`knowledge/research/ext_traefik_plugins_yaegi-subpackages/notes.md`). Third-party modules are “vendored, Go modules not supported” for Traefik plugins; an extra import path is unnecessary for a stdlib-only table this repo already owns at `pkg/reclaim`.
-- Wire all three production Opens with `Hooks{Close: ...}` closing over the pointer assigned inside `create`. Sleep and Wake stay nil. Plugin, BIN, and MMDB own only `Close()` today. Out of scope forbids adding Sleep/Wake side effects they do not already own. Nil hooks skip those events (`notes.md` Hooks).
+- Reshape callers onto Sleep / Wake / Close. BIN and MMDB already own a 24h `dbsource.Updater` ticker: Sleep stops it, Wake starts it again (`startUpdate`), Close stops it and closes the file/reader. Plugin has no ticker; Sleep and Wake stay nil; Close still cancels `life` so wrapper holders drop. Human: reshape includes moving existing components onto what the table offers. Out of scope does not cover leaving the updater running through grace.
 - Drop the process Default. Plugin root and `pkg/dbwrappers` each hold `var table = reclaim.New(reclaim.Config{Grace: reclaim.DefaultGrace})`. Keys stay prefixed (`plugin:` / `bin:` / `mmdb:`), so two tables do not share incarnations. Tests that used `dbwrappers.Reset` / `ResetWith` as a process-wide teardown must Reset (or replace via `New(Config{Grace: short})`) **each** owner they populated. `ResetWith` is not on the remote table; grace is freeze-at-`New`.
 - Leave `EnforceCloseBeforeOpen` false (Hooks default). BIN opens a file handle but not an exclusive lock; MMDB is `FromBytes` (no mmap). Overlapping Close vs next create is the remote default.
 - Keep `Plugin`’s own `life` / `Close` as the holder context for wrappers. Do not invent a reclaim create-lifetime. Remote `create` takes no args.
@@ -60,9 +60,9 @@ This work does not set or reconstruct client address, user, tenant, Host, or tru
   By: explore
 
 - Q: Which of Plugin / BIN / MMDB need non-nil Sleep and Wake versus a Close-only `Hooks{Close: ...}` once the API is `Hooks`?
-  Rank: bounded asked — 3 production `reclaim.Open` sites (`plugin.go`, `pkg/dbwrappers/bin.go`, `pkg/dbwrappers/mmdb.go`); Desired “Reshape local callers … to pass Hooks”; Out of scope “Adding Sleep/Wake side effects the stored types do not already own”
-  Decision: assumed — Close-only for all three. `Hooks.Close` closes over the pointer assigned inside `create`. Sleep and Wake stay nil. `Plugin.Close`, `BIN.Close`, and `MMDB.Close` exist; no Sleep/Wake methods; Updater `Stop` is only used from Close.
-  By: explore
+  Rank: bounded asked — 3 production `reclaim.Open` sites (`plugin.go`, `pkg/dbwrappers/bin.go`, `pkg/dbwrappers/mmdb.go`); Desired “adjust to its shape”; human: reshape includes moving existing components onto Sleep/Wake so timers stop while asleep
+  Decision: resolved — BIN and MMDB pass Sleep (updater.Stop) and Wake (startUpdate). Plugin Sleep/Wake nil (no ticker); Close cancels `life`. Close still disposes the file/reader (wrappers) or life (plugin).
+  By: propose
 
 - Q: After Default goes away, who holds the `*Table`, and how do tests that call `dbwrappers.Reset` / `ResetWith` still tear down plugin and wrapper incarnations?
   Rank: bounded asked — 3 production Opens plus test Reset helpers; Desired “Accept other remote differences (caller-owned New(Config), no process Default…)”; searched `*.go` excluding `vendor/` for `reclaim.Open`, `dbwrappers.Reset`, `ResetWith`
