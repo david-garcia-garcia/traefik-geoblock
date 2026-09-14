@@ -22,3 +22,14 @@ fixed: none
 skipped: product Prepare reject, present-header check, tests, README (implement)
 pr: 87
 ci: succeeded (run 34899849430)
+
+## implement (2026-09-14)
+phase: implement
+findings: none
+fixed: Prepare reject empty bypassHeaders, present-header check, tests, README
+skipped: none
+pr: 87
+ci: succeeded (run 34900842764)
+localTests: passed
+open-questions: 6 assumed
+head: 33918b48680a143542e74e92af4c486824396a71
