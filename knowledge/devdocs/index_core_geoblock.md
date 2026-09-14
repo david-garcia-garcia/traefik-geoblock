@@ -30,6 +30,11 @@ priority: normal
 local: core_geoblock_database_source.md
 description: How this plugin resolves a catalog file and keeps it current.
 
+## CIDR lookup helper
+priority: normal
+local: core_geoblock_iplookup.md
+description: How this plugin stores CIDR allow/deny lists and matches them by address family.
+
 ## Test harness
 priority: normal
 local: core_geoblock_test-harness.md
