@@ -1,4 +1,4 @@
-Developer review: in progress — 2026-09-14T21:59:18Z
+Developer review: in progress — 2026-09-14T22:04:10Z
 
 ## What this changes
 **Operators.** None.
@@ -28,17 +28,17 @@ sequenceDiagram
 ```
 
 ## Merge readiness
-Usage packet Language and getter Gotchas are produced. Archive has not run. CI on the latest push is still in progress. 1 item remains.
+OpenSpec change is archived into the live catalog. Pull request title is still WIP. CI on the archive push is in progress. 1 item remains.
 
 Priority: P1 — Production is unsafe, or serving a wrong public contract today
-Reviewed head: 019e2ec
+Reviewed head: cdf0b2c
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 3/6 | CI in progress after usage-packet push |
-| CI proof | 3/6 | Test succeeded; Lint and Integration Tests in progress on run 34901712244 |
+| Overall readiness | 3/6 | CI in progress after archive |
+| CI proof | 3/6 | Lint, Test, and Integration Tests in progress on run 34902168670 |
 | Local tests proof | N/A | Remote PR; CI proof covers it (handoff localTests: passed) |
 | Review resolution | 6/6 | OPEN PR, no review comments |
 
@@ -46,15 +46,15 @@ Owner decision: Required. See Explore Decisions.
 | Check | Result | Evidence |
 | --- | --- | --- |
 | Branch | 2026-09-14-bin-handle-race pushed | `git` origin/2026-09-14-bin-handle-race |
-| OpenSpec | bin-rwmutex-published-handle | `openspec/changes/bin-rwmutex-published-handle/` |
+| OpenSpec | bin-rwmutex-published-handle archived | `openspec/changes/archive/2026-09-14-bin-rwmutex-published-handle/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/85 | pr-host List |
-| CI | build 34901712244 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901712244 | pr-host CI |
+| CI | build 34902168670 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34902168670 | pr-host CI |
 | Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | no comments.md |
 
 ## Specs
-- [core_geoblock_database_wrapper-reclaim](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/openspec/changes/bin-rwmutex-published-handle/proposal.md) — modified
-- [core_geoblock_database_lookup](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/openspec/changes/bin-rwmutex-published-handle/proposal.md) — modified
+- [core_geoblock_database_wrapper-reclaim](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/openspec/changes/archive/2026-09-14-bin-rwmutex-published-handle/proposal.md) — modified
+- [core_geoblock_database_lookup](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/openspec/changes/archive/2026-09-14-bin-rwmutex-published-handle/proposal.md) — modified
 
 ## Deviations from the ask
 - taken: BIN mutex discipline matching MMDB → keep BIN 10s delayed Close after swap — `pkg/dbwrappers/bin.go` — mutex already waits in-flight Get_all; the 10s delay is existing BIN behavior and no criterion names it. Requester: not asked.
@@ -63,7 +63,7 @@ Owner decision: Required. See Explore Decisions.
 - [ ] [Enable the Go race detector in CI](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/knowledge/debt/2026-09-14-ci-go-race-detector.md) — adding `-race` to CI is not a one-line flag that already works; logging tests race and Yaegi skips.
 
 ## How this fits together
-Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the BIN mutex has landed, and the wrapper usage packet caught up. Archive is next.
+Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the BIN mutex has landed, and the change is archived. Pull request is next.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -103,7 +103,7 @@ Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the 
 | --- | --- | --- |
 | Specs in this PR | 0 added / 2 modified | Same list as ## Specs; do not paste diff --stat |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 019e2ecc9e9f4644856df88427a1c93985d72ca0 | Card must match the branch you measured |
+| Reviewed head | cdf0b2cdef2e5a09b865e6ee33add9816c6a0de6 | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -119,8 +119,8 @@ Is this the best way to solve the issue? Yes versus `master`: MMDB already owns 
 What I checked:
 - Seven axis files under the run root; Standards 1 done, Nitpicks 1 done, other axes none
 - Review-fix SHA 04190b9
-- CI in progress on run 34901712244 (HEAD 019e2ec)
-- Devdocs impact: language-gap and stale-usage produced on `core_geoblock_database_wrapper`
+- CI in progress on run 34902168670 (HEAD cdf0b2c)
+- Archive: `openspec/changes/archive/2026-09-14-bin-rwmutex-published-handle/`
 
 ### Rank-up moves
 None.

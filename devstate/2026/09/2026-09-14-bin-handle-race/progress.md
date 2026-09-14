@@ -10,5 +10,5 @@ JobName: 2026-09-14-bin-handle-race
 | implement | [x] | [x] | 2026-09-14T21:47:49Z |
 | codereview | [x] | [x] | 2026-09-14T21:55:07Z |
 | devdocsimpact | [x] | [x] | 2026-09-14T22:00:20Z |
-| archive | [ ] | [ ] | |
+| archive | [x] | [x] | 2026-09-14T22:05:36Z |
 | pullrequest | [ ] | [ ] | |

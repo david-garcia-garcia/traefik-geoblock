@@ -35,3 +35,9 @@ phase: devdocsimpact
 findings: language-gap, stale-usage
 fixed: Published handle Language; Path/Version/SourcePath Gotcha
 skipped: none
+
+## archive (2026-09-14)
+phase: archive
+findings: none
+fixed: folded wrapper-reclaim and lookup into live specs; moved change to archive/2026-09-14-bin-rwmutex-published-handle
+skipped: none
