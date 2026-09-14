@@ -1,0 +1,17 @@
+issueKey: 2026-09-14-cidr-family-leak
+jobName: 2026-09-14-cidr-family-leak
+issueHost: local
+issueRef: none
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified-with-gaps
+src: 9cd4c54fc8d13db8e3e1f8af69fb753927a5b7253cb0c7fdd66eeb4236b3209a
+localTests: none
+requirement: requirement.md
+comments: none
+explore: none
+change: none
+pr:
+  id: 86
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/86
