@@ -41,3 +41,9 @@ phase: archive
 findings: none
 fixed: folded wrapper-reclaim and lookup into live specs; moved change to archive/2026-09-14-bin-rwmutex-published-handle
 skipped: none
+
+## pullrequest (2026-09-14)
+phase: pullrequest
+findings: none
+fixed: dropped WIP title; CI succeeded on run 34902350749
+skipped: none

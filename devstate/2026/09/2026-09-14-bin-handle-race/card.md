@@ -1,4 +1,4 @@
-Developer review: in progress — 2026-09-14T22:04:10Z
+Developer review: ready for review — 2026-09-14T22:08:58Z
 
 ## What this changes
 **Operators.** None.
@@ -28,17 +28,17 @@ sequenceDiagram
 ```
 
 ## Merge readiness
-OpenSpec change is archived into the live catalog. Pull request title is still WIP. CI on the archive push is in progress. 1 item remains.
+Ready for review. CI succeeded. 1 item remains.
 
 Priority: P1 — Production is unsafe, or serving a wrong public contract today
-Reviewed head: cdf0b2c
+Reviewed head: 48329cd
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 3/6 | CI in progress after archive |
-| CI proof | 3/6 | Lint, Test, and Integration Tests in progress on run 34902168670 |
+| Overall readiness | 6/6 | CI succeeded; no open PR comments |
+| CI proof | 6/6 | Lint, Test, and Integration Tests succeeded on run 34902350749 |
 | Local tests proof | N/A | Remote PR; CI proof covers it (handoff localTests: passed) |
 | Review resolution | 6/6 | OPEN PR, no review comments |
 
@@ -48,7 +48,7 @@ Owner decision: Required. See Explore Decisions.
 | Branch | 2026-09-14-bin-handle-race pushed | `git` origin/2026-09-14-bin-handle-race |
 | OpenSpec | bin-rwmutex-published-handle archived | `openspec/changes/archive/2026-09-14-bin-rwmutex-published-handle/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/85 | pr-host List |
-| CI | build 34902168670 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34902168670 | pr-host CI |
+| CI | build 34902350749 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34902350749 | pr-host CI |
 | Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | no comments.md |
 
@@ -63,7 +63,7 @@ Owner decision: Required. See Explore Decisions.
 - [ ] [Enable the Go race detector in CI](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/knowledge/debt/2026-09-14-ci-go-race-detector.md) — adding `-race` to CI is not a one-line flag that already works; logging tests race and Yaegi skips.
 
 ## How this fits together
-Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the BIN mutex has landed, and the change is archived. Pull request is next.
+Local dump is grounded on `2026-09-14-bin-handle-race`. PR 85 is ready for review. Lint, Test, and Integration Tests succeeded on run 34902350749.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -80,8 +80,9 @@ Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the 
 - [x] Guard `BIN.db` with MMDB-matching `RWMutex` discipline; `LookupRecord` takes the handle once
 - [x] Existing `-race` failures must pass; add product concurrency tests (do not copy `zzz_proof_*`)
 - [x] Seven-axis review: two hard nits applied (04190b9)
-- [x] Stub PR opened
-- [x] OpenSpec change `bin-rwmutex-published-handle` proposed
+- [x] OpenSpec change archived to `openspec/changes/archive/2026-09-14-bin-rwmutex-published-handle/`
+- [x] PR title ready (`🐛 fix(dbwrappers): serialize BIN published handle under RWMutex`)
+- [x] CI succeeded on run 34902350749
 
 ## Findings
 - [[P3] startUpdate job comment](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_standards.md) — FIX — applied. Path: `pkg/dbwrappers/bin.go`. Reply none.
@@ -103,7 +104,7 @@ Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the 
 | --- | --- | --- |
 | Specs in this PR | 0 added / 2 modified | Same list as ## Specs; do not paste diff --stat |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | cdf0b2cdef2e5a09b865e6ee33add9816c6a0de6 | Card must match the branch you measured |
+| Reviewed head | 48329cd840af811ec98d98fdc9aa649dbeacd043 | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -119,7 +120,7 @@ Is this the best way to solve the issue? Yes versus `master`: MMDB already owns 
 What I checked:
 - Seven axis files under the run root; Standards 1 done, Nitpicks 1 done, other axes none
 - Review-fix SHA 04190b9
-- CI in progress on run 34902168670 (HEAD cdf0b2c)
+- CI succeeded on run 34902350749 (HEAD 48329cd)
 - Archive: `openspec/changes/archive/2026-09-14-bin-rwmutex-published-handle/`
 
 ### Rank-up moves
