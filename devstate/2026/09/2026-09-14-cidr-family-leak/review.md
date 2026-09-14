@@ -16,3 +16,14 @@ pr: 86
 ci: build 34898689824 in progress
 open-questions: 5 (3 assumed, 2 resolved)
 escalation: none
+
+## propose (2026-09-14)
+phase: propose
+findings: none
+fixed: none
+skipped: none
+change: cidr-family-isolation
+spec: core_geoblock_iplookup_family-match (new)
+pr: 86
+ci: build 34899411969 in progress
+open-questions: 5 (3 assumed, 2 resolved)
