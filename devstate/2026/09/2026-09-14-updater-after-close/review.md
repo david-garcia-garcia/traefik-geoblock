@@ -27,3 +27,9 @@ phase: codereview
 findings: Test coverage 2 hard (hotSwap/open after Close unproven by delayed-download tests)
 fixed: TestOpenBIN_HotSwapAfterClose; TestOpenMMDB_OpenAfterClose (facb6ac)
 skipped: none
+
+## devdocsimpact (2026-09-14)
+phase: devdocsimpact
+findings: 2 stale-usage (wrapper Sleep/Close join; source Stop join)
+fixed: core_geoblock_database_wrapper.md; core_geoblock_database_source.md
+skipped: none
