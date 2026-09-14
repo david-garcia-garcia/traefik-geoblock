@@ -10,5 +10,5 @@ JobName: 2026-09-14-empty-bypass-header
 | implement | [x] | [x] | 2026-09-14T21:54:23Z |
 | codereview | [x] | [x] | 2026-09-14T22:03:41Z |
 | devdocsimpact | [x] | [x] | 2026-09-14T22:14:00Z |
-| archive | [ ] | [ ] | |
+| archive | [x] | [x] | 2026-09-14T22:24:24Z |
 | pullrequest | [ ] | [ ] | |
