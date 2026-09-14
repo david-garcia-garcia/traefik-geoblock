@@ -1,11 +1,11 @@
-Developer review: in progress — 2026-09-14T21:24:40Z
+Developer review: in progress — 2026-09-14T21:33:24Z
 
 ## What this changes
 **Operators.** None.
 
 **Admin users.** None.
 
-**Developers.** No BIN mutex yet versus `master`. This branch parks `knowledge/debt/2026-09-14-ci-go-race-detector.md` so CI `-race` stays a follow-up.
+**Developers.** OpenSpec change `bin-rwmutex-published-handle` folds mutex and lookup-once rules onto `core_geoblock_database_wrapper-reclaim` and `core_geoblock_database_lookup`. Product BIN mutex is not on `master` yet. This branch parks `knowledge/debt/2026-09-14-ci-go-race-detector.md` so CI `-race` stays a follow-up.
 
 **End users.** None.
 
@@ -28,17 +28,17 @@ sequenceDiagram
 ```
 
 ## Merge readiness
-Explore recorded mutex shape and assumed proceed policies. Product mutex work has not started. 2 items remain.
+Propose folded two spec leaves. Product mutex work has not started. 2 items remain.
 
 Priority: P1 — Production is unsafe, or serving a wrong public contract today
-Reviewed head: 38d5e88
+Reviewed head: ac19aac
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 3/6 | CI still in progress; product fix is not on the branch yet |
-| CI proof | 3/6 | Lint and Test succeeded; Integration Tests in progress on run 34898514402 |
+| Overall readiness | 3/6 | CI in progress after propose push; product fix is not on the branch yet |
+| CI proof | 3/6 | Lint, Test, and Integration Tests in progress on run 34899411173 |
 | Local tests proof | N/A | Before implement on a remote PR |
 | Review resolution | 6/6 | OPEN PR, no review comments |
 
@@ -46,14 +46,15 @@ Owner decision: Required. See Explore Decisions.
 | Check | Result | Evidence |
 | --- | --- | --- |
 | Branch | 2026-09-14-bin-handle-race pushed | `git` origin/2026-09-14-bin-handle-race |
-| OpenSpec | none | `openspec/` |
+| OpenSpec | bin-rwmutex-published-handle | `openspec/changes/bin-rwmutex-published-handle/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/85 | pr-host List |
-| CI | build 34898514402 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34898514402 | pr-host CI |
+| CI | build 34899411173 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34899411173 | pr-host CI |
 | Local tests | none | handoff.yaml localTests |
 | PR comments | no comments | no comments.md |
 
 ## Specs
-None.
+- [core_geoblock_database_wrapper-reclaim](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/openspec/changes/bin-rwmutex-published-handle/proposal.md) — modified
+- [core_geoblock_database_lookup](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/openspec/changes/bin-rwmutex-published-handle/proposal.md) — modified
 
 ## Deviations from the ask
 - taken: BIN mutex discipline matching MMDB → keep BIN 10s delayed Close after swap — `pkg/dbwrappers/bin.go` — mutex already waits in-flight Get_all; the 10s delay is existing BIN behavior and no criterion names it. Requester: not asked.
@@ -62,23 +63,24 @@ None.
 - [ ] [Enable the Go race detector in CI](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/knowledge/debt/2026-09-14-ci-go-race-detector.md) — adding `-race` to CI is not a one-line flag that already works; logging tests race and Yaegi skips.
 
 ## How this fits together
-Local dump for F-1/F-1b is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, and explore recorded BIN mutex decisions. Propose is next.
+Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, explore recorded mutex decisions, and propose folded two spec leaves. Implement is next.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
 | --- | --- | --- | --- |
-| Does LookupRecord hold RLock for Get_all, or snapshot *ip2loc.DB and unlock first? | bounded asked | assumed — RLock for nil-check + Get_all (defer RUnlock, Yaegi), then map columns. Do not snapshot-and-unlock. | explore |
-| What publishes the BIN handle — swapHandle, swapReader, or a helper shared with MMDB? | additive asked | assumed — BIN-local swapHandle with MMDB.swapReader shape. Do not name it swapReader. Do not extract a shared helper; leave mmdb.go unchanged. | explore |
-| Do Path / Version / SourcePath take the same mutex as db? | bounded asked | assumed — yes. RLock on those getters; startUpdate compares via SourcePath(). | explore |
-| After swapHandle, does BIN still delay-Close the old handle by 10s, or Close immediately like MMDB? | bounded incidental | assumed — keep the 10s delayed Close of the old handle. Do not reshape hot-swap timing to match MMDB. | explore |
-| Where do the new concurrent lookup vs hot-swap/close tests live? | additive asked | assumed — add package tests in pkg/dbwrappers (not zzz_proof_*, not pkg/geoblock). Keep the two existing lifecycle tests as the race-detector gate. | explore |
-| Add go test -race to CI / Makefile in this change? | additive incidental | assumed — do not add the flag. Follow-up remains knowledge/debt/2026-09-14-ci-go-race-detector.md. | explore |
+| Does LookupRecord hold RLock for Get_all, or snapshot *ip2loc.DB and unlock first? | bounded asked | assumed — RLock for nil-check + Get_all (defer RUnlock, Yaegi), then map columns. Do not snapshot-and-unlock. | propose |
+| What publishes the BIN handle — swapHandle, swapReader, or a helper shared with MMDB? | additive asked | assumed — BIN-local swapHandle with MMDB.swapReader shape. Do not name it swapReader. Do not extract a shared helper; leave mmdb.go unchanged. | propose |
+| Do Path / Version / SourcePath take the same mutex as db? | bounded asked | assumed — yes. RLock on those getters; startUpdate compares via SourcePath(). | propose |
+| After swapHandle, does BIN still delay-Close the old handle by 10s, or Close immediately like MMDB? | bounded incidental | assumed — keep the 10s delayed Close of the old handle. Do not reshape hot-swap timing to match MMDB. | propose |
+| Where do the new concurrent lookup vs hot-swap/close tests live? | additive asked | assumed — add package tests in pkg/dbwrappers (not zzz_proof_*, not pkg/geoblock). Keep the two existing lifecycle tests as the race-detector gate. | propose |
+| Add go test -race to CI / Makefile in this change? | additive incidental | assumed — do not add the flag. Follow-up remains knowledge/debt/2026-09-14-ci-go-race-detector.md. | propose |
 
 ## Before merge
 - [ ] [P1] Guard `BIN.db` with MMDB-matching `RWMutex` discipline; `LookupRecord` takes the handle once
 - [ ] [P1] Existing `-race` failures must pass; add product concurrency tests (do not copy `zzz_proof_*`)
 - [x] Stub PR opened
 - [x] Explore recorded mutex shape
+- [x] OpenSpec change `bin-rwmutex-published-handle` proposed
 
 ## Findings
 None.
@@ -91,9 +93,9 @@ None.
 ### Review metrics
 | Metric | Value | Why it matters |
 | --- | --- | --- |
-| Specs in this PR | none | Same list as ## Specs; do not paste diff --stat |
+| Specs in this PR | 0 added / 2 modified | Same list as ## Specs; do not paste diff --stat |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 38d5e881b933c9c4a660016890173ef51aea31d8 | Card must match the branch you measured |
+| Reviewed head | ac19aac8ef2142ba3373a7b70680b26ddeffb762 | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -103,16 +105,14 @@ Best possible solution: match MMDB's existing `sync.RWMutex` publish/lookup/clos
 
 Do we have a high-confidence way to reproduce? Yes, `go test -race` on `TestNew_ContextBindsWrapper` and `TestOpenBIN_HashChangeDisposesOld` (docker `golang:1.25` with `GOFLAGS=-mod=vendor` when the host has no gcc). Explore reproduced both FAIL.
 
-Is this the best way to solve the issue? Yes versus `master`: MMDB already owns this discipline. BIN-local `swapHandle`; leave `mmdb.go` unchanged.
+Is this the best way to solve the issue? Yes versus `master`: MMDB already owns this discipline. BIN-local `swapHandle`; leave `mmdb.go` unchanged. Specs fold onto existing leaves.
 
 ### Evidence
 What I checked:
-- Explore reproduced both `-race` FAILs (`docker golang:1.25`, `GOFLAGS=-mod=vendor`)
-- `BIN` has no mutex; `LookupRecord` reads `w.db` twice (`pkg/dbwrappers/bin.go`)
-- `MMDB` locks via `swapReader` and `Lookup` (`pkg/dbwrappers/mmdb.go`)
-- `Get_all` → `query` reads `d.metaok` with no nil-receiver guard (`vendor/github.com/ip2location/ip2location-go/v9/ip2location.go`)
-- CI Lint and Test succeeded; Integration Tests in progress (run 34898514402)
-- Six assumed explore rows; no decide pass; no blocked rank
+- Change folder `openspec/changes/bin-rwmutex-published-handle/` (HEAD ac19aac)
+- FindSpecHost fold `core_geoblock_database_wrapper-reclaim` and `core_geoblock_database_lookup` (`devstate/.../specs.md`)
+- CI Lint, Test, Integration Tests in progress (run 34899411173)
+- Six assumed explore rows; By: propose; no blocked rank
 
 ### Rank-up moves
 None.
