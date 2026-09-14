@@ -33,11 +33,12 @@ Each enabled catalog row is one wrapper plus one source. Merge happens after Loo
 - Omitted `enabled` means on. Zero enabled rows in a lookup mode fails `Prepare`. Unknown or empty `databaseType` on an enabled row fails `Prepare`. Unknown `databaseType`/`archive` fails `New`. A bound URL with empty `databaseAutoUpdateDir` WARNs and uses `os.TempDir()`/`traefik-geoblock`.
 - Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path). A set `path` that is not a file WARNs `seed was specified but not found`. Else `{TRAEFIK_PLUGIN_GEOBLOCK_PATH}/seeds/<defaultFile>` then `{env}/<defaultFile>`. Empty `defaultFile` skips bundled search. No directory walk. An ASN LITE row (`databaseType: bin`, `fieldsPreconfigured: ip2location_asn`) ships no `defaultFile`; BIN open allows a missing file when both `path` and `defaultFile` are empty. There is no `*_databaseFilePath`.
 - Wrapper and source logs include `key` (the `databaseSources` map key).
-- `Start` returns a nil Updater when the URL is empty.
+- `Start` returns a nil Updater when the URL is empty. `Stop` ends the ticker and waits for that goroutine to exit. After stop is signaled, that Updater must not call `onUpdate` (an in-flight GET still finishes). Wrappers Sleep/Close call this Stop only; do not add a second join.
 
 ## Gotchas
 
 - Failed GET/unpack errors use `DownloadHint` only. Do not log the URL (tokens may be in the query).
+- `Stop` waits out an in-flight GET (`HTTPGetTimeout` is 30m). `HTTPGet` has no `context`.
 - `TRAEFIK_PLUGIN_GEOBLOCK_PATH` must be the plugin root. Unset → say it must be set. Set but exact files missing → those paths plus “probably not the plugin root”.
 - Disable `default_ip2location` when another country row should win or be the only source.
 
