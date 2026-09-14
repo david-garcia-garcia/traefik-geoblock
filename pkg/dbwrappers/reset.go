@@ -12,6 +12,7 @@ var (
 	table   = reclaim.New(reclaim.Config{Grace: reclaim.DefaultGrace})
 )
 
+// currentTable is the wrappers reclaim table, replaced by ResetWith.
 func currentTable() *reclaim.Table {
 	tableMu.Lock()
 	defer tableMu.Unlock()

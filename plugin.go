@@ -19,6 +19,7 @@ var (
 	pluginTable   = reclaim.New(reclaim.Config{Grace: reclaim.DefaultGrace})
 )
 
+// currentPluginTable is the plugin-root reclaim table, replaced by ResetForTestWith.
 func currentPluginTable() *reclaim.Table {
 	pluginTableMu.Lock()
 	defer pluginTableMu.Unlock()

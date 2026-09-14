@@ -194,11 +194,12 @@ func (w *MMDB) Lookup(ip string, dest any) error {
 	return db.Lookup(parsed, dest)
 }
 
-// Close stops the updater and the reader. The reclaim table calls this when the incarnation ends.
+// Close stops the updater and the reader. Tests may call this; production Close is the reclaim Hooks.Close.
 func (w *MMDB) Close() {
 	w.close()
 }
 
+// close stops the updater and the reader.
 func (w *MMDB) close() {
 	if w.updater != nil {
 		w.updater.Stop()

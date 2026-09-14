@@ -7,7 +7,7 @@ repoSlug: traefik-geoblock
 destBranch: master
 qualify: qualified-with-gaps
 src: d0098abf40b3eb8c9e73432cd4c3e0c0170574aef454690c9fd76a021da69dc9
-localTests: none
+localTests: passed
 requirement: requirement.md
 comments: none
 explore: explore.md

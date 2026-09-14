@@ -342,11 +342,12 @@ func (w *BIN) SourcePath() string {
 	return w.sourceDbPath
 }
 
-// Close stops the updater and the file handle. The reclaim table calls this when the incarnation ends.
+// Close stops the updater and the file handle. Tests may call this; production Close is the reclaim Hooks.Close.
 func (w *BIN) Close() {
 	w.close()
 }
 
+// close stops the updater and the file handle.
 func (w *BIN) close() {
 	if w.updater != nil {
 		w.updater.Stop()
