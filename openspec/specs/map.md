@@ -8,6 +8,7 @@ Allowlist of root + domain: `openspec/specs/domains.md`.
 ### geoblock
 
 - database
+- iplookup
 - observability
 - plugin
 
