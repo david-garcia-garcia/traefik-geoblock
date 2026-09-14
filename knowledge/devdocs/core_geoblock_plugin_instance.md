@@ -3,7 +3,7 @@
 ## Language
 
 **Plugin incarnation**:
-The shared `Plugin` stored on the process reclaim table for one Traefik middleware name and normalized config hash.
+The shared `Plugin` stored on the plugin-root reclaim table for one Traefik middleware name and normalized config hash.
 _Avoid_: treating the returned handler as the stored Plugin; sharing `next`
 
 **Route**:
@@ -17,10 +17,10 @@ Root `New` builds the Plugin once per name+config and reuses it for later router
 ## How to use
 
 - Do not construct maps, regexes, IP helpers, or ban HTML outside `geoblock.NewCore`. That create runs once per incarnation and opens catalog sources only when `mode` is `enrich` or `enrichandblock`.
-- Do not bind wrappers to a Traefik `New` context. The table calls `Plugin.Close` when the incarnation ends.
-- Key prefix is `plugin:`. Same process table as `bin:` / `mmdb:` (`std_go_reclaim.md`).
+- Do not bind wrappers to a Traefik `New` context. Plugin `Close` (the table Close hook) cancels `life` when the incarnation ends. Plugin Sleep/Wake are nil.
+- Key prefix is `plugin:` on the plugin-root table. Wrappers use a second table (`bin:` / `mmdb:`).
 - After grace the table drops the slot and `Close`s the Plugin.
-- Tests: `dbwrappers.Reset` / `ResetWith` from the root package. Assert `SameCore` (same `*Plugin`) and per-`New` `Next`. Filter reclaim logs with the `plugin:` prefix.
+- Tests: `ResetForTest` / `ResetForTestWith` on the plugin-root table, and `dbwrappers.Reset` / `ResetWith` when wrappers were opened. Assert `SameCore` (same `*Plugin`) and per-`New` `Next`. Filter reclaim logs with the `plugin:` prefix.
 
 ## Pattern snippet
 
@@ -28,9 +28,14 @@ Root `New` builds the Plugin once per name+config and reuses it for later router
 if err := geoblock.Prepare(cfg, name); err != nil {
 	return nil, err
 }
-stored, err := reclaim.Open(ctx, pluginKey(name, cfg), func() (any, error) {
-	return geoblock.NewCore(name, cfg)
-})
+stored, err := pluginTable.Open(ctx, pluginKey(name, cfg), logger, func() (any, error) {
+	created, err := geoblock.NewCore(name, cfg)
+	if err != nil {
+		return nil, err
+	}
+	pluginInstance = created
+	return created, nil
+}, reclaim.Hooks{Close: func() { pluginInstance.Close() }})
 pluginInstance, ok := stored.(*geoblock.Plugin)
 return pluginInstance.ForRoute(next)
 ```
@@ -42,7 +47,7 @@ return pluginInstance.ForRoute(next)
 - `pkg/geoblock/config.go` — Config, Prepare, catalog bind
 - `pkg/geoblock/plugin.go` — NewCore, Plugin, ServeHTTP
 - `pkg/geoblock/route.go` — Route, ForRoute
-- `pkg/reclaim` — process table
+- `pkg/reclaim` — plugin-root table vs wrappers table
 
 ## Gotchas
 

@@ -7,10 +7,38 @@ import (
 	"hash/fnv"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/geoblock"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
 )
+
+var (
+	pluginTableMu sync.Mutex
+	pluginTable   = reclaim.New(reclaim.Config{Grace: reclaim.DefaultGrace})
+)
+
+func currentPluginTable() *reclaim.Table {
+	pluginTableMu.Lock()
+	defer pluginTableMu.Unlock()
+	return pluginTable
+}
+
+// ResetForTest disposes plugin-root incarnations. Tests only.
+func ResetForTest() {
+	pluginTableMu.Lock()
+	defer pluginTableMu.Unlock()
+	pluginTable.Reset()
+}
+
+// ResetForTestWith is ResetForTest then a new plugin-root table with grace. Tests only.
+func ResetForTestWith(grace time.Duration) {
+	pluginTableMu.Lock()
+	defer pluginTableMu.Unlock()
+	pluginTable.Reset()
+	pluginTable = reclaim.New(reclaim.Config{Grace: grace})
+}
 
 //go:generate go run ./tools/dbdownload/main.go -o ./seeds/IP2LOCATION-LITE-DB1.IPV6.BIN
 
@@ -41,17 +69,29 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 
 // bindPlugin stores or reclaims the NewCore Plugin, then ForRoutes this next.
 func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config) (http.Handler, error) {
-	stored, err := reclaim.Open(ctx, pluginKey(name, cfg), geoblock.PluginLogger(name, cfg), func() (any, error) {
-		return geoblock.NewCore(name, cfg)
+	var pluginInstance *geoblock.Plugin
+	stored, err := currentPluginTable().Open(ctx, pluginKey(name, cfg), geoblock.PluginLogger(name, cfg), func() (any, error) {
+		created, err := geoblock.NewCore(name, cfg)
+		if err != nil {
+			return nil, err
+		}
+		pluginInstance = created
+		return created, nil
+	}, reclaim.Hooks{
+		Close: func() {
+			if pluginInstance != nil {
+				pluginInstance.Close()
+			}
+		},
 	})
 	if err != nil {
 		return nil, err
 	}
-	pluginInstance, ok := stored.(*geoblock.Plugin)
+	storedPlugin, ok := stored.(*geoblock.Plugin)
 	if !ok {
 		return nil, fmt.Errorf("%s: reclaim: want *geoblock.Plugin, got %T", name, stored)
 	}
-	return pluginInstance.ForRoute(next)
+	return storedPlugin.ForRoute(next)
 }
 
 // pluginKey is the process-table key for one Plugin incarnation.

@@ -48,17 +48,39 @@ func mmdbKey(cfg MMDBConfig) string {
 // OpenMMDB returns the singleton MMDB for cfg and binds ctx on the process table.
 func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	key := mmdbKey(cfg)
-	v, err := reclaim.Open(ctx, key, logger, func() (any, error) {
-		return newMMDB(cfg, logger)
+	var w *MMDB
+	v, err := currentTable().Open(ctx, key, logger, func() (any, error) {
+		created, err := newMMDB(cfg, logger)
+		if err != nil {
+			return nil, err
+		}
+		w = created
+		return created, nil
+	}, reclaim.Hooks{
+		Sleep: func() {
+			if w != nil {
+				w.sleep()
+			}
+		},
+		Wake: func() {
+			if w != nil {
+				w.wake()
+			}
+		},
+		Close: func() {
+			if w != nil {
+				w.close()
+			}
+		},
 	})
 	if err != nil {
 		return nil, err
 	}
-	w, ok := v.(*MMDB)
+	typed, ok := v.(*MMDB)
 	if !ok {
 		return nil, fmt.Errorf("reclaim: %s: want *MMDB, got %T", key, v)
 	}
-	return w, nil
+	return typed, nil
 }
 
 func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
@@ -74,6 +96,23 @@ func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	if err := w.open(path); err != nil {
 		return nil, err
 	}
+	w.startUpdate()
+	return w, nil
+}
+
+// sleep stops the keep-current ticker while this wrapper is parked in grace.
+func (w *MMDB) sleep() {
+	if w.updater != nil {
+		w.updater.Stop()
+	}
+}
+
+// wake starts the keep-current ticker after a reclaim.
+func (w *MMDB) wake() {
+	w.startUpdate()
+}
+
+func (w *MMDB) startUpdate() {
 	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
 		if path == "" || path == w.Path() {
 			return
@@ -83,10 +122,10 @@ func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 		}
 	})
 	if err != nil {
-		return nil, err
+		w.logger.Error("source updater", "error", err)
+		return
 	}
 	w.updater = updater
-	return w, nil
 }
 
 func (w *MMDB) sourceCfg() dbsource.Config {

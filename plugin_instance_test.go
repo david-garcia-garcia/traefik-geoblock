@@ -85,12 +85,15 @@ func countInstanceMsg(ev [][2]string, msg string) int {
 // shortInstanceLeases resets the process table to a 25ms grace and captures logs.
 func shortInstanceLeases(t *testing.T) *instanceLog {
 	t.Helper()
+	ResetForTest()
+	t.Cleanup(ResetForTest)
 	dbwrappers.Reset()
 	t.Cleanup(dbwrappers.Reset)
 	h := &instanceLog{}
 	spy := slog.New(h)
 	geoblock.SetTestPluginLogger(spy)
 	t.Cleanup(func() { geoblock.SetTestPluginLogger(nil) })
+	ResetForTestWith(100 * time.Millisecond)
 	dbwrappers.ResetWith(100 * time.Millisecond)
 	return h
 }

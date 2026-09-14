@@ -67,17 +67,39 @@ func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, err
 	if cfg.OwnerPlugin != "" {
 		wrap = logging.NewOwner(cfg.OwnerPlugin, cfg.OwnerLevel)
 	}
-	v, err := reclaim.Open(ctx, key, logger, func() (any, error) {
-		return newBIN(cfg, wrap)
+	var w *BIN
+	v, err := currentTable().Open(ctx, key, logger, func() (any, error) {
+		created, err := newBIN(cfg, wrap)
+		if err != nil {
+			return nil, err
+		}
+		w = created
+		return created, nil
+	}, reclaim.Hooks{
+		Sleep: func() {
+			if w != nil {
+				w.sleep()
+			}
+		},
+		Wake: func() {
+			if w != nil {
+				w.wake()
+			}
+		},
+		Close: func() {
+			if w != nil {
+				w.close()
+			}
+		},
 	})
 	if err != nil {
 		return nil, err
 	}
-	w, ok := v.(*BIN)
+	typed, ok := v.(*BIN)
 	if !ok {
 		return nil, fmt.Errorf("reclaim: %s: want *BIN, got %T", key, v)
 	}
-	return w, nil
+	return typed, nil
 }
 
 func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
@@ -198,6 +220,18 @@ func binCopyName(token string, unixNano int64) string {
 		return fmt.Sprintf("bin_%d.BIN", unixNano)
 	}
 	return fmt.Sprintf("bin_%s_%d.BIN", token, unixNano)
+}
+
+// sleep stops the keep-current ticker while this wrapper is parked in grace.
+func (w *BIN) sleep() {
+	if w.updater != nil {
+		w.updater.Stop()
+	}
+}
+
+// wake starts the keep-current ticker after a reclaim.
+func (w *BIN) wake() {
+	w.startUpdate()
 }
 
 func (w *BIN) startUpdate() {
