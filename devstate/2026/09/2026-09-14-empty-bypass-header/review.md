@@ -66,3 +66,15 @@ ci: succeeded (run 34903642550)
 localTests: passed
 open-questions: 6 assumed
 head: e0e6518f3c19a260710f78f3c2385fbf35acfd0b
+
+## pullrequest (2026-09-14)
+phase: pullrequest
+findings: none
+fixed: none
+skipped: none
+pr: 87
+ci: succeeded (run 34904011678)
+localTests: passed
+open-questions: 6 assumed
+head: 81209de57caceda398d7b49f109d3bfc25061edb
+verdict: ready for review
