@@ -6,3 +6,13 @@ skipped: none
 qualify: qualified-with-gaps
 pr: 86
 ci: build 34897940802 in progress
+
+## explore (2026-09-14)
+phase: explore
+findings: none
+fixed: none
+skipped: F-5 `/0` vs longest-prefix in `decide` (not inseparable; debt note)
+pr: 86
+ci: build 34898689824 in progress
+open-questions: 5 (3 assumed, 2 resolved)
+escalation: none
