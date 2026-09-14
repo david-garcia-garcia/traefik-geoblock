@@ -372,6 +372,10 @@ func (p Plugin) blockSkipReason(req *http.Request, ipChain string) string {
 		return PhaseExcludedRegex
 	}
 	for header, expectedValue := range p.bypassHeaders {
+		// Presence first so an absent header cannot match a leftover empty expected value.
+		if len(req.Header.Values(header)) == 0 {
+			continue
+		}
 		if actualValue := req.Header.Get(header); actualValue == expectedValue {
 			logging.Trace(p.logger, "bypassing geoblock due to bypass header match",
 				"header", header, "value", logging.Redact(expectedValue),
