@@ -224,6 +224,7 @@ func (w *BIN) wake() {
 	w.startUpdate()
 }
 
+// startUpdate starts the keep-current ticker that hot-swaps a newer dated BIN.
 func (w *BIN) startUpdate() {
 	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
 		if path == "" || path == w.SourcePath() {
@@ -257,11 +258,11 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 		os.Remove(newLocalCopy)
 		return fmt.Errorf("hotSwap: failed to read new database version: %w", err)
 	}
-	oldDB := w.swapHandle(newDB, newLocalCopy, newVersion, newLocalCopy, newDatabasePath)
-	if oldDB != nil {
+	old := w.swapHandle(newDB, newLocalCopy, newVersion, newLocalCopy, newDatabasePath)
+	if old != nil {
 		go func() {
 			time.Sleep(10 * time.Second)
-			oldDB.Close()
+			old.Close()
 		}()
 	}
 	w.logger.Info("BIN hot-swapped", "new_version", newVersion.String(), "new_path", newLocalCopy, "source_path", newDatabasePath)
