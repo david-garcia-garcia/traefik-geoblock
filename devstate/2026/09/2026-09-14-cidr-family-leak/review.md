@@ -73,3 +73,16 @@ localTests: passed
 open-questions: 5 (3 assumed, 2 resolved)
 reviewed-head: ac994c6
 archived: openspec/changes/archive/2026-09-14-cidr-family-isolation
+
+## pullrequest (2026-09-14)
+phase: pullrequest
+findings: none
+fixed: dropped WIP title on PR 86
+skipped: comments.md publish (file absent)
+pr: 86
+title: 🐛 fix(iplookup): match CIDR allow and block lists by address family
+ci: build 34903014575 Lint/Test/Integration success
+localTests: passed
+open-questions: 5 (3 assumed, 2 resolved)
+reviewed-head: 36b8d1b
+verdict: ready for review

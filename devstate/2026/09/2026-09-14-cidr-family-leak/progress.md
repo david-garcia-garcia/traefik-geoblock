@@ -11,4 +11,4 @@ JobName: 2026-09-14-cidr-family-leak
 | codereview | [x] | [x] | 2026-09-14T21:58:31.875Z |
 | devdocsimpact | [x] | [x] | 2026-09-14T22:06:06.959Z |
 | archive | [x] | [x] | 2026-09-14T22:12:59.729Z |
-| pullrequest | [ ] | [ ] | |
+| pullrequest | [x] | [x] | 2026-09-14T22:16:46.579Z |
