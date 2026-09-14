@@ -18,6 +18,7 @@ Entrypoints stay at `github.com/david-garcia-garcia/traefik-geoblock`. Helpers l
 - Root package exports `Config`, `CreateConfig`, and `New`. Those are the Yaegi entrypoints. Root `New` calls `Prepare` (so the instance key is the normalized config), `reclaim.Open`s the Plugin, and `ForRoute`s this `next`.
 - Put Config/Prepare, Plugin, Route, ServeHTTP, NewCore, and ForRoute in `pkg/geoblock`. `NewCore` opens enabled catalog sources only for `enrich` and `enrichandblock`. That package does not call `reclaim.Open`.
 - Third-party packages (reclaim, ip2location, oschwald) live in `vendor/`. Do not copy them into `pkg/`.
+- Unlock every mutex with `defer` immediately after `Lock`/`RLock`. Yaegi recovers panics without exiting the process, so a trailing `Unlock` would leave the lock held. Close or log after a swap outside that deferred section.
 - Do not put `New` / `CreateConfig` only in a subpackage — Traefik evals the module root.
 
 ## Key files

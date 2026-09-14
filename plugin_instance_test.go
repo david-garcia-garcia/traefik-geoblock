@@ -29,8 +29,9 @@ func (h *instanceLog) Enabled(context.Context, slog.Level) bool { return true } 
 // Handle stores a clone of each record.
 func (h *instanceLog) Handle(_ context.Context, r slog.Record) error {
 	h.mu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer h.mu.Unlock()
 	h.recs = append(h.recs, r.Clone())
-	h.mu.Unlock()
 	return nil
 }
 
@@ -40,6 +41,7 @@ func (h *instanceLog) WithGroup(string) slog.Handler      { return h } // same s
 // events is each record’s message plus its key attr.
 func (h *instanceLog) events() [][2]string {
 	h.mu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer h.mu.Unlock()
 	out := make([][2]string, 0, len(h.recs))
 	for _, r := range h.recs {

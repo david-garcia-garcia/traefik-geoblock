@@ -63,4 +63,5 @@ typed := v.(*BIN)
 - Do not copy the table into `pkg/reclaim`. Third-party code for Yaegi lives in `vendor/`. Library tests stay in utilities (`go mod vendor` skips `*_test.go`).
 - Yaegi: do not write `Table[*T]` on a type from another package. Do not type-switch create `any` for Close/Sleep.
 - Wake does not run on first create. Start tickers inside `create`.
+- Do not nil-check the pointer closed over by Hooks. The table stores those funcs only after `create` assigned it; a nil there is a broken create, not a skip.
 - Tests assert the `msg` constants. A config change is two keys: cancel A, Open B, wait grace, expect `reclaim_dispose` A.

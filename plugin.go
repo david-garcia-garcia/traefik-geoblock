@@ -22,6 +22,7 @@ var (
 // currentPluginTable is the plugin-root reclaim table, replaced by ResetForTestWith.
 func currentPluginTable() *reclaim.Table {
 	pluginTableMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer pluginTableMu.Unlock()
 	return pluginTable
 }
@@ -29,6 +30,7 @@ func currentPluginTable() *reclaim.Table {
 // ResetForTest disposes plugin-root incarnations. Tests only.
 func ResetForTest() {
 	pluginTableMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer pluginTableMu.Unlock()
 	pluginTable.Reset()
 }
@@ -36,6 +38,7 @@ func ResetForTest() {
 // ResetForTestWith is ResetForTest then a new plugin-root table with grace. Tests only.
 func ResetForTestWith(grace time.Duration) {
 	pluginTableMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer pluginTableMu.Unlock()
 	pluginTable.Reset()
 	pluginTable = reclaim.New(reclaim.Config{Grace: grace})
@@ -79,11 +82,7 @@ func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config
 		pluginInstance = created
 		return created, nil
 	}, reclaim.Hooks{
-		Close: func() {
-			if pluginInstance != nil {
-				pluginInstance.Close()
-			}
-		},
+		Close: func() { pluginInstance.Close() },
 	})
 	if err != nil {
 		return nil, err

@@ -15,6 +15,7 @@ var (
 // currentTable is the wrappers reclaim table, replaced by ResetWith.
 func currentTable() *reclaim.Table {
 	tableMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer tableMu.Unlock()
 	return table
 }
@@ -22,6 +23,7 @@ func currentTable() *reclaim.Table {
 // Reset disposes every singleton wrapper. Tests only.
 func Reset() {
 	tableMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer tableMu.Unlock()
 	table.Reset()
 }
@@ -29,6 +31,7 @@ func Reset() {
 // ResetWith is Reset then a new table with grace. Tests only.
 func ResetWith(grace time.Duration) {
 	tableMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer tableMu.Unlock()
 	table.Reset()
 	table = reclaim.New(reclaim.Config{Grace: grace})

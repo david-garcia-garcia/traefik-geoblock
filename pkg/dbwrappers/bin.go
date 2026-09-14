@@ -76,21 +76,9 @@ func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, err
 		w = created
 		return created, nil
 	}, reclaim.Hooks{
-		Sleep: func() {
-			if w != nil {
-				w.sleep()
-			}
-		},
-		Wake: func() {
-			if w != nil {
-				w.wake()
-			}
-		},
-		Close: func() {
-			if w != nil {
-				w.close()
-			}
-		},
+		Sleep: func() { w.sleep() },
+		Wake:  func() { w.wake() },
+		Close: func() { w.close() },
 	})
 	if err != nil {
 		return nil, err

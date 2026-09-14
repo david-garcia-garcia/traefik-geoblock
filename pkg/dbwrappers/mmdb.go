@@ -57,21 +57,9 @@ func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, 
 		w = created
 		return created, nil
 	}, reclaim.Hooks{
-		Sleep: func() {
-			if w != nil {
-				w.sleep()
-			}
-		},
-		Wake: func() {
-			if w != nil {
-				w.wake()
-			}
-		},
-		Close: func() {
-			if w != nil {
-				w.close()
-			}
-		},
+		Sleep: func() { w.sleep() },
+		Wake:  func() { w.wake() },
+		Close: func() { w.close() },
 	})
 	if err != nil {
 		return nil, err
@@ -145,11 +133,7 @@ func (w *MMDB) open(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open MMDB %s: %w", path, err)
 	}
-	w.mu.Lock()
-	old := w.db
-	w.db = db
-	w.path = path
-	w.mu.Unlock()
+	old := w.swapReader(db, path)
 	if old != nil {
 		_ = old.Close()
 	}
@@ -157,9 +141,21 @@ func (w *MMDB) open(path string) error {
 	return nil
 }
 
+// swapReader stores db at path and returns the previous reader. Caller Closes that reader.
+func (w *MMDB) swapReader(db *maxminddb.Reader, path string) *maxminddb.Reader {
+	w.mu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer w.mu.Unlock()
+	old := w.db
+	w.db = db
+	w.path = path
+	return old
+}
+
 // Path is the file last opened.
 func (w *MMDB) Path() string {
 	w.mu.RLock()
+	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
 	defer w.mu.RUnlock()
 	return w.path
 }
@@ -186,12 +182,12 @@ func (w *MMDB) Lookup(ip string, dest any) error {
 		return fmt.Errorf("invalid IP address: %s", ip)
 	}
 	w.mu.RLock()
-	db := w.db
-	w.mu.RUnlock()
-	if db == nil {
+	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
+	defer w.mu.RUnlock()
+	if w.db == nil {
 		return fmt.Errorf("MMDB is not open")
 	}
-	return db.Lookup(parsed, dest)
+	return w.db.Lookup(parsed, dest)
 }
 
 // Close stops the updater and the reader. Tests may call this; production Close is the reclaim Hooks.Close.
@@ -204,11 +200,9 @@ func (w *MMDB) close() {
 	if w.updater != nil {
 		w.updater.Stop()
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.db != nil {
-		_ = w.db.Close()
-		w.db = nil
+	old := w.swapReader(nil, "")
+	if old != nil {
+		_ = old.Close()
 	}
 }
 
