@@ -8,7 +8,7 @@ JobName: 2026-09-14-bin-handle-race
 | explore | [x] | [x] | 2026-09-14T21:25:43Z |
 | propose | [x] | [x] | 2026-09-14T21:34:28Z |
 | implement | [x] | [x] | 2026-09-14T21:47:49Z |
-| codereview | [ ] | [ ] | |
+| codereview | [x] | [x] | 2026-09-14T21:55:07Z |
 | devdocsimpact | [ ] | [ ] | |
 | archive | [ ] | [ ] | |
 | pullrequest | [ ] | [ ] | |

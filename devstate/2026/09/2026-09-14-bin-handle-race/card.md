@@ -1,4 +1,4 @@
-Developer review: in progress — 2026-09-14T21:46:29Z
+Developer review: in progress — 2026-09-14T21:53:56Z
 
 ## What this changes
 **Operators.** None.
@@ -28,17 +28,17 @@ sequenceDiagram
 ```
 
 ## Merge readiness
-BIN mutex landed on the branch and CI succeeded. Code review has not run. 1 item remains.
+Seven-axis review applied two hard nits. CI on the review-fix push is still in progress. 1 item remains.
 
 Priority: P1 — Production is unsafe, or serving a wrong public contract today
-Reviewed head: 72c04eb
+Reviewed head: 14dee85
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 6/6 | CI succeeded; no open PR comments |
-| CI proof | 6/6 | Lint, Test, and Integration Tests succeeded on run 34900186345 |
+| Overall readiness | 3/6 | CI in progress after review-fix push |
+| CI proof | 3/6 | Lint, Test, and Integration Tests in progress on run 34901269836 |
 | Local tests proof | N/A | Remote PR; CI proof covers it (handoff localTests: passed) |
 | Review resolution | 6/6 | OPEN PR, no review comments |
 
@@ -48,7 +48,7 @@ Owner decision: Required. See Explore Decisions.
 | Branch | 2026-09-14-bin-handle-race pushed | `git` origin/2026-09-14-bin-handle-race |
 | OpenSpec | bin-rwmutex-published-handle | `openspec/changes/bin-rwmutex-published-handle/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/85 | pr-host List |
-| CI | build 34900186345 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34900186345 | pr-host CI |
+| CI | build 34901269836 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34901269836 | pr-host CI |
 | Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | no comments.md |
 
@@ -63,7 +63,7 @@ Owner decision: Required. See Explore Decisions.
 - [ ] [Enable the Go race detector in CI](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/knowledge/debt/2026-09-14-ci-go-race-detector.md) — adding `-race` to CI is not a one-line flag that already works; logging tests race and Yaegi skips.
 
 ## How this fits together
-Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the BIN mutex has landed, and CI on run 34900186345 succeeded. Code review is next.
+Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the BIN mutex has landed, and seven-axis review applied two nits. Devdocs impact is next.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -79,16 +79,22 @@ Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the 
 - [ ] Owner review of assumed Explore Decisions (mutex shape, 10s Close, no CI `-race`)
 - [x] Guard `BIN.db` with MMDB-matching `RWMutex` discipline; `LookupRecord` takes the handle once
 - [x] Existing `-race` failures must pass; add product concurrency tests (do not copy `zzz_proof_*`)
+- [x] Seven-axis review: two hard nits applied (04190b9)
 - [x] Stub PR opened
-- [x] Explore recorded mutex shape
 - [x] OpenSpec change `bin-rwmutex-published-handle` proposed
-- [x] CI succeeded on run 34900186345
 
 ## Findings
-None.
+- [[P3] startUpdate job comment](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_standards.md) — FIX — applied. Path: `pkg/dbwrappers/bin.go`. Reply none.
+- [[P3] hotSwap previous-handle name](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_nitpicks.md) — FIX — applied (`oldDB` → `old`). Path: `pkg/dbwrappers/bin.go`. Reply none.
 
 ## Axis review
-None.
+[Standards](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_standards.md) — 1 total, 0 pending, 1 completed
+[Nitpicks](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_nitpicks.md) — 1 total, 0 pending, 1 completed
+[Spec](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_spec.md) — 0 total, 0 pending, 0 completed
+[Security](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_security.md) — 0 total, 0 pending, 0 completed
+[Performance](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_performance.md) — 0 total, 0 pending, 0 completed
+[Dead](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_dead.md) — 0 total, 0 pending, 0 completed
+[Test coverage](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/devstate/2026/09/2026-09-14-bin-handle-race/codereview_coverage.md) — 0 total, 0 pending, 0 completed
 
 ## Agent review details
 
@@ -97,7 +103,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 0 added / 2 modified | Same list as ## Specs; do not paste diff --stat |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 72c04eb7343d4dfa2e49c9a67bd66b2030456df2 | Card must match the branch you measured |
+| Reviewed head | 14dee85c9b3c05c20ab7e405883fc9a2a56a7939 | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -105,17 +111,15 @@ None.
 ### Technical review
 Best possible solution: match MMDB's existing `sync.RWMutex` publish/lookup/close path on BIN; do not invent a second locking model.
 
-Do we have a high-confidence way to reproduce? Yes, `go test -race` on `TestNew_ContextBindsWrapper` and `TestOpenBIN_HashChangeDisposesOld` (docker `golang:1.25` with `GOFLAGS=-mod=vendor` when the host has no gcc). Explore reproduced both FAIL; implement reports they pass after the mutex.
+Do we have a high-confidence way to reproduce? Yes, `go test -race` on `TestNew_ContextBindsWrapper` and `TestOpenBIN_HashChangeDisposesOld` (docker `golang:1.25` with `GOFLAGS=-mod=vendor` when the host has no gcc).
 
 Is this the best way to solve the issue? Yes versus `master`: MMDB already owns this discipline. BIN-local `swapHandle`; leave `mmdb.go` unchanged.
 
 ### Evidence
 What I checked:
-- Product delta `pkg/dbwrappers/bin.go`, `pkg/dbwrappers/bin_handle_test.go` (HEAD 72c04eb)
-- `handoff.yaml` localTests: passed
-- CI Lint, Test, Integration Tests succeeded (run 34900186345)
-- Usage packet updated (`knowledge/devdocs/core_geoblock_database_wrapper.md`)
-- Six assumed explore rows remain; no blocked rank
+- Seven axis files under the run root; Standards 1 done, Nitpicks 1 done, other axes none
+- Review-fix SHA 04190b9
+- CI in progress on run 34901269836 (HEAD 14dee85)
 
 ### Rank-up moves
 None.

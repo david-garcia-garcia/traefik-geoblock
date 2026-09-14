@@ -23,3 +23,9 @@ phase: implement
 findings: none
 fixed: BIN RWMutex + swapHandle + LookupRecord RLock/Get_all once; bin_handle_test.go; usage packet
 skipped: CI `-race` overhaul (note large); BIN 10s delayed Close kept (deviation)
+
+## codereview (2026-09-14)
+phase: codereview
+findings: P3 2
+fixed: startUpdate comment; hotSwap oldDB renamed to old (04190b9)
+skipped: none
