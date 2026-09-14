@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"log/slog"
@@ -50,6 +51,8 @@ type BIN struct {
 	currentLocalDbCopy string
 	sourceDbPath       string
 	updater            *dbsource.Updater
+	// closed is set before Stop so a late hotSwap cannot publish.
+	closed atomic.Bool
 }
 
 const keyPrefixBIN = "bin:"
@@ -255,6 +258,12 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 		os.Remove(newLocalCopy)
 		return fmt.Errorf("hotSwap: failed to read new database version: %w", err)
 	}
+	// Close and remove a copy opened after Close so this generation stays disposed.
+	if w.closed.Load() {
+		newDB.Close()
+		os.Remove(newLocalCopy)
+		return nil
+	}
 	oldDB := w.db
 	w.db = newDB
 	w.path = newLocalCopy
@@ -337,6 +346,8 @@ func (w *BIN) Close() {
 
 // close stops the updater and the file handle.
 func (w *BIN) close() {
+	// Mark closed before joining Stop so a late hotSwap cannot publish.
+	w.closed.Store(true)
 	if w.updater != nil {
 		w.updater.Stop()
 	}
