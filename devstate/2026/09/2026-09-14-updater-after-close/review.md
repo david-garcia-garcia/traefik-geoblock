@@ -33,3 +33,9 @@ phase: devdocsimpact
 findings: 2 stale-usage (wrapper Sleep/Close join; source Stop join)
 fixed: core_geoblock_database_wrapper.md; core_geoblock_database_source.md
 skipped: none
+
+## archive (2026-09-14)
+phase: archive
+findings: folded delta into core_geoblock_database_wrapper-reclaim
+fixed: live spec sync; moved to openspec/changes/archive/2026-09-14-disposed-generation-stays-disposed
+skipped: none
