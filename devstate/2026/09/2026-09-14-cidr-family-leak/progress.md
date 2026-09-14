@@ -7,7 +7,7 @@ JobName: 2026-09-14-cidr-family-leak
 | prepare | [x] | [x] | 2026-09-14T21:17:17.965Z |
 | explore | [x] | [x] | 2026-09-14T21:26:08.617Z |
 | propose | [x] | [x] | 2026-09-14T21:33:54.099Z |
-| implement | [ ] | [ ] | |
+| implement | [x] | [x] | 2026-09-14T21:47:02.578Z |
 | codereview | [ ] | [ ] | |
 | devdocsimpact | [ ] | [ ] | |
 | archive | [ ] | [ ] | |

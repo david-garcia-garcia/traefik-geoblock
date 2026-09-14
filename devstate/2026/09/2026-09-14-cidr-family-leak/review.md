@@ -27,3 +27,13 @@ spec: core_geoblock_iplookup_family-match (new)
 pr: 86
 ci: build 34899411969 in progress
 open-questions: 5 (3 assumed, 2 resolved)
+
+## implement (2026-09-14)
+phase: implement
+findings: none
+fixed: two family trees on IpLookupHelper; colliding-prefix product tests; README family isolation
+skipped: F-5 decide /0 sentinel (debt note)
+pr: 86
+ci: build 34900132878 Test failed, Lint and Integration Tests succeeded
+localTests: passed
+open-questions: 5 (3 assumed, 2 resolved)
