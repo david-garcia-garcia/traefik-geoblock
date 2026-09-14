@@ -10,6 +10,10 @@ _Avoid_: Factory, vendor brand, slot
 How the bytes are opened (`bin` / `mmdb`). Column maps are named presets or an operator path → Field (Record key + MMDB scalar type, default string).
 _Avoid_: treating a file brand as a wrapper type; hidden vendor structs; inferring MMDB type from the Record key
 
+**Published handle**:
+The live vendor database object currently visible on a Wrapper (`*ip2loc.DB` or `*maxminddb.Reader`), published with its sibling path fields under one write lock.
+_Avoid_: snapshot of the vendor pointer released before Get_all or Lookup; a lock helper shared by BIN and MMDB
+
 ## Overview
 
 `pkg/dbwrappers` owns BIN and MMDB open/hot-swap and the named presets. `BIN.LookupRecord` and `MMDB.LookupRecord` take a `FieldMap` (path → Field) and fill a `Record`. MMDB decode uses each Field's type (`string` or `uint32`) so unused keys are skipped. The plugin never type-asserts a wrapper. Prepare expands `fieldsPreconfigured` into that map.
@@ -26,7 +30,7 @@ _Avoid_: treating a file brand as a wrapper type; hidden vendor structs; inferri
 ## Gotchas
 
 - **Do** open the Lite MMDB with `os.ReadFile` + `maxminddb.FromBytes`. After `go mod vendor`, run `scripts/apply-oschwald-yaegi-patch.ps1` so Yaegi never loads upstream mmap / `x/sys` (`incomplete type ifreq`).
-- BIN publishes `db` and sibling paths under `sync.RWMutex` (`swapHandle`), matching MMDB `swapReader`. Hold `RLock` for the nil check and vendor lookup (`Get_all` / `db.Lookup`); map BIN columns after unlock. `defer` Unlock/RUnlock: Yaegi recovers panics without exiting, so a trailing Unlock would not run.
+- The Published handle is swapped under `sync.RWMutex` (`BIN.swapHandle`, matching `MMDB.swapReader`). Hold `RLock` for the nil check and vendor lookup (`Get_all` / `db.Lookup`); map BIN columns after unlock. Path, Version, and SourcePath take the same read lock; keep-current skip-compare uses `SourcePath()`. `defer` Unlock/RUnlock: Yaegi recovers panics without exiting, so a trailing Unlock would not run.
 - BIN hot-swap delayed-Closes the previous vendor handle after 10s. Reclaim Close unpublished-then-Closes immediately. Do not extract a helper shared with MMDB.
 
 ## Pattern snippet
