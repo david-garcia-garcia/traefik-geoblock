@@ -1,13 +1,13 @@
-Developer review: in progress — 2026-09-14T21:33:24Z
+Developer review: in progress — 2026-09-14T21:46:29Z
 
 ## What this changes
 **Operators.** None.
 
 **Admin users.** None.
 
-**Developers.** OpenSpec change `bin-rwmutex-published-handle` folds mutex and lookup-once rules onto `core_geoblock_database_wrapper-reclaim` and `core_geoblock_database_lookup`. Product BIN mutex is not on `master` yet. This branch parks `knowledge/debt/2026-09-14-ci-go-race-detector.md` so CI `-race` stays a follow-up.
+**Developers.** `BIN` now serializes the published handle with `sync.RWMutex` and `swapHandle`. `LookupRecord` holds `RLock` for the nil check and one `Get_all`. Concurrent lookup vs hot-swap/close tests live in `pkg/dbwrappers/bin_handle_test.go`. OpenSpec change `bin-rwmutex-published-handle` folds those rules onto `core_geoblock_database_wrapper-reclaim` and `core_geoblock_database_lookup`. Usage packet `knowledge/devdocs/core_geoblock_database_wrapper.md` notes the RWMutex / Yaegi-defer gotcha. CI `-race` stays a follow-up via `knowledge/debt/2026-09-14-ci-go-race-detector.md`.
 
-**End users.** None.
+**End users.** BIN-backed allow/block no longer races a torn handle or panics on a nil Get_all during reclaim or hot-swap.
 
 ## Motivation
 IP2Location BIN wrappers serve country data on the request path while an updater tick and reclaim Close publish or clear the live file handle. MaxMind MMDB already locks that job. BIN does not.
@@ -28,18 +28,18 @@ sequenceDiagram
 ```
 
 ## Merge readiness
-Propose folded two spec leaves. Product mutex work has not started. 2 items remain.
+BIN mutex landed on the branch and CI succeeded. Code review has not run. 1 item remains.
 
 Priority: P1 — Production is unsafe, or serving a wrong public contract today
-Reviewed head: ac19aac
+Reviewed head: 72c04eb
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 3/6 | CI in progress after propose push; product fix is not on the branch yet |
-| CI proof | 3/6 | Lint, Test, and Integration Tests in progress on run 34899411173 |
-| Local tests proof | N/A | Before implement on a remote PR |
+| Overall readiness | 6/6 | CI succeeded; no open PR comments |
+| CI proof | 6/6 | Lint, Test, and Integration Tests succeeded on run 34900186345 |
+| Local tests proof | N/A | Remote PR; CI proof covers it (handoff localTests: passed) |
 | Review resolution | 6/6 | OPEN PR, no review comments |
 
 ## Verification
@@ -48,8 +48,8 @@ Owner decision: Required. See Explore Decisions.
 | Branch | 2026-09-14-bin-handle-race pushed | `git` origin/2026-09-14-bin-handle-race |
 | OpenSpec | bin-rwmutex-published-handle | `openspec/changes/bin-rwmutex-published-handle/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/85 | pr-host List |
-| CI | build 34899411173 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34899411173 | pr-host CI |
-| Local tests | none | handoff.yaml localTests |
+| CI | build 34900186345 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34900186345 | pr-host CI |
+| Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | no comments.md |
 
 ## Specs
@@ -63,7 +63,7 @@ Owner decision: Required. See Explore Decisions.
 - [ ] [Enable the Go race detector in CI](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-bin-handle-race/knowledge/debt/2026-09-14-ci-go-race-detector.md) — adding `-race` to CI is not a one-line flag that already works; logging tests race and Yaegi skips.
 
 ## How this fits together
-Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, explore recorded mutex decisions, and propose folded two spec leaves. Implement is next.
+Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, the BIN mutex has landed, and CI on run 34900186345 succeeded. Code review is next.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -76,11 +76,13 @@ Local dump is grounded on `2026-09-14-bin-handle-race`, stub PR 85 is open, expl
 | Add go test -race to CI / Makefile in this change? | additive incidental | assumed — do not add the flag. Follow-up remains knowledge/debt/2026-09-14-ci-go-race-detector.md. | propose |
 
 ## Before merge
-- [ ] [P1] Guard `BIN.db` with MMDB-matching `RWMutex` discipline; `LookupRecord` takes the handle once
-- [ ] [P1] Existing `-race` failures must pass; add product concurrency tests (do not copy `zzz_proof_*`)
+- [ ] Owner review of assumed Explore Decisions (mutex shape, 10s Close, no CI `-race`)
+- [x] Guard `BIN.db` with MMDB-matching `RWMutex` discipline; `LookupRecord` takes the handle once
+- [x] Existing `-race` failures must pass; add product concurrency tests (do not copy `zzz_proof_*`)
 - [x] Stub PR opened
 - [x] Explore recorded mutex shape
 - [x] OpenSpec change `bin-rwmutex-published-handle` proposed
+- [x] CI succeeded on run 34900186345
 
 ## Findings
 None.
@@ -95,7 +97,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 0 added / 2 modified | Same list as ## Specs; do not paste diff --stat |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | ac19aac8ef2142ba3373a7b70680b26ddeffb762 | Card must match the branch you measured |
+| Reviewed head | 72c04eb7343d4dfa2e49c9a67bd66b2030456df2 | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -103,16 +105,17 @@ None.
 ### Technical review
 Best possible solution: match MMDB's existing `sync.RWMutex` publish/lookup/close path on BIN; do not invent a second locking model.
 
-Do we have a high-confidence way to reproduce? Yes, `go test -race` on `TestNew_ContextBindsWrapper` and `TestOpenBIN_HashChangeDisposesOld` (docker `golang:1.25` with `GOFLAGS=-mod=vendor` when the host has no gcc). Explore reproduced both FAIL.
+Do we have a high-confidence way to reproduce? Yes, `go test -race` on `TestNew_ContextBindsWrapper` and `TestOpenBIN_HashChangeDisposesOld` (docker `golang:1.25` with `GOFLAGS=-mod=vendor` when the host has no gcc). Explore reproduced both FAIL; implement reports they pass after the mutex.
 
-Is this the best way to solve the issue? Yes versus `master`: MMDB already owns this discipline. BIN-local `swapHandle`; leave `mmdb.go` unchanged. Specs fold onto existing leaves.
+Is this the best way to solve the issue? Yes versus `master`: MMDB already owns this discipline. BIN-local `swapHandle`; leave `mmdb.go` unchanged.
 
 ### Evidence
 What I checked:
-- Change folder `openspec/changes/bin-rwmutex-published-handle/` (HEAD ac19aac)
-- FindSpecHost fold `core_geoblock_database_wrapper-reclaim` and `core_geoblock_database_lookup` (`devstate/.../specs.md`)
-- CI Lint, Test, Integration Tests in progress (run 34899411173)
-- Six assumed explore rows; By: propose; no blocked rank
+- Product delta `pkg/dbwrappers/bin.go`, `pkg/dbwrappers/bin_handle_test.go` (HEAD 72c04eb)
+- `handoff.yaml` localTests: passed
+- CI Lint, Test, Integration Tests succeeded (run 34900186345)
+- Usage packet updated (`knowledge/devdocs/core_geoblock_database_wrapper.md`)
+- Six assumed explore rows remain; no blocked rank
 
 ### Rank-up moves
 None.
