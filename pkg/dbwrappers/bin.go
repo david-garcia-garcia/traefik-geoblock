@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"log/slog"
@@ -42,6 +43,7 @@ type BINConfig struct {
 
 // BIN is one open IP2Location BIN (file handle) with temp-copy hot-swap.
 type BIN struct {
+	mu                 sync.RWMutex
 	cfg                BINConfig
 	logger             *slog.Logger
 	db                 *ip2loc.DB
@@ -134,6 +136,7 @@ func (w *BIN) initialize() error {
 				targetPath = latest
 			} else {
 				targetPath = copied
+				w.currentLocalDbCopy = copied
 			}
 		} else {
 			targetPath = resolved
@@ -179,7 +182,6 @@ func (w *BIN) createLocalCopy(sourcePath string) (string, error) {
 	if err := fileutils.Copy(sourcePath, tmpFile, false); err != nil {
 		return "", fmt.Errorf("failed to create local copy: %w", err)
 	}
-	w.currentLocalDbCopy = tmpFile
 	return tmpFile, nil
 }
 
@@ -224,7 +226,7 @@ func (w *BIN) wake() {
 
 func (w *BIN) startUpdate() {
 	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
-		if path == "" || path == w.sourceDbPath {
+		if path == "" || path == w.SourcePath() {
 			return
 		}
 		if err := w.hotSwap(path); err != nil {
@@ -255,12 +257,7 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 		os.Remove(newLocalCopy)
 		return fmt.Errorf("hotSwap: failed to read new database version: %w", err)
 	}
-	oldDB := w.db
-	w.db = newDB
-	w.path = newLocalCopy
-	w.version = newVersion
-	w.currentLocalDbCopy = newLocalCopy
-	w.sourceDbPath = newDatabasePath
+	oldDB := w.swapHandle(newDB, newLocalCopy, newVersion, newLocalCopy, newDatabasePath)
 	if oldDB != nil {
 		go func() {
 			time.Sleep(10 * time.Second)
@@ -271,13 +268,27 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 	return nil
 }
 
+// swapHandle stores the published vendor handle and sibling paths, then returns the previous handle.
+func (w *BIN) swapHandle(db *ip2loc.DB, path string, version *dbutils.DBVersion, currentLocalDbCopy, sourceDbPath string) *ip2loc.DB {
+	w.mu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer w.mu.Unlock()
+	old := w.db
+	w.db = db
+	w.path = path
+	w.version = version
+	w.currentLocalDbCopy = currentLocalDbCopy
+	w.sourceDbPath = sourceDbPath
+	return old
+}
+
 // LookupRecord fills Record from the BIN using fields (path → Record key).
 // One Get_all; only mapped paths are copied.
 func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error) {
-	if w == nil || w.db == nil {
+	if w == nil {
 		return dbprovider.Record{}, fmt.Errorf("BIN is not open")
 	}
-	record, err := w.db.Get_all(ip)
+	record, err := w.getAll(ip)
 	if err != nil {
 		return dbprovider.Record{}, err
 	}
@@ -290,6 +301,17 @@ func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error
 		return binColumn(record, path)
 	})
 	return rec, nil
+}
+
+// getAll runs Get_all under the published-handle read lock.
+func (w *BIN) getAll(ip string) (ip2loc.IP2Locationrecord, error) {
+	w.mu.RLock()
+	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
+	defer w.mu.RUnlock()
+	if w.db == nil {
+		return ip2loc.IP2Locationrecord{}, fmt.Errorf("BIN is not open")
+	}
+	return w.db.Get_all(ip)
 }
 
 // binColumn is one IP2Location Get_all column.
@@ -317,16 +339,25 @@ func binColumn(rec ip2loc.IP2Locationrecord, path string) string {
 
 // Version is the BIN header version.
 func (w *BIN) Version() *dbutils.DBVersion {
+	w.mu.RLock()
+	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
+	defer w.mu.RUnlock()
 	return w.version
 }
 
 // Path is the file last opened (temp copy or source).
 func (w *BIN) Path() string {
+	w.mu.RLock()
+	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
+	defer w.mu.RUnlock()
 	return w.path
 }
 
 // SourcePath is the dated or seed file the live handle was copied from.
 func (w *BIN) SourcePath() string {
+	w.mu.RLock()
+	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
+	defer w.mu.RUnlock()
 	return w.sourceDbPath
 }
 
@@ -340,9 +371,9 @@ func (w *BIN) close() {
 	if w.updater != nil {
 		w.updater.Stop()
 	}
-	if w.db != nil {
-		w.db.Close()
-		w.db = nil
+	old := w.swapHandle(nil, "", nil, "", "")
+	if old != nil {
+		old.Close()
 	}
 }
 

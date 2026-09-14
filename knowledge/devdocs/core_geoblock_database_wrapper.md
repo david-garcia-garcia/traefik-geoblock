@@ -26,6 +26,8 @@ _Avoid_: treating a file brand as a wrapper type; hidden vendor structs; inferri
 ## Gotchas
 
 - **Do** open the Lite MMDB with `os.ReadFile` + `maxminddb.FromBytes`. After `go mod vendor`, run `scripts/apply-oschwald-yaegi-patch.ps1` so Yaegi never loads upstream mmap / `x/sys` (`incomplete type ifreq`).
+- BIN publishes `db` and sibling paths under `sync.RWMutex` (`swapHandle`), matching MMDB `swapReader`. Hold `RLock` for the nil check and vendor lookup (`Get_all` / `db.Lookup`); map BIN columns after unlock. `defer` Unlock/RUnlock: Yaegi recovers panics without exiting, so a trailing Unlock would not run.
+- BIN hot-swap delayed-Closes the previous vendor handle after 10s. Reclaim Close unpublished-then-Closes immediately. Do not extract a helper shared with MMDB.
 
 ## Pattern snippet
 
