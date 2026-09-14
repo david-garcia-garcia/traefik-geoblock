@@ -21,3 +21,9 @@ phase: implement
 findings: Stop joins; tick skips onUpdate after stop; BIN/MMDB ignore after close
 fixed: updater.go join; bin.go atomic closed; mmdb.go closed flag; delayed_close_test.go; updater_test.go
 skipped: HTTPGet context; F-1 LookupRecord mutex
+
+## codereview (2026-09-14)
+phase: codereview
+findings: Test coverage 2 hard (hotSwap/open after Close unproven by delayed-download tests)
+fixed: TestOpenBIN_HotSwapAfterClose; TestOpenMMDB_OpenAfterClose (facb6ac)
+skipped: none

@@ -8,7 +8,7 @@ JobName: 2026-09-14-updater-after-close
 | explore | [x] | [x] | 2026-09-14T21:26:52.590Z |
 | propose | [x] | [x] | 2026-09-14T21:34:33.149Z |
 | implement | [x] | [x] | 2026-09-14T21:53:14.351Z |
-| codereview | [ ] | [ ] | |
+| codereview | [x] | [x] | 2026-09-14T22:03:34.035Z |
 | devdocsimpact | [ ] | [ ] | |
 | archive | [ ] | [ ] | |
 | pullrequest | [ ] | [ ] | |
