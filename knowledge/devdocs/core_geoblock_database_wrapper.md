@@ -37,5 +37,5 @@ rec, err := w.LookupRecord(ip, fields)
 ## Key files
 
 - `pkg/dbwrappers` — BIN, MMDB, `FieldMap`, presets, `Reset`
-- `pkg/reclaim` — wrappers table (`any`)
+- `vendor/.../traefik-middleware-utilities/reclaim` — wrappers table (`any`)
 - `pkg/dbsource` — Resolve and Updater used by both wrappers

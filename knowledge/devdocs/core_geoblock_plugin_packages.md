@@ -17,6 +17,7 @@ Entrypoints stay at `github.com/david-garcia-garcia/traefik-geoblock`. Helpers l
 
 - Root package exports `Config`, `CreateConfig`, and `New`. Those are the Yaegi entrypoints. Root `New` calls `Prepare` (so the instance key is the normalized config), `reclaim.Open`s the Plugin, and `ForRoute`s this `next`.
 - Put Config/Prepare, Plugin, Route, ServeHTTP, NewCore, and ForRoute in `pkg/geoblock`. `NewCore` opens enabled catalog sources only for `enrich` and `enrichandblock`. That package does not call `reclaim.Open`.
+- Third-party packages (reclaim, ip2location, oschwald) live in `vendor/`. Do not copy them into `pkg/`.
 - Do not put `New` / `CreateConfig` only in a subpackage — Traefik evals the module root.
 
 ## Key files
@@ -26,4 +27,5 @@ Entrypoints stay at `github.com/david-garcia-garcia/traefik-geoblock`. Helpers l
 - `pkg/geoblock/config.go` — Config, CreateConfig, Prepare
 - `pkg/geoblock/plugin.go` — Plugin, ServeHTTP, NewCore
 - `pkg/geoblock/route.go` — Route, ForRoute
-- `pkg/` — helpers (`dbprovider`, `dbwrappers`, `dbsource`, `reclaim`, `dbutils`, `fileutils`, `iplookup`, `logging`)
+- `pkg/` — helpers (`dbprovider`, `dbwrappers`, `dbsource`, `dbutils`, `fileutils`, `iplookup`, `logging`)
+- `vendor/github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim` — reclaim table (third-party; do not fork into `pkg/`)

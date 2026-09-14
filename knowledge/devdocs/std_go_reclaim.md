@@ -20,11 +20,11 @@ _Avoid_: passing `0` when you meant the product default; treating grace as “ho
 
 ## Overview
 
-`pkg/reclaim` is reusable across packages. Yaegi panics on `reclaim.Table[*BIN]`; it loads a non-generic table of `any` and a type-assert in the caller. Each owner holds its own `*Table` from `New(Config)`.
+The table is `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`, pinned in `go.mod` and loaded from `vendor/` (Yaegi does not fetch modules). Do not copy it into `pkg/reclaim`. `go mod vendor` omits `*_test.go`; library tests stay upstream. Yaegi panics on `reclaim.Table[*BIN]`; callers type-assert `any`. Each owner holds its own `*Table` from `New(Config)`.
 
 ## How to use
 
-- Production: `table.Open(ctx, key, logger, create, hooks)` on a caller-owned table. Tests: `New(Config{Grace: short})` or `Reset` on that owner. `logger` is required.
+- Production: import `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`, then `table.Open(ctx, key, logger, create, hooks)` on a caller-owned table. Tests: `New(Config{Grace: short})` or `Reset` on that owner. `logger` is required. After a version bump, `go mod vendor` and re-apply `scripts/apply-oschwald-yaegi-patch.ps1`.
 - Watch stable `msg` + `key`. All five (`reclaim_put`, `reclaim_bind`, `reclaim_orphan`, `reclaim_reclaim`, `reclaim_dispose`) are debug. Put/bind/reclaim use that `Open`’s logger; orphan/dispose use the last `Open` on the key. A middleware `logLevel` of info hides them.
 - `ctx` is the host teardown context (Traefik `New` ctx), not `req.Context()`, not `context.Background()`.
 - Pass `Hooks` that close over the pointer assigned inside `create`. Sleep idle work (tickers) while parked; Wake it on reclaim; Close disposes.
@@ -52,7 +52,7 @@ typed := v.(*BIN)
 
 ## Key files
 
-- `pkg/reclaim/table.go` — `Table`, `New`, `Open`, `Hooks`
+- `vendor/github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim` — `Table`, `New`, `Open`, `Hooks`
 - `plugin.go` — plugin-root table
 - `pkg/dbwrappers` — wrappers table
 - `openspec/specs/std_go_reclaim_context-lease/spec.md`
@@ -60,6 +60,7 @@ typed := v.(*BIN)
 ## Gotchas
 
 - Hosts that cancel before they call the constructor again need a positive grace (Traefik: ~1 ms, then `New`).
+- Do not copy the table into `pkg/reclaim`. Third-party code for Yaegi lives in `vendor/`. Library tests stay in utilities (`go mod vendor` skips `*_test.go`).
 - Yaegi: do not write `Table[*T]` on a type from another package. Do not type-switch create `any` for Close/Sleep.
 - Wake does not run on first create. Start tickers inside `create`.
 - Tests assert the `msg` constants. A config change is two keys: cancel A, Open B, wait grace, expect `reclaim_dispose` A.

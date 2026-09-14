@@ -2,7 +2,7 @@
 
 Pinned source: [traefik-middleware-utilities](https://github.com/david-garcia-garcia/traefik-middleware-utilities) tag **v1.0.1**, commit `28da9ab0c4c1ec8fdfc98366bbd18dcfcb160d8b`. The published package is `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`. The only non-test implementation file is `reclaim/table.go` (stdlib imports only: `context`, `fmt`, `log/slog`, `sync`, `time`). Extracts: [`.sources/table.go.md`](.sources/table.go.md), [`.sources/README.md`](.sources/README.md), [`.sources/std_go_reclaim_context-lease-spec.md`](.sources/std_go_reclaim_context-lease-spec.md), [`.sources/std_go_reclaim_value-lifecycle-spec.md`](.sources/std_go_reclaim_value-lifecycle-spec.md), [`.sources/yaegi_test.go.md`](.sources/yaegi_test.go.md), [`.sources/std_go_reclaim.md`](.sources/std_go_reclaim.md).
 
-This product’s in-tree `pkg/reclaim` (`knowledge/devdocs/std_go_reclaim.md`) is a smaller copy: process `Default`, `NewTable(grace)`, `Close()` discovery on the stored `any`, and a per-incarnation cancel. The sections below are the v1.0.1 shape to copy toward.
+This product vendors that module (`go.mod` + `vendor/`) and imports `…/reclaim`. Do not copy `table.go` or library tests into `pkg/reclaim`. The sections below are the v1.0.1 surface.
 
 ## Public API
 
@@ -142,4 +142,4 @@ Relative to a copy that uses `Default` + `NewTable(grace)` + `Open(ctx, key, log
 9. **Slot busy/ready protocol** — Open waits for in-flight create / Wake / Sleep / enforced Close instead of racing the map.
 10. **Zero-value `Table{}` is an error**, not a panic on a nil map.
 
-Implementers reshaping this product’s `pkg/reclaim` need at least: drop `Default` / package `Open` / `ResetWith` / `NewTable`; add `Config`, `New`, `Hooks`, Sleep/Wake/Close; stop discovering `Close()` on `any`; register-before-create; AfterFunc grace (already typical); canceled-bind error; hook panic recovery; `EnforceCloseBeforeOpen` if mmap/file-backed values share keys with overlapping Close.
+This plugin vendors third-party reclaim the same way it vendors ip2location and oschwald: `go.mod` require plus `go mod vendor`. Copying the package into `pkg/` is a fork, not a Traefik packaging requirement. `go mod vendor` omits `*_test.go`; library tests stay in the utilities repo.

@@ -1,11 +1,11 @@
-Developer review: ready for review — 2026-09-14T18:26:39.723Z
+Developer review: waiting for CI — 2026-09-14T20:40:00.000Z
 
 ## What this changes
 **Operators.** None.
 
 **Admin users.** None.
 
-**Developers.** `pkg/reclaim` is now the v1.0.1 Hooks table (Sleep, Wake, Close). BIN and MMDB stop and restart the 24h keep-current ticker on Sleep/Wake. Plugin and wrappers each own a `New(Config)` table. Process `Default` is gone.
+**Developers.** Reclaim is vendored `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim` @ v1.0.1 (`vendor/`), not a first-party `pkg/reclaim`. BIN and MMDB stop and restart the 24h keep-current ticker on Sleep/Wake. Plugin and wrappers each own a `New(Config)` table. Process `Default` is gone.
 
 **End users.** None.
 
@@ -24,18 +24,18 @@ flowchart LR
 ```
 
 ## Merge readiness
-Product import landed and CI succeeded. 0 items remain.
+Vendor rewrite landed; local `go test ./...` passed. Waiting for PR CI on this head.
 
-Priority: P3 — spec and internal table copy, no current user or operator harm
-Reviewed head: 5b0e883
+Priority: P3 — spec and internal table import, no current user or operator harm
+Reviewed head: not pushed yet
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 6/6 | CI succeeded and there are no open PR comments |
-| CI proof | 6/6 | Lint, Test, and Integration Tests succeeded |
-| Local tests proof | N/A | Remote PR; CI covers it (`go test ./...` passed locally) |
+| Overall readiness | 3/6 | Waiting for CI after vendor rewrite |
+| CI proof | 1/6 | New head not pushed yet |
+| Local tests proof | 6/6 | `go test ./...` passed after vendor import |
 | Review resolution | 6/6 | No open PR comments |
 
 ## Verification
@@ -44,8 +44,8 @@ Owner decision: Required. See Explore Decisions.
 | Branch | 2026-09-14-import-reclaim-table pushed | `git` tracking origin |
 | OpenSpec | import-reclaim-table archived | `openspec/changes/archive/2026-09-14-import-reclaim-table/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/84 | pr-host |
-| CI | build 34880545779 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/34880545779 | GitHub check runs |
-| Local tests | passed | handoff.yaml localTests |
+| CI | not seen | waiting for push of vendor rewrite |
+| Local tests | passed | `go test ./...` after deleting `pkg/reclaim` |
 | PR comments | no comments | pull_request_read |
 
 ## Specs
@@ -55,18 +55,18 @@ Owner decision: Required. See Explore Decisions.
 - [core_geoblock_database_wrapper-reclaim](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-14-import-reclaim-table/openspec/changes/archive/2026-09-14-import-reclaim-table/proposal.md) — modified
 
 ## Deviations from the ask
-None.
+Explore first assumed an in-tree copy of v1.0.1 into `pkg/reclaim`. Human corrected: vendor the utilities module; do not keep a first-party fork or its tests.
 
 ## Follow-up issues
 None.
 
 ## How this fits together
-Local ticket on branch `2026-09-14-import-reclaim-table`, PR 84, CI green on 5b0e883.
+Local ticket on branch `2026-09-14-import-reclaim-table`, PR 84, waiting for CI after vendor import.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
 | --- | --- | --- | --- |
-| Copy v1.0.1 into `pkg/reclaim`, or `go.mod` require `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`? | structural asked | assumed — copy the pinned v1.0.1 sources into `pkg/reclaim`. Do not add a module require. | explore |
+| Copy v1.0.1 into `pkg/reclaim`, or `go.mod` require `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`? | structural asked | resolved — require v1.0.1, vendor it, delete `pkg/reclaim`. Do not fork the table or its tests. | human |
 | After Default goes away, who holds the `*Table`, and how do tests that call `dbwrappers.Reset` / `ResetWith` still tear down plugin and wrapper incarnations? | bounded asked | assumed — plugin root holds one table; `pkg/dbwrappers` holds one table. Plugin tests that called `dbwrappers.Reset` for `plugin:` keys must also Reset the plugin-root table. | explore |
 | Should any caller set `Hooks.EnforceCloseBeforeOpen`? | additive asked | assumed — false for Plugin, BIN, and MMDB (remote default). | explore |
 
@@ -92,23 +92,22 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 1 added / 3 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 5b0e88346d18328988de4965828e970899a4ee5a | Card must match the branch you measured |
+| Reviewed head | local working tree | Card must match the branch you measured |
 
 ### Stored data model
 None.
 
 ### Technical review
-Best possible solution: DestBranch’s Close-discovery table is replaced with the pinned v1.0.1 Hooks table; wrappers use Sleep/Wake on the updater they already owned.
+Best possible solution: DestBranch’s Close-discovery table is replaced with vendored utilities v1.0.1; wrappers use Sleep/Wake on the updater they already owned.
 
-Do we have a high-confidence way to reproduce? Yes, `go test ./pkg/reclaim ./pkg/dbwrappers ./pkg/geoblock .` passed; CI build 34880545779 succeeded.
+Do we have a high-confidence way to reproduce? Yes, `go test ./...` passed locally after the vendor switch. CI on this head not seen yet.
 
-Is this the best way to solve the issue? Yes versus DestBranch — in-tree copy matches Yaegi packaging, and Sleep/Wake stops idle tickers during grace.
+Is this the best way to solve the issue? Yes versus DestBranch — third-party reclaim belongs in `vendor/` (Traefik/Yaegi), and Sleep/Wake stops idle tickers during grace.
 
 ### Evidence
 What I checked:
-- Local `go test ./...` passed (handoff localTests)
-- Check runs Lint, Test, Integration Tests success (build 34880545779)
-- Product delta vs origin/master includes `pkg/reclaim`, `plugin.go`, `pkg/dbwrappers` (`git diff origin/master...HEAD`)
+- Local `go test ./...` passed after `go.mod` require + `go mod vendor` + delete `pkg/reclaim`
+- Product delta vs origin/master includes `vendor/.../reclaim`, `plugin.go`, `pkg/dbwrappers`
 
 ### Rank-up moves
 None.

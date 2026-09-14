@@ -38,12 +38,12 @@ Production `reclaim.Open` call sites (searched `*.go` excluding `vendor/`): `plu
 ## Decisions
 
 - Import the v1.0.1 `Hooks` API. Sleep, Wake, and Close exist on the table. Close-only method discovery (`closer` / `stopValue`) is not the target. Human Desired closed this.
-- Copy v1.0.1 into `pkg/reclaim` (replace `table.go`, drop `default.go` Default / package `Open` / `ResetWith` / `NewTable`). Do not `go.mod` require `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`. Yaegi loads this module’s `pkg/` as GOPATH subpackages (`knowledge/research/ext_traefik_plugins_yaegi-subpackages/notes.md`). Third-party modules are “vendored, Go modules not supported” for Traefik plugins; an extra import path is unnecessary for a stdlib-only table this repo already owns at `pkg/reclaim`.
+- `go.mod` require `github.com/david-garcia-garcia/traefik-middleware-utilities` at v1.0.1 and `go mod vendor`. Import `…/reclaim`. Delete first-party `pkg/reclaim` (including copied library tests). Yaegi loads third-party packages from `vendor/` the same way it already loads ip2location and oschwald (`knowledge/research/ext_traefik_plugins_yaegi-subpackages/notes.md`). Copying `table.go` into `pkg/` forks the library and parks upstream tests in this plugin; `go mod vendor` does not include `*_test.go`. Human correction: the new components belong in vendor, not `pkg/reclaim`.
 - Reshape callers onto Sleep / Wake / Close. BIN and MMDB already own a 24h `dbsource.Updater` ticker: Sleep stops it, Wake starts it again (`startUpdate`), Close stops it and closes the file/reader. Plugin has no ticker; Sleep and Wake stay nil; Close still cancels `life` so wrapper holders drop. Human: reshape includes moving existing components onto what the table offers. Out of scope does not cover leaving the updater running through grace.
 - Drop the process Default. Plugin root and `pkg/dbwrappers` each hold `var table = reclaim.New(reclaim.Config{Grace: reclaim.DefaultGrace})`. Keys stay prefixed (`plugin:` / `bin:` / `mmdb:`), so two tables do not share incarnations. Tests that used `dbwrappers.Reset` / `ResetWith` as a process-wide teardown must Reset (or replace via `New(Config{Grace: short})`) **each** owner they populated. `ResetWith` is not on the remote table; grace is freeze-at-`New`.
 - Leave `EnforceCloseBeforeOpen` false (Hooks default). BIN opens a file handle but not an exclusive lock; MMDB is `FromBytes` (no mmap). Overlapping Close vs next create is the remote default.
 - Keep `Plugin`’s own `life` / `Close` as the holder context for wrappers. Do not invent a reclaim create-lifetime. Remote `create` takes no args.
-- Do not import utilities `yaegi_test.go` (Yaegi interp require). Reshape this repo’s `table_test.go` to `New` + `Hooks`. Later phases update `openspec/specs/std_go_reclaim_context-lease/spec.md` and `knowledge/devdocs/std_go_reclaim.md`.
+- Do not import utilities `yaegi_test.go` (Yaegi interp require). Do not copy utilities `table_test.go` into this plugin. Caller tests keep asserting `msg` constants. Later phases update `openspec/specs/std_go_reclaim_context-lease/spec.md` and `knowledge/devdocs/std_go_reclaim.md`.
 
 This work does not set or reconstruct client address, user, tenant, Host, or trust hop. Those stay with existing owners (`iplookup` / Traefik `New` ctx as holder only).
 
@@ -56,8 +56,8 @@ This work does not set or reconstruct client address, user, tenant, Host, or tru
 
 - Q: Copy v1.0.1 into `pkg/reclaim`, or `go.mod` require `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`?
   Rank: structural asked — replaces existing `pkg/reclaim`; Desired “Replace this project's reclaim table with the v1.0.1 shape (or an in-tree copy of it)”
-  Decision: assumed — copy the pinned v1.0.1 sources into `pkg/reclaim`. Do not add a module require. Yaegi already loads own-module `pkg/`; official plugin docs require vendoring for third-party modules (`ext_traefik_plugins_yaegi-subpackages`); the table is stdlib-only so the copy is the published file.
-  By: explore
+  Decision: resolved — require `github.com/david-garcia-garcia/traefik-middleware-utilities` @ v1.0.1, vendor it, import `…/reclaim`, delete `pkg/reclaim`. Do not fork the table or its tests into this plugin. Official plugin docs: third-party deps must be vendored; this repo already vendors ip2location and oschwald. Human: the new components belong in vendor.
+  By: human
 
 - Q: Which of Plugin / BIN / MMDB need non-nil Sleep and Wake versus a Close-only `Hooks{Close: ...}` once the API is `Hooks`?
   Rank: bounded asked — 3 production `reclaim.Open` sites (`plugin.go`, `pkg/dbwrappers/bin.go`, `pkg/dbwrappers/mmdb.go`); Desired “adjust to its shape”; human: reshape includes moving existing components onto Sleep/Wake so timers stop while asleep

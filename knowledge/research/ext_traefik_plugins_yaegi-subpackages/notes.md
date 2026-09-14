@@ -30,7 +30,7 @@ The official demo matches that layout. Local plugins go in a GOPATH workspace:
 
 ([plugindemo readme](https://github.com/traefik/plugindemo/blob/44419f66fe21c51f4c94fd46f8e02b98e4fb3168/readme.md)). Traefik’s local GOPATH constant is `./plugins-local/` ([traefik@14bc52dd:pkg/plugins/plugins.go](https://github.com/traefik/traefik/blob/14bc52dd1f1d1c08cedd1da531a527fc04d79c19/pkg/plugins/plugins.go)).
 
-Official “Go modules are not supported” / “dependencies must be vendored” is about **third-party** packages. It does not forbid the plugin module from containing its own subpackages. Those subpackages are extra directories under the same GOPATH `src/<module>/` tree and are imported as `<module>/pkg/…`.
+Official “Go modules are not supported” / “dependencies must be vendored” is about **third-party** packages. It does not forbid the plugin module from containing its own subpackages. Those subpackages are extra directories under the same GOPATH `src/<module>/` tree and are imported as `<module>/pkg/…`. Third-party code must live under `vendor/` (this repo already vendors ip2location and oschwald). Copying a third-party package into `pkg/` is a first-party fork, not a substitute for vendoring. `go mod vendor` does not copy `*_test.go`.
 
 Inference (from the files above): Traefik never `Eval`-imports helper subpackages itself. Yaegi loads them when the root package’s source imports them, using the interpreter GOPATH.
 

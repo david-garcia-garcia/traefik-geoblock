@@ -47,7 +47,7 @@ return pluginInstance.ForRoute(next)
 - `pkg/geoblock/config.go` — Config, Prepare, catalog bind
 - `pkg/geoblock/plugin.go` — NewCore, Plugin, ServeHTTP
 - `pkg/geoblock/route.go` — Route, ForRoute
-- `pkg/reclaim` — plugin-root table vs wrappers table
+- `vendor/.../traefik-middleware-utilities/reclaim` — plugin-root table vs wrappers table
 
 ## Gotchas
 

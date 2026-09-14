@@ -1,18 +1,26 @@
 ## Purpose
 
-Defines a keyed reclaim table that stores one value per key as `any`, survives context cancel when the same key is opened again within grace, and Closes the incarnation when it is not. The table lives in `pkg/reclaim` and is reusable across packages. Callers type-assert. Yaegi cannot instantiate `Table[T]` from another package; this table is not generic.
+Defines a keyed reclaim table that stores one value per key as `any`, survives context cancel when the same key is opened again within grace, and Closes the incarnation when it is not. This product imports that table from vendored `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`. Callers type-assert. Yaegi cannot instantiate `Table[T]` from another package; this table is not generic.
 
 ## Requirements
 
+### Requirement: Table is the vendored utilities package
+This module SHALL import `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim` from the version pinned in `go.mod`, with sources under `vendor/`. It SHALL NOT keep a first-party `pkg/reclaim` package. Library tests stay in the utilities module (`go mod vendor` omits `*_test.go`).
+
+#### Scenario: Production Open uses utilities reclaim
+- **WHEN** production `Open` call sites are listed
+- **THEN** they import `github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim`
+- **AND** this module has no `pkg/reclaim` package
+
 ### Requirement: Table file depends only on the Go standard library
-The `Table` source file SHALL import only Go standard-library packages. It MUST NOT import this module’s plugin, wrapper, source, or vendor packages. It MUST store `any`. It MUST NOT be a generic `Table[T]` instantiated as `otherpkg.Table[*T]` (Yaegi panics or fails import).
+The vendored reclaim `table.go` SHALL import only Go standard-library packages. It MUST NOT import this module’s plugin, wrapper, source, or other vendor packages. It MUST store `any`. It MUST NOT be a generic `Table[T]` instantiated as `otherpkg.Table[*T]` (Yaegi panics or fails import).
 
 #### Scenario: Stdlib-only imports
-- **WHEN** `table.go` is listed for imports
+- **WHEN** the vendored reclaim `table.go` is listed for imports
 - **THEN** every import path is a Go standard-library package
 
 ### Requirement: Process table is a singleton
-`pkg/reclaim` SHALL NOT expose a process-wide `Default` or package `Open`. Callers SHALL construct a table with `New(Config)` and hold the `*Table`. Independent keys on one table MUST NOT share an incarnation. Callers SHALL type-assert the value `Open` returns. `NewTable`, package `Reset`, and `ResetWith` MUST NOT exist. `(*Table) Reset` MAY exist for tests only.
+The reclaim package SHALL NOT expose a process-wide `Default` or package `Open`. Callers SHALL construct a table with `New(Config)` and hold the `*Table`. Independent keys on one table MUST NOT share an incarnation. Callers SHALL type-assert the value `Open` returns. `NewTable`, package `Reset`, and `ResetWith` MUST NOT exist. `(*Table) Reset` MAY exist for tests only.
 
 #### Scenario: Caller-owned New shares one incarnation
 - **WHEN** the same `*Table` `Open`s the same key twice with live contexts
