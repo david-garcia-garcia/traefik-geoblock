@@ -26,14 +26,14 @@
 - Q: Can BIN ignore-after-close be a closed flag without F-1’s `sync.RWMutex` on `LookupRecord`?
   Rank: additive asked — new closed flag on BIN this change adds; Desired “BIN and MMDB ignore an update that arrives after close” and “Do not take F-1’s BIN LookupRecord mutex unless explore proves the ignore-after-close check cannot be made safe without it”
   Decision: assumed — `atomic.Bool` is enough. Set it true before `Stop` join; `hotSwap` re-checks immediately before publishing. Overlap with Close is closed by join-then-dispose. The LookupRecord vs handle race stays on `2026-09-14-bin-handle-race`.
-  By: explore
+  By: propose
 
 - Q: Should `Stop` join wait out an in-flight GET (up to `HTTPGetTimeout`), or must this change cancel `HTTPGet`?
   Rank: bounded asked — `Updater.Stop` already has callers and this run counted them: 4 sites (`pkg/dbwrappers/bin.go` sleep+close, `pkg/dbwrappers/mmdb.go` sleep+close; searched `pkg/**` for `Updater.Stop` and `dbsource.Start`). Desired “Updater.Stop is synchronous: join the ticker goroutine”. Out of scope: “Adding context cancellation to HTTPGet unless explore shows join-without-cancel cannot meet Desired”
   Decision: assumed — join waits out the GET. Do not add `context` to `HTTPGet`. Measured: join-without-cancel meets Desired because `tick` can skip `onUpdate` after stop; wrappers still ignore a missed join. Reclaim Sleep keeps that key `slotBusy` until the GET returns; other keys are not under `t.mu` during the hook (`vendor/.../reclaim/table.go` runHook outside the table lock).
-  By: explore
+  By: propose
 
 - Q: Can MMDB treat post-close `db == nil` plus empty path as closed, or does it need its own closed flag?
   Rank: additive asked — new closed flag on MMDB this change adds; Desired ignore-after-close; Unknowns “first-open path cannot be confused with dispose”
   Decision: assumed — own closed flag under the existing MMDB `mu`. Zero value is also pre-first-`open`; that pair cannot mean disposed.
-  By: explore
+  By: propose
