@@ -12,7 +12,7 @@
 ## 3. Tests
 
 - [x] 3.1 Add package tests in `pkg/dbwrappers` for concurrent `LookupRecord` vs `hotSwap` and vs `close`. Do not copy `zzz_proof_*`.
-- [ ] 3.2 Keep `TestNew_ContextBindsWrapper` and `TestOpenBIN_HashChangeDisposesOld` as the race-detector gate (no rewrite unless they fail for an unrelated reason).
+- [x] 3.2 Keep `TestNew_ContextBindsWrapper` and `TestOpenBIN_HashChangeDisposesOld` as the race-detector gate (no rewrite unless they fail for an unrelated reason).
 
 ## 4. Usage
 
@@ -20,4 +20,4 @@
 
 ## 5. Measure
 
-- [ ] 5.1 Re-run `go test -race` on `pkg/dbwrappers` and `pkg/geoblock` (docker `golang:1.25` `-e GOFLAGS=-mod=vendor` when the host has no gcc) and confirm the two named tests pass.
+- [x] 5.1 Re-run `go test -race` on `pkg/dbwrappers` and `pkg/geoblock` (docker `golang:1.25` `-e GOFLAGS=-mod=vendor` when the host has no gcc) and confirm the two named tests pass.
