@@ -44,6 +44,8 @@ type Updater struct {
 	logger *slog.Logger
 	ticker *time.Ticker
 	stop   chan struct{}
+	// done is closed when the ticker goroutine exits.
+	done chan struct{}
 }
 
 func newUpdater(cfg Config, logger *slog.Logger) (*Updater, error) {
@@ -78,7 +80,9 @@ func (u *Updater) Start(onUpdate func(path string)) {
 	}
 	u.ticker = time.NewTicker(24 * time.Hour)
 	u.stop = make(chan struct{})
+	u.done = make(chan struct{})
 	go func() {
+		defer close(u.done)
 		u.tick(onUpdate)
 		for {
 			select {
@@ -100,10 +104,16 @@ func (u *Updater) tick(onUpdate func(path string)) {
 	if path == "" || onUpdate == nil {
 		return
 	}
+	// A Stop during GET must not publish: skip onUpdate once stop is signaled.
+	select {
+	case <-u.stop:
+		return
+	default:
+	}
 	onUpdate(path)
 }
 
-// Stop ends the ticker.
+// Stop ends the ticker and waits for the ticker goroutine to exit.
 func (u *Updater) Stop() {
 	if u == nil {
 		return
@@ -117,5 +127,8 @@ func (u *Updater) Stop() {
 		default:
 			close(u.stop)
 		}
+	}
+	if u.done != nil {
+		<-u.done
 	}
 }
