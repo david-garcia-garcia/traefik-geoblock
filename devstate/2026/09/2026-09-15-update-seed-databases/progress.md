@@ -11,4 +11,4 @@ JobName: 2026-09-15-update-seed-databases
 | codereview | [x] | [x] | 2026-09-15T14:49:54Z |
 | devdocsimpact | [x] | [x] | 2026-09-15T14:49:54Z |
 | archive | [x] | [x] | 2026-09-15T14:49:54Z |
-| pullrequest | [ ] | [ ] | |
+| pullrequest | [x] | [x] | 2026-09-15T14:55:47Z |

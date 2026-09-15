@@ -42,3 +42,9 @@ findings: skip_specs; folder moved
 fixed: none
 skipped: spec sync (no delta specs)
 
+## pullrequest (2026-09-15T14:55:47Z)
+phase: pullrequest
+findings: CI success build 34984733417
+fixed: German_IP 85.214.1.1
+skipped: none
+
