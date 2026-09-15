@@ -21,7 +21,16 @@ Traefik Config SHALL expose `mode` as `disabled`, `enrich`, `block`, or `enricha
 - **THEN** that field is not part of Config (Yaegi does not decode it onto the plugin)
 
 ### Requirement: Country header is the write/read bridge
-When `mode` is not `disabled`, `countryHeader` SHALL be a request header name. Empty `countryHeader` SHALL default to `X-IPCountry`. Lookup (`enrich` or `enrichandblock`) SHALL write the ISO country or `PRIVATE` to that header. The block stage (`block` or `enrichandblock`) SHALL read that same header for country allow/block. Country rules MUST NOT take the lookup `Record` country directly. A `requestHeaderEnrich` mapping whose key is `country` and whose header name is not `countryHeader` SHALL also be written. Plugin creation MUST NOT fail because more than one header maps to `country`. When a request is handled by a `mode` `enrich` hop and then a `mode` `block` hop that share the same `countryHeader`, the block hop SHALL allow or deny using the country the enrich hop wrote.
+When `mode` is not `disabled`, `countryHeader` SHALL be a request header name. Empty `countryHeader` SHALL default to `X-IPCountry`. Lookup (`enrich` or `enrichandblock`) SHALL write the ISO country, `PRIVATE` for a private or loopback hop, or `XX` for a public hop the enabled sources returned no country for, to that header. Those values are exhaustive: an IP header value the plugin cannot parse, and an address whose lookup returns an error, SHALL NOT reach that header, and SHALL enrich as `XX`. A BIN source that answers IP2Location `-` for `country_short` SHALL count as no country after merge. `XX` SHALL NOT mark the country written, so a later hop that resolves still wins. The block stage (`block` or `enrichandblock`) SHALL read that same header for country allow/block. Country rules MUST NOT take the lookup `Record` country directly. A `requestHeaderEnrich` mapping whose key is `country` and whose header name is not `countryHeader` SHALL also be written. Plugin creation MUST NOT fail because more than one header maps to `country`. When a request is handled by a `mode` `enrich` hop and then a `mode` `block` hop that share the same `countryHeader`, the block hop SHALL allow or deny using the country the enrich hop wrote.
+
+#### Scenario: An unparseable IP header value is not a country
+- **WHEN** `mode` is `enrich` and `X-Forwarded-For` is `Norway`
+- **THEN** `countryHeader` is `XX`
+
+#### Scenario: A later hop that resolves wins over an unparseable one
+- **WHEN** `mode` is `enrich` and `X-Forwarded-For` is `DE, 8.8.8.8`
+- **AND** `8.8.8.8` looks up as `US`
+- **THEN** `countryHeader` is `US`
 
 #### Scenario: Enrich writes countryHeader
 - **WHEN** `mode` is `enrich` and `countryHeader` is `X-IPCountry`
@@ -53,6 +62,18 @@ When `mode` is not `disabled`, `countryHeader` SHALL be a request header name. E
 - **AND** the block hop `blockedCountries` includes `US`
 - **THEN** the request is blocked
 
+#### Scenario: BIN-only miss writes XX
+- **WHEN** `mode` is `enrichandblock` and the only enabled country source is BIN
+- **AND** the selected hop is a public IP whose BIN `country_short` is `-`
+- **THEN** `countryHeader` is `XX`
+- **AND** the country is not marked written
+
+#### Scenario: XX covers a BIN miss in allowedCountries
+- **WHEN** `mode` is `enrichandblock`, `defaultAllow` is false, and `allowedCountries` includes `XX`
+- **AND** the only enabled country source is BIN
+- **AND** the selected hop is a public IP whose BIN `country_short` is `-`
+- **THEN** the request is allowed with reason `allowed_country`
+
 ### Requirement: Catalog sources open only for lookup modes
 Plugin creation SHALL open enabled `databaseSources` rows only when `mode` is `enrich` or `enrichandblock`. When `mode` is `disabled` or `block`, creation MUST NOT open catalog sources, MUST NOT insert default catalog rows, and MUST NOT start auto-update.
 
@@ -68,6 +89,8 @@ Plugin creation SHALL open enabled `databaseSources` rows only when `mode` is `e
 ### Requirement: Block stage still applies CIDR and private
 When `mode` is `block` or `enrichandblock`, the plugin SHALL still extract IPs with `IPHeaders` / `ipHeaderStrategy` and SHALL apply `allowedIPBlocks`, `blockedIPBlocks`, and `allowPrivate`. A missing, empty, or `null` `countryHeader` value SHALL use `banIfError`. `PRIVATE` on `countryHeader` SHALL follow `allowPrivate`. Country allow/block SHALL use only the `countryHeader` value (first public written), not a later hop's looked-up country. `CheckAll` SHALL still apply CIDR and private per selected IP.
 
+Every selected hop SHALL be able to deny: an earlier allowed hop MUST NOT suppress a later hop's denial, nor a later hop's `banIfError` ban. The pass reason on the decision header SHALL be the phase of the first allowing hop.
+
 #### Scenario: Block CIDR without a database
 - **WHEN** `mode` is `block` and `blockedIPBlocks` contains `8.8.8.8/32`
 - **AND** the request IP is `8.8.8.8`
@@ -78,9 +101,60 @@ When `mode` is `block` or `enrichandblock`, the plugin SHALL still extract IPs w
 - **WHEN** `mode` is `block`, `banIfError` is true, and `countryHeader` is absent on the request
 - **THEN** the request is blocked
 
+#### Scenario: A blocked CIDR after an allowed hop still denies
+- **WHEN** `ipHeaderStrategy` is `CheckAll`, `defaultAllow` is true, and `blockedIPBlocks` contains `1.1.1.0/24`
+- **AND** the IP chain is `8.8.8.8, 1.1.1.1`
+- **THEN** the request is blocked
+- **AND** the decision header is `block:blocked_ip_block`
+
+#### Scenario: An allowedIPBlocks hop does not exempt the hops after it
+- **WHEN** `ipHeaderStrategy` is `CheckAll`, `allowedIPBlocks` contains `8.8.8.0/24`, `blockedCountries` contains `US`
+- **AND** the IP chain is `8.8.8.8, 1.1.1.1` and `countryHeader` resolved to `US`
+- **THEN** the request is blocked
+- **AND** the decision header is `block:blocked_country`
+
+#### Scenario: banIfError bans an unparseable later hop
+- **WHEN** `mode` is `block`, `banIfError` is true, `countryHeader` is present and allowed
+- **AND** the IP chain is `8.8.8.8, not-an-ip`
+- **THEN** the request is blocked
+- **AND** the decision header is `block:error`
+
 ### Requirement: Block must not overwrite inbound enrich headers
 When `mode` is `block`, the plugin MUST NOT write `countryHeader` or `requestHeaderEnrich` values (`PRIVATE` / `null`) before reading the inbound country.
 
 #### Scenario: Block preserves inbound country
 - **WHEN** `mode` is `block` and the request has `X-IPCountry: DE`
 - **THEN** after this middleware runs (if allowed), `X-IPCountry` is still `DE`
+
+### Requirement: Empty bypassHeaders values cannot skip blocking
+When `mode` is not `disabled`, plugin creation SHALL fail if any `bypassHeaders` value is empty after trimming whitespace. A `bypassHeaders` map with no entries SHALL still succeed. When `mode` is `disabled`, plugin creation SHALL NOT fail because a `bypassHeaders` value is empty.
+
+A `bypassHeaders` match SHALL skip the block stage only when the named header is present on the request and its value equals the configured value. An omitted header MUST NOT match an empty configured value. A leftover empty map entry MUST NOT write `pass:bypass_header` or skip blocking for a request that would otherwise be blocked. Non-empty configured values SHALL keep today's match behavior.
+
+#### Scenario: Empty bypass value fails plugin creation
+- **WHEN** the plugin is created with `mode` `enrichandblock` and `bypassHeaders` maps `X-Bypass` to `""`
+- **THEN** plugin creation fails
+
+#### Scenario: Whitespace-only bypass value fails plugin creation
+- **WHEN** the plugin is created with `mode` `enrichandblock` and `bypassHeaders` maps `X-Bypass` to `"   "`
+- **THEN** plugin creation fails
+
+#### Scenario: Empty bypass map is allowed
+- **WHEN** the plugin is created with `mode` `enrichandblock` and `bypassHeaders` has no entries
+- **THEN** plugin creation succeeds
+
+#### Scenario: Disabled mode does not reject empty bypass values
+- **WHEN** the plugin is created with `mode` `disabled` and `bypassHeaders` maps `X-Bypass` to `""`
+- **THEN** plugin creation succeeds
+
+#### Scenario: Leftover empty bypass value does not skip a blocked country
+- **WHEN** a loaded plugin has `bypassHeaders` mapping `X-Bypass` to `""`, `blockedCountries` includes `US`, and `defaultAllow` is false
+- **AND** the request has a US client IP and omits `X-Bypass`
+- **THEN** the request is blocked
+- **AND** the decision header is not `pass:bypass_header`
+
+#### Scenario: Non-empty bypass still skips when the header matches
+- **WHEN** `bypassHeaders` maps `X-Bypass` to a non-empty secret and `blockedCountries` includes `US`
+- **AND** the request has that header equal to the secret and a US client IP
+- **THEN** the request is not country-blocked
+- **AND** the decision header is `pass:bypass_header`

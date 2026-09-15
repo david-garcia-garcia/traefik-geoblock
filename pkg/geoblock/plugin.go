@@ -14,13 +14,15 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/iplookup"
 )
 
 const (
 	PrivateIpCountryAlias = "PRIVATE"
 	EnrichNullAlias       = "null"
+	// UnknownCountryAlias is a public IP no source resolved. ISO 3166-1 user-assigned.
+	UnknownCountryAlias = "XX"
 )
 
 // Log status constants for observability headers
@@ -58,8 +60,8 @@ type Plugin struct {
 	allowPrivate          bool
 	banIfError            bool
 	disallowedStatusCode  int
-	allowedIPBlocks       *iplookup.IpLookupFileMonitor
-	blockedIPBlocks       *iplookup.IpLookupFileMonitor
+	allowedIPBlocks       *iplookup.Helper
+	blockedIPBlocks       *iplookup.Helper
 	banHtmlContent        string // Changed from banHtmlTemplate
 	logger                *slog.Logger
 	bypassHeaders         map[string]string
@@ -80,16 +82,22 @@ var (
 // SetTestPluginLogger makes PluginLogger return logger until SetTestPluginLogger(nil). Tests only.
 func SetTestPluginLogger(logger *slog.Logger) {
 	testPluginLoggerMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer testPluginLoggerMu.Unlock()
 	testPluginLogger = logger
-	testPluginLoggerMu.Unlock()
+}
+
+// testPluginLoggerOverride is the logger SetTestPluginLogger installed, or nil.
+func testPluginLoggerOverride() *slog.Logger {
+	testPluginLoggerMu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer testPluginLoggerMu.Unlock()
+	return testPluginLogger
 }
 
 // PluginLogger is the slog logger for this middleware name and config.
 func PluginLogger(name string, cfg *Config) *slog.Logger {
-	testPluginLoggerMu.Lock()
-	override := testPluginLogger
-	testPluginLoggerMu.Unlock()
-	if override != nil {
+	if override := testPluginLoggerOverride(); override != nil {
 		return override
 	}
 	bootstrap := logging.NewBootstrap(name, cfg.LogLevel)
@@ -121,12 +129,12 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich)
 	}
 
-	allowedIPHelper, err := iplookup.NewIpLookupFileMonitor(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
+	allowedIPHelper, err := loadIPBlockHelper(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading allowed IP blocks: %w", name, err)
 	}
 
-	blockedIPHelper, err := iplookup.NewIpLookupFileMonitor(cfg.BlockedIPBlocks, cfg.BlockedIPBlocksDir, logger)
+	blockedIPHelper, err := loadIPBlockHelper(cfg.BlockedIPBlocks, cfg.BlockedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading blocked IP blocks: %w", name, err)
 	}
@@ -364,6 +372,10 @@ func (p Plugin) blockSkipReason(req *http.Request, ipChain string) string {
 		return PhaseExcludedRegex
 	}
 	for header, expectedValue := range p.bypassHeaders {
+		// Presence first so an absent header cannot match a leftover empty expected value.
+		if len(req.Header.Values(header)) == 0 {
+			continue
+		}
 		if actualValue := req.Header.Get(header); actualValue == expectedValue {
 			logging.Trace(p.logger, "bypassing geoblock due to bypass header match",
 				"header", header, "value", logging.Redact(expectedValue),
@@ -412,6 +424,7 @@ func (p Plugin) blockFromHeader(rw http.ResponseWriter, req *http.Request, remot
 		}
 	}
 	var foundPublicIP bool
+	// passReason is only the pass log reason; any selected hop may deny.
 	passReason := PhaseNone
 	for i, ip := range remoteIPs {
 		if p.skipIP(i, ip, remoteIPs, &foundPublicIP) {
@@ -420,19 +433,19 @@ func (p Plugin) blockFromHeader(rw http.ResponseWriter, req *http.Request, remot
 		allowed, phase, err := p.decide(ip, country)
 		if err != nil {
 			p.logLookupError(req, ip, ipChain, remoteIPs, err)
-			if p.banIfError && passReason == PhaseNone {
+			if p.banIfError {
 				p.setDecisionLogHeader(req, LogStatusBlock, "error")
 				p.serveBanHtml(rw, ip, "Unknown", req.Method)
 				return true
 			}
 			continue
 		}
-		if !allowed && passReason == PhaseNone {
+		if !allowed {
 			p.setDecisionLogHeader(req, LogStatusBlock, phase)
 			p.serveBanHtml(rw, ip, countryForBan(ip, country), req.Method)
 			return true
 		}
-		if passReason == PhaseNone && allowed {
+		if passReason == PhaseNone {
 			passReason = phase
 		}
 		if p.ipHeaderStrategy == IPHeaderStrategyCheckFirstNonePrivate && !privateOrLoopback(ip) {
@@ -483,17 +496,18 @@ func (p Plugin) CheckAllowed(ip string) (allow bool, phase string, err error) {
 }
 
 // recordForLookup is PRIVATE for private/loopback IPs, else catalog Lookup.
+// Errors carry no country: enrich writes this record before it checks err, and ip is client-set.
 func (p Plugin) recordForLookup(ip string) (dbprovider.Record, error) {
 	ipAddr := net.ParseIP(ip)
 	if ipAddr == nil {
-		return dbprovider.Record{Country: ip}, fmt.Errorf("unable to parse IP address from [%s]", ip)
+		return dbprovider.Record{}, fmt.Errorf("unable to parse IP address from [%s]", ip)
 	}
 	if ipAddr.IsPrivate() || ipAddr.IsLoopback() {
 		return dbprovider.Record{Country: PrivateIpCountryAlias}, nil
 	}
 	rec, err := p.Lookup(ip)
 	if err != nil {
-		return dbprovider.Record{Country: ip}, fmt.Errorf("lookup of %s failed: %w", ip, err)
+		return dbprovider.Record{}, fmt.Errorf("lookup of %s failed: %w", ip, err)
 	}
 	return rec, nil
 }
@@ -577,11 +591,22 @@ func (p Plugin) writeDefaultEnrichHeaders(req *http.Request) {
 	}
 }
 
-// writePublicLookupHeaders copies rec onto the enrich headers when rec is a public
-// country. Private or empty country is ignored so the defaults stay. written becomes
-// true so a later hop cannot replace the first public country.
+// writePublicLookupHeaders copies rec onto the enrich headers. A private country is
+// ignored so the defaults stay; an empty country writes UnknownCountryAlias without
+// marking written. written becomes true so a later hop cannot replace the first
+// public country.
 func (p Plugin) writePublicLookupHeaders(req *http.Request, rec dbprovider.Record, written *bool) {
-	if rec.Country == "" || rec.Country == PrivateIpCountryAlias {
+	if rec.Country == PrivateIpCountryAlias {
+		return
+	}
+	// A public IP no source resolved must not keep the PRIVATE default: block reads
+	// that back as the allowPrivate verdict.
+	if rec.Country == "" {
+		for header, key := range p.requestHeaderEnrich {
+			if key == dbprovider.MetaCountry {
+				req.Header.Set(header, UnknownCountryAlias)
+			}
+		}
 		return
 	}
 	for header, key := range p.requestHeaderEnrich {
@@ -596,12 +621,14 @@ func (p Plugin) writePublicLookupHeaders(req *http.Request, rec dbprovider.Recor
 
 // isAllowedIPBlocks checks if an IP is allowed based on the allowed CIDR blocks using fast radix tree lookup
 func (p Plugin) isAllowedIPBlocks(ipAddr net.IP) (bool, int, error) {
-	return p.allowedIPBlocks.IsContained(ipAddr)
+	found, prefixLen, _, err := p.allowedIPBlocks.Contains(ipAddr)
+	return found, prefixLen, err
 }
 
 // isBlockedIPBlocks checks if an IP is blocked based on the blocked CIDR blocks using fast radix tree lookup
 func (p Plugin) isBlockedIPBlocks(ipAddr net.IP) (bool, int, error) {
-	return p.blockedIPBlocks.IsContained(ipAddr)
+	found, prefixLen, _, err := p.blockedIPBlocks.Contains(ipAddr)
+	return found, prefixLen, err
 }
 
 // Update the serveBanHtml function to use simple string replacement

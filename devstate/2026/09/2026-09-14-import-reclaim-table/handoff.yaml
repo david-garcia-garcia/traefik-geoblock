@@ -1,0 +1,17 @@
+issueKey: 2026-09-14-import-reclaim-table
+jobName: 2026-09-14-import-reclaim-table
+issueHost: local
+issueRef: none
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified-with-gaps
+src: d0098abf40b3eb8c9e73432cd4c3e0c0170574aef454690c9fd76a021da69dc9
+localTests: passed
+requirement: requirement.md
+comments: none
+explore: explore.md
+change: import-reclaim-table
+pr:
+  id: 84
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/84

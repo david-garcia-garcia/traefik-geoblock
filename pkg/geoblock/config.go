@@ -95,7 +95,7 @@ type Config struct {
 	LogFormat string // Log format: "json" or "text"
 
 	// BypassHeaders is a map of header names to values that, when matched,
-	// will skip the geoblocking check entirely
+	// skip the geoblocking check. Values cannot be empty.
 	BypassHeaders map[string]string
 
 	// IP extraction settings
@@ -191,6 +191,12 @@ func Prepare(cfg *Config, name string) error {
 	}
 	if len(cfg.IPHeaders) == 0 {
 		return fmt.Errorf("%s: IPHeaders cannot be empty - at least one header must be specified for IP extraction", name)
+	}
+	// Empty bypass values match every omitted header; reject them at load like empty IPHeaders.
+	for header, expectedValue := range cfg.BypassHeaders {
+		if strings.TrimSpace(expectedValue) == "" {
+			return fmt.Errorf("%s: BypassHeaders %q value cannot be empty", name, header)
+		}
 	}
 	if cfg.IPHeaderStrategy != IPHeaderStrategyCheckAll &&
 		cfg.IPHeaderStrategy != IPHeaderStrategyCheckFirst &&

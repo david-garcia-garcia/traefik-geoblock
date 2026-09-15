@@ -1,5 +1,10 @@
 # Research
 
+## crowdsec
+priority: normal
+local: index_ext_crowdsec.md
+description: Official CrowdSec Hub parsers and log-processing behavior this product may interact with.
+
 ## ip2location
 priority: normal
 local: index_ext_ip2location.md
@@ -19,3 +24,8 @@ description: Official MaxMind GeoLite2 / GeoIP2 database download and schema thi
 priority: normal
 local: index_ext_traefik.md
 description: Official Traefik Yaegi plugin loader and packaging this product relies on.
+
+## traefik-middleware-utilities
+priority: normal
+local: index_ext_traefik-middleware-utilities.md
+description: Shared Traefik middleware libraries this product may copy from.

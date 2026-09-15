@@ -2,13 +2,98 @@ package logging
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+// filedGeoBlockPrefix is the PascalMinder/geoblock#67 sample that CrowdSec could not UnmarshalJSON.
+const filedGeoBlockPrefix = "INFO: GeoBlock:"
+
+// captureStdout runs fn while os.Stdout is a pipe and returns the bytes written.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+	fn()
+	_ = w.Close()
+	os.Stdout = oldStdout
+	<-done
+	_ = r.Close()
+	return buf.String()
+}
+
+// stdoutLines returns non-empty lines from captured stdout.
+func stdoutLines(output string) []string {
+	var lines []string
+	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// assertNoFiledPrefix fails if any line contains the #67 GeoBlock prefix.
+func assertNoFiledPrefix(t *testing.T, output string) {
+	t.Helper()
+	if strings.Contains(output, filedGeoBlockPrefix) {
+		t.Errorf("stdout must not contain %q, got: %s", filedGeoBlockPrefix, output)
+	}
+}
+
+// assertTextNotJSONObject fails unless every line is non-JSON and does not start with '{'.
+func assertTextNotJSONObject(t *testing.T, output string) {
+	t.Helper()
+	lines := stdoutLines(output)
+	if len(lines) == 0 {
+		t.Fatal("expected at least one stdout line")
+	}
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "{") {
+			t.Errorf("text line %d starts with '{': %s", i, line)
+		}
+		var object map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &object); err == nil {
+			t.Errorf("text line %d unmarshaled as JSON: %s", i, line)
+		}
+	}
+}
+
+// assertJSONObjectLines fails unless every line unmarshals as a JSON object starting with '{'.
+func assertJSONObjectLines(t *testing.T, output string) {
+	t.Helper()
+	lines := stdoutLines(output)
+	if len(lines) == 0 {
+		t.Fatal("expected at least one stdout line")
+	}
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "{") {
+			t.Errorf("json line %d does not start with '{': %s", i, line)
+		}
+		var object map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &object); err != nil {
+			t.Errorf("json line %d unmarshal: %v (%s)", i, err, line)
+		}
+	}
+}
 
 const testPluginName = "test-plugin"
 
@@ -292,6 +377,50 @@ func TestNew_WithAttributes(t *testing.T) {
 	if !strings.Contains(output, "value1") {
 		t.Errorf("expected output to contain value1, but got: %s", output)
 	}
+}
+
+func TestStdoutLineShapes_CrowdSecSafe(t *testing.T) {
+	bootstrap := NewBootstrap("GeoBlock", "info")
+
+	t.Run("NewBootstrap text", func(t *testing.T) {
+		output := captureStdout(t, func() {
+			NewBootstrap("GeoBlock", "info").Info("allow local IPs: true")
+		})
+		assertNoFiledPrefix(t, output)
+		assertTextNotJSONObject(t, output)
+	})
+
+	t.Run("NewOwner text", func(t *testing.T) {
+		output := captureStdout(t, func() {
+			NewOwner("traefik-geoblock@crd", "info").Info("wrapper ready")
+		})
+		assertNoFiledPrefix(t, output)
+		assertTextNotJSONObject(t, output)
+	})
+
+	t.Run("New text", func(t *testing.T) {
+		output := captureStdout(t, func() {
+			New("GeoBlock", "info", "text", bootstrap).Info("allow local IPs: true")
+		})
+		assertNoFiledPrefix(t, output)
+		assertTextNotJSONObject(t, output)
+	})
+
+	t.Run("New empty format", func(t *testing.T) {
+		output := captureStdout(t, func() {
+			New("GeoBlock", "info", "", bootstrap).Info("allow local IPs: true")
+		})
+		assertNoFiledPrefix(t, output)
+		assertTextNotJSONObject(t, output)
+	})
+
+	t.Run("New json", func(t *testing.T) {
+		output := captureStdout(t, func() {
+			New("GeoBlock", "info", "json", bootstrap).Info("allow local IPs: true")
+		})
+		assertNoFiledPrefix(t, output)
+		assertJSONObjectLines(t, output)
+	})
 }
 
 func TestNew_JSONFormat(t *testing.T) {

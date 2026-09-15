@@ -13,7 +13,7 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim"
 )
 
 type lifecycleLog struct {
@@ -25,8 +25,9 @@ func (h *lifecycleLog) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *lifecycleLog) Handle(_ context.Context, r slog.Record) error {
 	h.mu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+	defer h.mu.Unlock()
 	h.recs = append(h.recs, r.Clone())
-	h.mu.Unlock()
 	return nil
 }
 
@@ -35,6 +36,7 @@ func (h *lifecycleLog) WithGroup(string) slog.Handler      { return h }
 
 func (h *lifecycleLog) events() [][2]string {
 	h.mu.Lock()
+	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer h.mu.Unlock()
 	out := make([][2]string, 0, len(h.recs))
 	for _, r := range h.recs {

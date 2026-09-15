@@ -36,11 +36,41 @@ services:
       - './geoblockban.html:/geoblockban.html:ro'
       - ./:/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock
       - ip2-token:/data/ip2database-token
+      - ip2-update:/data/ip2database
       - ipinfo-update:/data/ipinfo
       - maxmind-update:/data/maxmind
     ports:
       - 8000:80
       - 8080:8080
+    depends_on:
+      seed-http:
+        condition: service_healthy
+
+  # Serves committed seeds on the compose network so /bar auto-update does not
+  # hit download.ip2location.com (public LITE can reclassify the Pester DE IP).
+  seed-zip:
+    image: python:3.12-alpine
+    container_name: seed-zip
+    volumes:
+      - ./seeds:/seeds:ro
+      - ./scripts/seed-http/pack.py:/pack.py:ro
+      - seed-www:/www
+    command: ["python", "/pack.py"]
+
+  seed-http:
+    image: nginx:1.27-alpine
+    container_name: seed-http
+    volumes:
+      - seed-www:/usr/share/nginx/html:ro
+    depends_on:
+      seed-zip:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 1s
 
   whoami-foo:
     image: traefik/whoami
@@ -86,7 +116,7 @@ services:
       - "traefik.http.middlewares.geoblock.plugin.geoblock.blockedCountries=US,CN,RU"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.allowedCountries=DE,FR,GB"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.defaultAllow=false"
-      - "traefik.http.middlewares.geoblock.plugin.geoblock.databaseSources.litezip.url=https://download.ip2location.com/lite/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
+      - "traefik.http.middlewares.geoblock.plugin.geoblock.databaseSources.litezip.url=http://seed-http/IP2LOCATION-LITE-DB1.IPV6.BIN.ZIP"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.databaseSources.litezip.databaseType=bin"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.databaseSources.litezip.archive=zip"
       - "traefik.http.middlewares.geoblock.plugin.geoblock.databaseSources.litezip.fieldsPreconfigured=ip2location_lite"
@@ -554,5 +584,7 @@ services:
 volumes:
   logs-local:
   ip2-token:
+  ip2-update:
   ipinfo-update:
   maxmind-update:
+  seed-www:

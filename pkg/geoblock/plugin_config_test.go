@@ -1,6 +1,9 @@
 package geoblock
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -707,6 +710,76 @@ func TestNew(t *testing.T) {
 		}
 	})
 
+	t.Run("EmptyBypassHeaderValue", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			BypassHeaders:        map[string]string{"X-Bypass": ""},
+		}, pluginName)
+		if err == nil {
+			t.Errorf("expected error about empty BypassHeaders value, but got none")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil, but is not")
+		}
+		if err != nil && !strings.Contains(err.Error(), "BypassHeaders") {
+			t.Errorf("expected BypassHeaders error, got: %v", err)
+		}
+	})
+
+	t.Run("WhitespaceOnlyBypassHeaderValue", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			BypassHeaders:        map[string]string{"X-Bypass": "   "},
+		}, pluginName)
+		if err == nil {
+			t.Errorf("expected error about whitespace-only BypassHeaders value, but got none")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil, but is not")
+		}
+		if err != nil && !strings.Contains(err.Error(), "BypassHeaders") {
+			t.Errorf("expected BypassHeaders error, got: %v", err)
+		}
+	})
+
+	t.Run("EmptyBypassHeadersMap", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			BypassHeaders:        map[string]string{},
+		}, pluginName)
+		if err != nil {
+			t.Errorf("expected no error for empty BypassHeaders map, but got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin to not be nil")
+		}
+	})
+
+	t.Run("DisabledEmptyBypassHeaderValue", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeDisabled,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			BypassHeaders:        map[string]string{"X-Bypass": ""},
+		}, pluginName)
+		if err != nil {
+			t.Errorf("expected no error in disabled mode, but got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin to not be nil")
+		}
+	})
+
 	t.Run("CustomIPHeaders", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                 ModeEnrichAndBlock,
@@ -939,6 +1012,69 @@ func TestCreateConfig_DatabaseSources(t *testing.T) {
 	}
 	if cfg.Mode != ModeEnrichAndBlock {
 		t.Errorf("CreateConfig.Mode %q want %q", cfg.Mode, ModeEnrichAndBlock)
+	}
+}
+
+const filedGeoBlockPrefix = "INFO: GeoBlock:"
+
+// capturePluginStdout runs fn while os.Stdout is a pipe and returns the bytes written.
+func capturePluginStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+	fn()
+	_ = w.Close()
+	os.Stdout = oldStdout
+	<-done
+	_ = r.Close()
+	return buf.String()
+}
+
+func TestCreateConfig_DefaultLogFormatText(t *testing.T) {
+	cfg := CreateConfig()
+	if cfg.LogFormat != "text" {
+		t.Errorf("CreateConfig.LogFormat %q want text", cfg.LogFormat)
+	}
+}
+
+func TestPluginLogger_CreateConfigDefaultLineShape(t *testing.T) {
+	SetTestPluginLogger(nil)
+	t.Cleanup(func() { SetTestPluginLogger(nil) })
+
+	cfg := CreateConfig()
+	output := capturePluginStdout(t, func() {
+		PluginLogger("GeoBlock", cfg).Info("allow local IPs: true")
+	})
+	if strings.Contains(output, filedGeoBlockPrefix) {
+		t.Errorf("stdout must not contain %q, got: %s", filedGeoBlockPrefix, output)
+	}
+	var sawLine bool
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		sawLine = true
+		if strings.HasPrefix(trimmed, "{") {
+			t.Errorf("default logger line starts with '{': %s", line)
+		}
+		var object map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &object); err == nil {
+			t.Errorf("default logger line unmarshaled as JSON: %s", line)
+		}
+	}
+	if !sawLine {
+		t.Fatal("expected at least one stdout line")
 	}
 }
 

@@ -1,0 +1,5 @@
+host: github
+ref: "78"
+number: 78
+title: "Treat BIN country `-` as empty so catalog fallback and plugin `XX` apply"
+url: https://github.com/david-garcia-garcia/traefik-geoblock/issues/78

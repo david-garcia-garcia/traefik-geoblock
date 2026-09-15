@@ -1,0 +1,17 @@
+issueKey: 2026-09-14-empty-bypass-header
+jobName: 2026-09-14-empty-bypass-header
+issueHost: local
+issueRef: none
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified-with-gaps
+src: fb6f4bd4517ad1019ec6922ca3451f9e48485762d7de8cb750788efed9a1494a
+comments: none
+localTests: passed
+requirement: requirement.md
+explore: explore.md
+change: reject-empty-bypass-header-values
+pr:
+  id: 87
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/87

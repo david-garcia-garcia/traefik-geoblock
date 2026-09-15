@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/iplookup"
 )
 
 func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
@@ -483,10 +483,7 @@ const (
 
 func TestRequestHeaderEnrich(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	emptyBlocks, err := iplookup.NewIpLookupFileMonitor(nil, "", logger)
-	if err != nil {
-		t.Fatalf("cidr monitor: %v", err)
-	}
+	emptyBlocks := iplookup.New()
 
 	t.Run("writes country region city", func(t *testing.T) {
 		plugin := &Plugin{
@@ -701,10 +698,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 func TestEnrichNullSentinel(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	emptyBlocks, err := iplookup.NewIpLookupFileMonitor(nil, "", logger)
-	if err != nil {
-		t.Fatalf("cidr monitor: %v", err)
-	}
+	emptyBlocks := iplookup.New()
 
 	allKeys := map[string]string{
 		"X-Geo-Country":        dbprovider.MetaCountry,
@@ -745,18 +739,33 @@ func TestEnrichNullSentinel(t *testing.T) {
 		}
 	})
 
-	t.Run("writePublicLookupHeaders does not write when country is empty or PRIVATE", func(t *testing.T) {
+	t.Run("writePublicLookupHeaders does not write when country is PRIVATE", func(t *testing.T) {
 		p := Plugin{requestHeaderEnrich: allKeys}
-		for _, rec := range []dbprovider.Record{{}, {Country: PrivateIpCountryAlias}} {
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			set := false
-			p.writePublicLookupHeaders(req, rec, &set)
-			if set {
-				t.Errorf("country %q: must not mark headers set", rec.Country)
-			}
-			if len(req.Header) != 0 {
-				t.Errorf("country %q: wrote headers %v", rec.Country, req.Header)
-			}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		set := false
+		p.writePublicLookupHeaders(req, dbprovider.Record{Country: PrivateIpCountryAlias}, &set)
+		if set {
+			t.Error("PRIVATE must not mark headers set")
+		}
+		if len(req.Header) != 0 {
+			t.Errorf("PRIVATE wrote headers %v", req.Header)
+		}
+	})
+
+	t.Run("writePublicLookupHeaders writes XX on country when the lookup is empty", func(t *testing.T) {
+		p := Plugin{requestHeaderEnrich: allKeys}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		set := false
+		p.writePublicLookupHeaders(req, dbprovider.Record{}, &set)
+		// written stays false so a later hop that does resolve still wins.
+		if set {
+			t.Error("empty country must not mark headers set")
+		}
+		if got := req.Header.Get("X-Geo-Country"); got != UnknownCountryAlias {
+			t.Errorf("country: got %q want %q", got, UnknownCountryAlias)
+		}
+		if _, ok := req.Header["X-Geo-Region"]; ok {
+			t.Error("non-country keys must be left to writeDefaultEnrichHeaders")
 		}
 	})
 
@@ -777,7 +786,7 @@ func TestEnrichNullSentinel(t *testing.T) {
 		}
 	})
 
-	t.Run("empty public lookup keeps PRIVATE and null", func(t *testing.T) {
+	t.Run("empty public lookup writes XX and keeps null", func(t *testing.T) {
 		plugin := &Plugin{
 			mode:                ModeEnrichAndBlock,
 			countryHeader:       "X-Geo-Country",
@@ -794,8 +803,10 @@ func TestEnrichNullSentinel(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
 		req.Header.Set("X-Real-IP", "8.8.8.8")
 		plugin.ServeHTTP(httptest.NewRecorder(), req, &noopHandler{})
-		if got := req.Header.Get("X-Geo-Country"); got != PrivateIpCountryAlias {
-			t.Errorf("country: got %q want PRIVATE", got)
+		// 8.8.8.8 is public. The sources ran and matched nothing, so the country is
+		// unknown, not private -- PRIVATE here would reach decide as allowPrivate.
+		if got := req.Header.Get("X-Geo-Country"); got != UnknownCountryAlias {
+			t.Errorf("country: got %q want %q", got, UnknownCountryAlias)
 		}
 		if got := req.Header.Get("X-Geo-Region"); got != EnrichNullAlias {
 			t.Errorf("region: got %q want null", got)

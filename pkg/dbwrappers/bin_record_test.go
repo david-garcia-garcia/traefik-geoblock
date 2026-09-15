@@ -145,6 +145,39 @@ func TestBIN_DownloadThroughComponent(t *testing.T) {
 	}
 }
 
+func TestBIN_UnknownCountryIsEmptySoCombinedCanFill(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+
+	bin, err := OpenBIN(holdCtx(t), BINConfig{Source: dbsource.Config{Path: testBIN}}, testLogger())
+	if err != nil {
+		t.Fatalf("OpenBIN: %v", err)
+	}
+	miss, err := bin.LookupRecord("203.0.113.7", mustFields(t, PresetIP2Location))
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if miss.Country != "" {
+		t.Errorf("BIN miss country %q want empty", miss.Country)
+	}
+
+	merged := dbprovider.NewCombined([]dbprovider.Named{
+		{Key: "a_bin", Provider: dbprovider.Bind(func(ip string) (dbprovider.Record, error) {
+			return bin.LookupRecord(ip, mustFields(t, PresetIP2Location))
+		})},
+		{Key: "b_later", Provider: dbprovider.Bind(func(string) (dbprovider.Record, error) {
+			return dbprovider.Record{Country: "GB"}, nil
+		})},
+	})
+	got, err := merged.Lookup("203.0.113.7")
+	if err != nil {
+		t.Fatalf("Combined: %v", err)
+	}
+	if got.Country != "GB" {
+		t.Errorf("merged country %q want GB", got.Country)
+	}
+}
+
 func TestBIN_FieldsAsnOnlyDoesNotWriteCountry(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)

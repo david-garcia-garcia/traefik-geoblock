@@ -121,7 +121,7 @@ http:
           logStatusDetailHeader: X-Geoblock-Decision
 ```
 
-Every mapped header is written. A missing field is the string `null`. Country on a private IP is `PRIVATE`.
+Every mapped header is written. A missing field is the string `null`. Country on a private IP is `PRIVATE`. A public IP for which no enabled source returns a country is `XX`.
 
 Which fields are populated depends on the database you load (country-only LITE vs city/ISP/ASN packages). Map only the keys your file actually has if you want to avoid `null` columns.
 
@@ -376,6 +376,7 @@ http:
             - HEAD
           includedPathsRegex: ""
           excludedPathsRegex: ""
+          # Empty bypassHeaders values are rejected at plugin creation.
           bypassHeaders:
             X-Internal-Request: "true"
 
@@ -416,9 +417,11 @@ ipHeaders:
 | `CheckFirst` | Only the first IP |
 | `CheckFirstNonePrivate` | First public IP; if none, first private IP |
 
-Country allow/block uses the single `countryHeader` value (first public country written). `CheckAll` still applies CIDR and private rules to every selected IP. To choose which hop’s country is written, use `CheckFirst` / `CheckFirstNonePrivate`. To allow or deny a later hop by address, use CIDR lists or omit that hop from `ipHeaders`.
+Country allow/block uses the single `countryHeader` value (first public country written). `CheckAll` still applies CIDR and private rules to every selected IP. To choose which hop’s country is written, use `CheckFirst` / `CheckFirstNonePrivate`. To deny a later hop by address, use `blockedIPBlocks`, or omit that hop from `ipHeaders`.
 
-On lookup modes, `countryHeader` starts as `PRIVATE` and is overwritten by the first real country.
+**Every selected hop can deny.** An earlier allowed hop does not vouch for the ones after it; `pass:{reason}` names the first *allowing* hop. If a forwarding proxy leaves its own private address in the chain, set `allowPrivate: true` or use `CheckFirstNonePrivate` — `allowedIPBlocks` cannot allow a private hop, because private and loopback addresses answer to `allowPrivate` before the CIDR lists are consulted.
+
+On lookup modes, `countryHeader` starts as `PRIVATE` and is overwritten by the first real country. An IP header value the plugin cannot parse enriches as `XX`, never as itself — the header only ever carries an ISO country, `PRIVATE` or `XX`. A public IP for which no enabled source returns a country is `XX`, so it reaches the country rules and `defaultAllow` rather than `allowPrivate`. `XX` is ISO 3166-1 user-assigned and may be listed in `allowedCountries` / `blockedCountries`. An IP2Location `bin` miss (`country_short` `-`) is empty at merge, so a later catalog source may fill country and a BIN-only miss still writes `XX`.
 
 ### Path include / exclude
 

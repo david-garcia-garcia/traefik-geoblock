@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"log/slog"
@@ -17,7 +18,7 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/reclaim"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim"
 )
 
 const (
@@ -41,6 +42,13 @@ type BINConfig struct {
 }
 
 // BIN is one open IP2Location BIN (file handle) with temp-copy hot-swap.
+//
+// The published handle and sibling fields (path, version, local copy, source
+// path) are not mutex-protected. A lookup may see a stale Path/Version/SourcePath
+// or a handle from just before/after a hot-swap. That inconsistency is accepted:
+// country data on the request path must not pay a lock, and a torn sibling is
+// not a panic. Readers copy w.db once; close must not set w.db to nil (vendor
+// Get_all on a nil *ip2loc.DB panics on d.metaok).
 type BIN struct {
 	cfg                BINConfig
 	logger             *slog.Logger
@@ -52,6 +60,8 @@ type BIN struct {
 	// pendingDated is a dated catalog path to copy after initialize returns.
 	pendingDated string
 	updater      *dbsource.Updater
+	// closed is set before Stop so a late hotSwap cannot publish.
+	closed atomic.Bool
 }
 
 // binTestHoldAfterSeed, when set by tests, runs in the dated-copy goroutine before hotSwap.
@@ -72,17 +82,27 @@ func OpenBIN(ctx context.Context, cfg BINConfig, logger *slog.Logger) (*BIN, err
 	if cfg.OwnerPlugin != "" {
 		wrap = logging.NewOwner(cfg.OwnerPlugin, cfg.OwnerLevel)
 	}
-	v, err := reclaim.Open(ctx, key, logger, func() (any, error) {
-		return newBIN(cfg, wrap)
+	var w *BIN
+	v, err := currentTable().Open(ctx, key, logger, func() (any, error) {
+		created, err := newBIN(cfg, wrap)
+		if err != nil {
+			return nil, err
+		}
+		w = created
+		return created, nil
+	}, reclaim.Hooks{
+		Sleep: func() { w.sleep() },
+		Wake:  func() { w.wake() },
+		Close: func() { w.close() },
 	})
 	if err != nil {
 		return nil, err
 	}
-	w, ok := v.(*BIN)
+	typed, ok := v.(*BIN)
 	if !ok {
 		return nil, fmt.Errorf("reclaim: %s: want *BIN, got %T", key, v)
 	}
-	return w, nil
+	return typed, nil
 }
 
 func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
@@ -152,6 +172,7 @@ func (w *BIN) initialize() error {
 					targetPath = latest
 				} else {
 					targetPath = copied
+					w.currentLocalDbCopy = copied
 				}
 			}
 		} else {
@@ -211,7 +232,6 @@ func (w *BIN) createLocalCopy(sourcePath string) (string, error) {
 	if err := fileutils.Copy(sourcePath, tmpFile, false); err != nil {
 		return "", fmt.Errorf("failed to create local copy: %w", err)
 	}
-	w.currentLocalDbCopy = tmpFile
 	return tmpFile, nil
 }
 
@@ -242,9 +262,22 @@ func binCopyName(token string, unixNano int64) string {
 	return fmt.Sprintf("bin_%s_%d.BIN", token, unixNano)
 }
 
+// sleep stops the keep-current ticker while this wrapper is parked in grace.
+func (w *BIN) sleep() {
+	if w.updater != nil {
+		w.updater.Stop()
+	}
+}
+
+// wake starts the keep-current ticker after a reclaim.
+func (w *BIN) wake() {
+	w.startUpdate()
+}
+
+// startUpdate starts the keep-current ticker that hot-swaps a newer dated BIN.
 func (w *BIN) startUpdate() {
 	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
-		if path == "" || path == w.sourceDbPath {
+		if path == "" || path == w.SourcePath() {
 			return
 		}
 		if err := w.hotSwap(path); err != nil {
@@ -275,34 +308,44 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 		os.Remove(newLocalCopy)
 		return fmt.Errorf("hotSwap: failed to read new database version: %w", err)
 	}
-	if w.db == nil {
+	// Close and remove a copy opened after Close so this generation stays disposed.
+	if w.closed.Load() {
 		newDB.Close()
 		os.Remove(newLocalCopy)
 		return nil
 	}
-	oldDB := w.db
-	w.db = newDB
-	w.path = newLocalCopy
-	w.version = newVersion
-	w.currentLocalDbCopy = newLocalCopy
-	w.sourceDbPath = newDatabasePath
-	if oldDB != nil {
+	old := w.swapHandle(newDB, newLocalCopy, newVersion, newLocalCopy, newDatabasePath)
+	if old != nil {
 		go func() {
+			// Grace for a lookup that already copied this handle. Get_all is
+			// short; 10s is more than enough. No lock waits for those readers.
 			time.Sleep(10 * time.Second)
-			oldDB.Close()
+			old.Close()
 		}()
 	}
 	w.logger.Info("BIN hot-swapped", "new_version", newVersion.String(), "new_path", newLocalCopy, "source_path", newDatabasePath, "size_bytes", openedFileSize(newLocalCopy))
 	return nil
 }
 
+// swapHandle stores the published vendor handle and sibling paths, then returns the previous handle.
+// No lock: a concurrent lookup may observe a stale sibling or the previous handle. Accepted.
+func (w *BIN) swapHandle(db *ip2loc.DB, path string, version *dbutils.DBVersion, currentLocalDbCopy, sourceDbPath string) *ip2loc.DB {
+	old := w.db
+	w.db = db
+	w.path = path
+	w.version = version
+	w.currentLocalDbCopy = currentLocalDbCopy
+	w.sourceDbPath = sourceDbPath
+	return old
+}
+
 // LookupRecord fills Record from the BIN using fields (path → Record key).
 // One Get_all; only mapped paths are copied.
 func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error) {
-	if w == nil || w.db == nil {
+	if w == nil {
 		return dbprovider.Record{}, fmt.Errorf("BIN is not open")
 	}
-	record, err := w.db.Get_all(ip)
+	record, err := w.getAll(ip)
 	if err != nil {
 		return dbprovider.Record{}, err
 	}
@@ -317,11 +360,28 @@ func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error
 	return rec, nil
 }
 
+// getAll copies the vendor pointer once and calls Get_all on that local.
+// No lock on this path. After Close, closed is true so this fails without
+// touching the pointer. A concurrent hot-swap may change w.db after the copy;
+// this lookup keeps the handle it already took. Do not read w.db twice: a nil
+// between the check and Get_all panics in the vendor query.
+func (w *BIN) getAll(ip string) (ip2loc.IP2Locationrecord, error) {
+	if w.closed.Load() {
+		return ip2loc.IP2Locationrecord{}, fmt.Errorf("BIN is not open")
+	}
+	db := w.db
+	if db == nil {
+		return ip2loc.IP2Locationrecord{}, fmt.Errorf("BIN is not open")
+	}
+	return db.Get_all(ip)
+}
+
 // binColumn is one IP2Location Get_all column.
 func binColumn(rec ip2loc.IP2Locationrecord, path string) string {
 	switch path {
 	case "country_short":
-		return rec.Country_short
+		// Vendor "-" is empty so Combined can fill country from a later source.
+		return usableMeta(rec.Country_short)
 	case "country_long":
 		return usableMeta(rec.Country_long)
 	case "region":
@@ -339,33 +399,39 @@ func binColumn(rec ip2loc.IP2Locationrecord, path string) string {
 	}
 }
 
-// Version is the BIN header version.
+// Version is the BIN header version. May be stale during hot-swap. Accepted.
 func (w *BIN) Version() *dbutils.DBVersion {
 	return w.version
 }
 
-// Path is the file last opened (temp copy or source).
+// Path is the file last opened (temp copy or source). May be stale during hot-swap. Accepted.
 func (w *BIN) Path() string {
 	return w.path
 }
 
 // SourcePath is the dated or seed file the live handle was copied from.
+// May be stale during hot-swap. Accepted. startUpdate skip-compare uses this.
 func (w *BIN) SourcePath() string {
 	return w.sourceDbPath
 }
 
-// Close stops the updater and the file handle. The reclaim table calls this when the incarnation ends.
+// Close stops the updater and the file handle. Tests may call this; production Close is the reclaim Hooks.Close.
 func (w *BIN) Close() {
 	w.close()
 }
 
+// close marks disposed, joins Stop, and Closes the vendor file. It does not set
+// w.db to nil: a later Get_all on a nil *ip2loc.DB panics. In-flight lookups keep
+// the pointer they already copied (that Get_all is undeterministic). Later
+// lookups see closed and fail without touching the pointer.
 func (w *BIN) close() {
+	// Mark closed before joining Stop so a late hotSwap cannot publish.
+	w.closed.Store(true)
 	if w.updater != nil {
 		w.updater.Stop()
 	}
 	if w.db != nil {
 		w.db.Close()
-		w.db = nil
 	}
 }
 
