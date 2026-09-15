@@ -1,0 +1,17 @@
+issueKey: 2026-09-14-bin-handle-race
+jobName: 2026-09-14-bin-handle-race
+issueHost: local
+issueRef: none
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified
+src: c4ce0197dd1beb91c9c9d5992ac4da8bd8c3bb8a1bb0c07d8d98b31e4aae897b
+localTests: passed
+requirement: requirement.md
+comments: none
+explore: explore.md
+change: bin-rwmutex-published-handle
+pr:
+  id: 85
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/85

@@ -47,3 +47,21 @@ When no live holder remains for a wrapper configuration and grace elapses withou
 - **THEN** reclaim logs show create H1, orphan H1, create H2, and dispose H1 after grace
 - **AND** H2 lookups succeed
 - **AND** H1’s keep-current loop is stopped
+
+### Requirement: BIN published handle is unlocked on the request path
+The BIN wrapper MUST NOT take a mutex to publish or read the vendor handle or its sibling fields (`path`, `version`, local copy path, source path). Lookup SHALL copy the vendor pointer once and MUST NOT call `Get_all` on a nil receiver. Close SHALL Close the vendor file and MUST NOT set the published pointer to nil (vendor `Get_all` on a nil `*ip2loc.DB` panics). Hot-swap SHALL open the next file, publish a non-nil handle, then Close the previous vendor handle after 10 seconds. Path, Version, and SourcePath MAY return stale values during hot-swap; that inconsistency is accepted. The keep-current skip-compare SHALL read the source path through SourcePath. MMDB’s published-reader mutex SHALL stay on MMDB; this requirement MUST NOT move BIN onto a helper shared with MMDB.
+
+#### Scenario: Concurrent lookup vs close
+- **WHEN** `LookupRecord` runs while reclaim Close Closes the BIN file
+- **THEN** `Get_all` is not invoked on a nil vendor handle
+- **AND** `LookupRecord` does not panic
+
+#### Scenario: Concurrent lookup vs hot-swap
+- **WHEN** `LookupRecord` runs while hot-swap publishes a new BIN handle
+- **THEN** `Get_all` runs on the pointer that lookup copied
+- **AND** the previous handle is Closed after 10 seconds
+
+#### Scenario: Getters may be stale during hot-swap
+- **WHEN** Path, Version, or SourcePath is read during hot-swap
+- **THEN** the returned value MAY belong to the previous or next generation
+- **AND** the keep-current skip-compare uses SourcePath, not a second field name
