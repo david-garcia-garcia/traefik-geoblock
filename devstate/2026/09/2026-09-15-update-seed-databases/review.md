@@ -12,3 +12,9 @@ findings: official LITE newer; MaxMind dummy identical; IPinfo skipped (no token
 fixed: none
 skipped: dbdownload verify (out of scope); IPinfo full Lite (no token)
 
+## propose (2026-09-15T14:43:12Z)
+phase: propose
+findings: skip_specs; change update-bundled-seeds
+fixed: none
+skipped: spec deltas (no behavior change)
+
