@@ -8,7 +8,7 @@ JobName: 2026-09-15-update-seed-databases
 | explore | [x] | [x] | 2026-09-15T14:41:17Z |
 | propose | [x] | [x] | 2026-09-15T14:43:12Z |
 | implement | [x] | [x] | 2026-09-15T14:45:39Z |
-| codereview | [x] | [ ] | |
-| devdocsimpact | [x] | [ ] | |
-| archive | [x] | [ ] | |
+| codereview | [x] | [x] | 2026-09-15T14:49:54Z |
+| devdocsimpact | [x] | [x] | 2026-09-15T14:49:54Z |
+| archive | [x] | [x] | 2026-09-15T14:49:54Z |
 | pullrequest | [ ] | [ ] | |

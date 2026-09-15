@@ -24,3 +24,21 @@ findings: official LITE BIN landed; TestGetDBVersion month 9
 fixed: seeds/IP2LOCATION-LITE-DB1.IPV6.BIN
 skipped: IPinfo; MaxMind dummy; dbdownload verify
 
+## codereview (2026-09-15T14:49:54Z)
+phase: codereview
+findings: P1 0, P2 0
+fixed: none
+skipped: all axes none.
+
+## devdocsimpact (2026-09-15T14:49:54Z)
+phase: devdocsimpact
+findings: none
+fixed: none
+skipped: Source packet already enough
+
+## archive (2026-09-15T14:49:54Z)
+phase: archive
+findings: skip_specs; folder moved
+fixed: none
+skipped: spec sync (no delta specs)
+
