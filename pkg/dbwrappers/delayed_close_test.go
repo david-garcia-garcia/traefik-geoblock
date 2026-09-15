@@ -138,7 +138,7 @@ func TestOpenMMDB_DelayedDownloadAfterClose(t *testing.T) {
 }
 
 // TestOpenBIN_HotSwapAfterClose calls hotSwap after Close so the closed
-// fail-closed branch is proven even when tick already skipped onUpdate.
+// fail-closed branch is proven even when tick still delivered onUpdate.
 func TestOpenBIN_HotSwapAfterClose(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
@@ -162,7 +162,7 @@ func TestOpenBIN_HotSwapAfterClose(t *testing.T) {
 }
 
 // TestOpenMMDB_OpenAfterClose calls open after Close so swapReader refuse is
-// proven even when tick already skipped onUpdate.
+// proven even when tick still delivered onUpdate.
 func TestOpenMMDB_OpenAfterClose(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)

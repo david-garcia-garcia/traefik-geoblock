@@ -49,7 +49,7 @@ When no live holder remains for a wrapper configuration and grace elapses withou
 - **AND** H1’s keep-current loop is stopped
 
 ### Requirement: Disposed generation stays disposed
-The keep-current Updater SHALL join its ticker goroutine on Stop. After Stop is signaled, that Updater SHALL NOT invoke its update callback. Sleep and Close SHALL use that Stop as the only join. Stop MAY wait for an in-flight download (up to the existing HTTP GET timeout). BIN and MMDB SHALL ignore an update that arrives after Close, including when the join is missed: they SHALL NOT assign a live handle on a closed generation. `db == nil` SHALL NOT mean closed (AllowMissing may start with no file). BIN Close SHALL NOT take a mutex around Lookup. A BIN copy opened after Close SHALL be closed and removed.
+The keep-current Updater SHALL join its ticker goroutine on Stop. An in-flight tick MAY still invoke its update callback after Stop is signaled: Sleep only parks the ticker and the wrapper is still live. Sleep and Close SHALL use that Stop as the only join. Stop MAY wait for an in-flight download (up to the existing HTTP GET timeout). Close SHALL mark the generation disposed before joining Stop. BIN and MMDB SHALL ignore an update that arrives after Close: they SHALL NOT assign a live handle on a closed generation. `db == nil` SHALL NOT mean closed (AllowMissing may start with no file). BIN Close SHALL NOT take a mutex around Lookup. A BIN copy opened after Close SHALL be closed and removed.
 
 #### Scenario: Delayed BIN download after Close
 - **WHEN** a URL-backed BIN wrapper starts a download

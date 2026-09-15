@@ -9,9 +9,10 @@ import (
 	"time"
 )
 
-// TestUpdaterStop_JoinsHeldGETAndSkipsOnUpdate holds HTTPGet until Stop, then
-// releases. Stop must not return while the GET is held, and onUpdate must not run.
-func TestUpdaterStop_JoinsHeldGETAndSkipsOnUpdate(t *testing.T) {
+// TestUpdaterStop_JoinsHeldGETAndRunsOnUpdate holds HTTPGet until Stop, then
+// releases. Stop must not return while the GET is held. The in-flight GET still
+// calls onUpdate (Sleep is not Close; the wrapper is still live).
+func TestUpdaterStop_JoinsHeldGETAndRunsOnUpdate(t *testing.T) {
 	body, err := os.ReadFile(repoFile(t, "ipinfo_lite.mmdb"))
 	if err != nil {
 		t.Fatal(err)
@@ -67,8 +68,8 @@ func TestUpdaterStop_JoinsHeldGETAndSkipsOnUpdate(t *testing.T) {
 		t.Fatal("Stop did not join the ticker goroutine")
 	}
 
-	if n := onUpdateCount.Load(); n != 0 {
-		t.Fatalf("onUpdate called %d times after Stop", n)
+	if n := onUpdateCount.Load(); n != 1 {
+		t.Fatalf("in-flight GET onUpdate: got %d, want 1", n)
 	}
 
 	u.Stop()

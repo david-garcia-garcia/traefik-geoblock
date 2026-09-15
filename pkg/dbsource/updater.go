@@ -104,12 +104,9 @@ func (u *Updater) tick(onUpdate func(path string)) {
 	if path == "" || onUpdate == nil {
 		return
 	}
-	// A Stop during GET must not publish: skip onUpdate once stop is signaled.
-	select {
-	case <-u.stop:
-		return
-	default:
-	}
+	// Sleep and Close both Stop+join. An in-flight GET still calls onUpdate:
+	// Sleep is only parking the ticker, the wrapper is still live. Close sets
+	// the wrapper disposed flag before Stop; that flag is what refuses the swap.
 	onUpdate(path)
 }
 
