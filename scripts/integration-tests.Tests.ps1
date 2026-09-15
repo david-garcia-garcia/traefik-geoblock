@@ -47,7 +47,7 @@ BeforeAll {
     # Test IPs
     $script:TestIPs = @{
         US_Google_DNS = "8.8.8.8"
-        German_IP = "85.214.132.117"
+        German_IP = "85.214.1.1"  # Strato AS6724; DE on official LITE and IPinfo (85.214.132.117 is DK on LITE)
         Private_IP = "192.168.1.100"
         Localhost = "127.0.0.1"
         Japanese_IP = "126.0.0.1"  # JP - for testing default_allow scenarios
