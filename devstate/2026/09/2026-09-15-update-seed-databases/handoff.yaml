@@ -1,0 +1,17 @@
+issueKey: 2026-09-15-update-seed-databases
+jobName: 2026-09-15-update-seed-databases
+issueHost: local
+issueRef: none
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified-with-gaps
+src: d406aedcd54013af59547e20f39e7389bfcbfb2ae7152aa1a8aed77131f182a2
+localTests: none
+requirement: requirement.md
+comments: none
+explore:
+change:
+pr:
+  id: 90
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/90
