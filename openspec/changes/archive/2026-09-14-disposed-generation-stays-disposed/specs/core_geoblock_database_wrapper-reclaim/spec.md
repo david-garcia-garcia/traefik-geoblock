@@ -1,8 +1,4 @@
-## Purpose
-
-Binds each format-wrapper singleton (one open BIN or MMDB file and its keep-current loop) to the Traefik `New` context through the reclaim lease, so a same-hash reload reclaims the wrapper and an unreclaimed hash is disposed after grace.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Wrapper open receives the New context
 Opening a BIN or MMDB wrapper SHALL take the context passed to plugin `New` (the Plugin `life` context). The wrapper MUST open that hash on the **wrappers** reclaim table (`any`, caller asserts `*BIN` / `*MMDB`) with `Hooks` that close over the pointer assigned inside `create`. Sleep SHALL stop the keep-current updater by joining its ticker goroutine. Wake SHALL start that updater again after the previous stop has returned. Close SHALL join that same stop, then close the open file or reader. BIN and MMDB keys SHALL be prefixed so they do not collide. A BIN key SHALL be `bin:<catalogKey>:<hash>` and an MMDB key SHALL be `mmdb:<catalogKey>:<hash>`. `create` SHALL take no arguments and MUST NOT receive an incarnation lifetime from the table.
@@ -48,8 +44,10 @@ When no live holder remains for a wrapper configuration and grace elapses withou
 - **AND** H2 lookups succeed
 - **AND** H1’s keep-current loop is stopped
 
+## ADDED Requirements
+
 ### Requirement: Disposed generation stays disposed
-The keep-current Updater SHALL join its ticker goroutine on Stop. An in-flight tick MAY still invoke its update callback after Stop is signaled: Sleep only parks the ticker and the wrapper is still live. Sleep and Close SHALL use that Stop as the only join. Stop MAY wait for an in-flight download (up to the existing HTTP GET timeout). Close SHALL mark the generation disposed before joining Stop. BIN and MMDB SHALL ignore an update that arrives after Close: they SHALL NOT assign a live handle on a closed generation. `db == nil` SHALL NOT mean closed (AllowMissing may start with no file). BIN Close SHALL NOT take a mutex around Lookup. A BIN copy opened after Close SHALL be closed and removed.
+The keep-current Updater SHALL join its ticker goroutine on Stop. After Stop is signaled, that Updater SHALL NOT invoke its update callback. Sleep and Close SHALL use that Stop as the only join. Stop MAY wait for an in-flight download (up to the existing HTTP GET timeout). BIN and MMDB SHALL ignore an update that arrives after Close, including when the join is missed: they SHALL NOT assign a live handle on a closed generation. `db == nil` SHALL NOT mean closed (AllowMissing may start with no file). BIN Close SHALL NOT take a mutex around Lookup. A BIN copy opened after Close SHALL be closed and removed.
 
 #### Scenario: Delayed BIN download after Close
 - **WHEN** a URL-backed BIN wrapper starts a download
@@ -65,21 +63,3 @@ The keep-current Updater SHALL join its ticker goroutine on Stop. An in-flight t
 - **AND** the download then finishes
 - **THEN** Close returns only after the ticker goroutine has exited
 - **AND** Lookup on that wrapper fails
-
-### Requirement: BIN published handle is unlocked on the request path
-The BIN wrapper MUST NOT take a mutex to publish or read the vendor handle or its sibling fields (`path`, `version`, local copy path, source path). Lookup SHALL copy the vendor pointer once and MUST NOT call `Get_all` on a nil receiver. Close SHALL Close the vendor file and MUST NOT set the published pointer to nil (vendor `Get_all` on a nil `*ip2loc.DB` panics). After Close, Lookup SHALL fail by reading the disposed flag, not by seeing a nil pointer. Hot-swap SHALL open the next file, publish a non-nil handle, then Close the previous vendor handle after 10 seconds. Path, Version, and SourcePath MAY return stale values during hot-swap; that inconsistency is accepted. The keep-current skip-compare SHALL read the source path through SourcePath. MMDB’s published-reader mutex SHALL stay on MMDB; this requirement MUST NOT move BIN onto a helper shared with MMDB.
-
-#### Scenario: Concurrent lookup vs close
-- **WHEN** `LookupRecord` runs while reclaim Close Closes the BIN file
-- **THEN** `Get_all` is not invoked on a nil vendor handle
-- **AND** `LookupRecord` does not panic
-
-#### Scenario: Concurrent lookup vs hot-swap
-- **WHEN** `LookupRecord` runs while hot-swap publishes a new BIN handle
-- **THEN** `Get_all` runs on the pointer that lookup copied
-- **AND** the previous handle is Closed after 10 seconds
-
-#### Scenario: Getters may be stale during hot-swap
-- **WHEN** Path, Version, or SourcePath is read during hot-swap
-- **THEN** the returned value MAY belong to the previous or next generation
-- **AND** the keep-current skip-compare uses SourcePath, not a second field name

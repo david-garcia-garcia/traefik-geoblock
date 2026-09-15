@@ -36,6 +36,8 @@ type MMDB struct {
 	logger  *slog.Logger
 	cfg     MMDBConfig
 	updater *dbsource.Updater
+	// closed is the dispose flag under mu. db==nil plus empty path is also pre-first-open.
+	closed bool
 }
 
 const keyPrefixMMDB = "mmdb:"
@@ -133,7 +135,11 @@ func (w *MMDB) open(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open MMDB %s: %w", path, err)
 	}
-	old := w.swapReader(db, path)
+	old, published := w.swapReader(db, path)
+	if !published {
+		_ = db.Close()
+		return nil
+	}
 	if old != nil {
 		_ = old.Close()
 	}
@@ -142,14 +148,18 @@ func (w *MMDB) open(path string) error {
 }
 
 // swapReader stores db at path and returns the previous reader. Caller Closes that reader.
-func (w *MMDB) swapReader(db *maxminddb.Reader, path string) *maxminddb.Reader {
+// A non-nil db is not stored after Close; published is false and the caller Closes db.
+func (w *MMDB) swapReader(db *maxminddb.Reader, path string) (old *maxminddb.Reader, published bool) {
 	w.mu.Lock()
 	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
 	defer w.mu.Unlock()
-	old := w.db
+	if w.closed && db != nil {
+		return nil, false
+	}
+	old = w.db
 	w.db = db
 	w.path = path
-	return old
+	return old, true
 }
 
 // Path is the file last opened.
@@ -197,10 +207,17 @@ func (w *MMDB) Close() {
 
 // close stops the updater and the reader.
 func (w *MMDB) close() {
+	// Mark closed before joining Stop so a late open cannot publish.
+	func() {
+		w.mu.Lock()
+		// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
+		defer w.mu.Unlock()
+		w.closed = true
+	}()
 	if w.updater != nil {
 		w.updater.Stop()
 	}
-	old := w.swapReader(nil, "")
+	old, _ := w.swapReader(nil, "")
 	if old != nil {
 		_ = old.Close()
 	}

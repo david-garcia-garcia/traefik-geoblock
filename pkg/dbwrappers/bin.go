@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"log/slog"
@@ -57,6 +58,8 @@ type BIN struct {
 	currentLocalDbCopy string
 	sourceDbPath       string
 	updater            *dbsource.Updater
+	// closed is set before Stop so a late hotSwap cannot publish.
+	closed atomic.Bool
 }
 
 const keyPrefixBIN = "bin:"
@@ -263,6 +266,12 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 		os.Remove(newLocalCopy)
 		return fmt.Errorf("hotSwap: failed to read new database version: %w", err)
 	}
+	// Close and remove a copy opened after Close so this generation stays disposed.
+	if w.closed.Load() {
+		newDB.Close()
+		os.Remove(newLocalCopy)
+		return nil
+	}
 	old := w.swapHandle(newDB, newLocalCopy, newVersion, newLocalCopy, newDatabasePath)
 	if old != nil {
 		go func() {
@@ -310,10 +319,14 @@ func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error
 }
 
 // getAll copies the vendor pointer once and calls Get_all on that local.
-// No lock on this path. A concurrent hot-swap may change w.db after the copy;
+// No lock on this path. After Close, closed is true so this fails without
+// touching the pointer. A concurrent hot-swap may change w.db after the copy;
 // this lookup keeps the handle it already took. Do not read w.db twice: a nil
 // between the check and Get_all panics in the vendor query.
 func (w *BIN) getAll(ip string) (ip2loc.IP2Locationrecord, error) {
+	if w.closed.Load() {
+		return ip2loc.IP2Locationrecord{}, fmt.Errorf("BIN is not open")
+	}
 	db := w.db
 	if db == nil {
 		return ip2loc.IP2Locationrecord{}, fmt.Errorf("BIN is not open")
@@ -365,10 +378,13 @@ func (w *BIN) Close() {
 	w.close()
 }
 
-// close stops the updater and Closes the vendor file. It does not set w.db to
-// nil: a later Get_all on a nil *ip2loc.DB panics. In-flight lookups keep the
-// pointer they already copied; after Close the vendor call is undeterministic.
+// close marks disposed, joins Stop, and Closes the vendor file. It does not set
+// w.db to nil: a later Get_all on a nil *ip2loc.DB panics. In-flight lookups keep
+// the pointer they already copied (that Get_all is undeterministic). Later
+// lookups see closed and fail without touching the pointer.
 func (w *BIN) close() {
+	// Mark closed before joining Stop so a late hotSwap cannot publish.
+	w.closed.Store(true)
 	if w.updater != nil {
 		w.updater.Stop()
 	}
