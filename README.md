@@ -376,6 +376,7 @@ http:
             - HEAD
           includedPathsRegex: ""
           excludedPathsRegex: ""
+          # Empty bypassHeaders values are rejected at plugin creation.
           bypassHeaders:
             X-Internal-Request: "true"
 

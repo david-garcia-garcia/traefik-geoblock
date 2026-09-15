@@ -710,6 +710,76 @@ func TestNew(t *testing.T) {
 		}
 	})
 
+	t.Run("EmptyBypassHeaderValue", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			BypassHeaders:        map[string]string{"X-Bypass": ""},
+		}, pluginName)
+		if err == nil {
+			t.Errorf("expected error about empty BypassHeaders value, but got none")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil, but is not")
+		}
+		if err != nil && !strings.Contains(err.Error(), "BypassHeaders") {
+			t.Errorf("expected BypassHeaders error, got: %v", err)
+		}
+	})
+
+	t.Run("WhitespaceOnlyBypassHeaderValue", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			BypassHeaders:        map[string]string{"X-Bypass": "   "},
+		}, pluginName)
+		if err == nil {
+			t.Errorf("expected error about whitespace-only BypassHeaders value, but got none")
+		}
+		if plugin != nil {
+			t.Error("expected plugin to be nil, but is not")
+		}
+		if err != nil && !strings.Contains(err.Error(), "BypassHeaders") {
+			t.Errorf("expected BypassHeaders error, got: %v", err)
+		}
+	})
+
+	t.Run("EmptyBypassHeadersMap", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			BypassHeaders:        map[string]string{},
+		}, pluginName)
+		if err != nil {
+			t.Errorf("expected no error for empty BypassHeaders map, but got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin to not be nil")
+		}
+	})
+
+	t.Run("DisabledEmptyBypassHeaderValue", func(t *testing.T) {
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeDisabled,
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			BypassHeaders:        map[string]string{"X-Bypass": ""},
+		}, pluginName)
+		if err != nil {
+			t.Errorf("expected no error in disabled mode, but got: %v", err)
+		}
+		if plugin == nil {
+			t.Error("expected plugin to not be nil")
+		}
+	})
+
 	t.Run("CustomIPHeaders", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                 ModeEnrichAndBlock,

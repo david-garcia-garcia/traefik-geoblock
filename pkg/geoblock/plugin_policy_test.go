@@ -290,6 +290,47 @@ func TestPlugin_ServeHTTP(t *testing.T) {
 		}
 	})
 
+	t.Run("EmptyBypassHeaderValueDoesNotSkipBlockedCountry", func(t *testing.T) {
+		cfg := &Config{
+			Mode:                  ModeEnrichAndBlock,
+			DatabaseSources:       seedCatalog(dbFilePath),
+			BlockedCountries:      []string{"US"},
+			DefaultAllow:          false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-forwarded-for", "x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+			BypassHeaders: map[string]string{
+				"X-Bypass": "secret123",
+			},
+		}
+
+		plugin, err := newTestPlugin(holdCtx(t), cfg, pluginName)
+		if err != nil {
+			t.Fatalf("expected no error, but got: %v", err)
+		}
+		// Prepare rejects ""; mutate the live map to cover a leftover empty entry.
+		plugin.bypassHeaders = map[string]string{"X-Bypass": ""}
+		handler, err := plugin.ForRoute(&noopHandler{})
+		if err != nil {
+			t.Fatalf("expected no error, but got: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/foobar", nil)
+		req.Header.Set("X-Real-IP", "8.8.8.8")
+
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("expected blocked status %d, but got: %d", http.StatusForbidden, rr.Code)
+		}
+		decision := req.Header.Get("X-Geoblock-Decision")
+		if decision == LogStatusPass+":"+PhaseBypassHeader {
+			t.Errorf("empty bypass value must not write %s, got %s", LogStatusPass+":"+PhaseBypassHeader, decision)
+		}
+	})
+
 	t.Run("Set Country Header", func(t *testing.T) {
 		countryHeader := "X-Country"
 		cfg := &Config{
