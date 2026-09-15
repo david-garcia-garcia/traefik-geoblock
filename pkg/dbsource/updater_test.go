@@ -33,7 +33,7 @@ func TestUpdaterStop_JoinsHeldGETAndRunsOnUpdate(t *testing.T) {
 		URL:          srv.URL + "/db.mmdb",
 		DatabaseType: TypeMMDB,
 		Dir:          t.TempDir(),
-	}, testLogger(), func(string) {
+	}, testLogger(), func(string, UpdateTrigger) {
 		onUpdateCount.Add(1)
 	})
 	if err != nil {
@@ -83,13 +83,18 @@ func TestUpdater_ReconcilesLatestWithoutURL(t *testing.T) {
 	if err := os.WriteFile(dated, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	got := make(chan string, 1)
+	// One onUpdate delivery: the dated file and the tick step that produced it.
+	type updateCall struct {
+		path    string
+		trigger UpdateTrigger
+	}
+	calls := make(chan updateCall, 1)
 	u, err := Start(Config{
 		Key:          "paid",
 		DatabaseType: TypeBIN,
 		Dir:          dir,
-	}, testLogger(), func(path string) {
-		got <- path
+	}, testLogger(), func(path string, trigger UpdateTrigger) {
+		calls <- updateCall{path: path, trigger: trigger}
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -98,9 +103,12 @@ func TestUpdater_ReconcilesLatestWithoutURL(t *testing.T) {
 		t.Fatal("expected updater without URL")
 	}
 	select {
-	case path := <-got:
-		if path != dated {
-			t.Fatalf("onUpdate path=%s want %s", path, dated)
+	case call := <-calls:
+		if call.path != dated {
+			t.Fatalf("onUpdate path=%s want %s", call.path, dated)
+		}
+		if call.trigger != TriggerPromote {
+			t.Fatalf("onUpdate trigger=%s want %s", call.trigger, TriggerPromote)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("onUpdate never ran")

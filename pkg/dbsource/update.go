@@ -99,7 +99,8 @@ func Update(cfg Config, logger *slog.Logger) (string, error) {
 	if err := fileutils.Copy(tmpPath, finalPath, false); err != nil {
 		return "", fmt.Errorf("failed to copy download to %s: %w", finalPath, err)
 	}
-	logger.Info("database updated successfully", "key", cfg.Key, "path", finalPath)
+	// Debug only: the wrapper that opens this file logs the download as reason=download.
+	logger.Debug("database updated successfully", "key", cfg.Key, "path", finalPath)
 	return finalPath, nil
 }
 

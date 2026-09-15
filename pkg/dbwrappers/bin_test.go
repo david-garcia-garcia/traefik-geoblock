@@ -137,12 +137,15 @@ func TestFileToken(t *testing.T) {
 	}
 }
 
-func TestBinCopyName(t *testing.T) {
-	if got := binCopyName("paid", 1756620895399542303); got != "bin_paid_1756620895399542303.BIN" {
-		t.Fatalf("binCopyName: %s", got)
+func TestCopyName(t *testing.T) {
+	if got := copyName(dbsource.TypeBIN, "paid", 1756620895399542303); got != "bin_paid_1756620895399542303.BIN" {
+		t.Fatalf("copyName: %s", got)
 	}
-	if got := binCopyName("", 1); got != "bin_1.BIN" {
+	if got := copyName(dbsource.TypeBIN, "", 1); got != "bin_1.BIN" {
 		t.Fatalf("empty key: %s", got)
+	}
+	if got := copyName(dbsource.TypeMMDB, "ipinfo", 2); got != "mmdb_ipinfo_2.mmdb" {
+		t.Fatalf("mmdb copyName: %s", got)
 	}
 }
 
@@ -184,8 +187,8 @@ func TestOpenBIN_InitLogsDatedCopy(t *testing.T) {
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, `msg="BIN initialized"`) {
-		t.Fatalf("missing BIN initialized: %s", out)
+	if !strings.Contains(out, `msg="BIN opened"`) || !strings.Contains(out, "reason=init") {
+		t.Fatalf("missing BIN opened reason=init: %s", out)
 	}
 	if !strings.Contains(out, "source_path="+dated) && !strings.Contains(out, "source_path=\""+dated+"\"") {
 		// text handler quotes paths with backslashes on Windows
@@ -210,12 +213,12 @@ func TestOpenBIN_InitLogsDatedCopy(t *testing.T) {
 		t.Fatalf("missing size_bytes: %s", out)
 	}
 
-	if err := w.hotSwap(dated); err != nil {
+	if err := w.life.hotSwap(dated, dbsource.TriggerPromote); err != nil {
 		t.Fatalf("hotSwap: %v", err)
 	}
 	swapOut := buf.String()
-	if !strings.Contains(swapOut, "BIN hot-swapped") {
-		t.Fatalf("missing hot-swapped: %s", swapOut)
+	if !strings.Contains(swapOut, "reason=promote") {
+		t.Fatalf("missing BIN opened reason=promote: %s", swapOut)
 	}
 	if !strings.Contains(swapOut, "source_path=") || !strings.Contains(swapOut, "20260831_paid.BIN") {
 		t.Fatalf("hot-swap source_path: %s", swapOut)
@@ -245,12 +248,12 @@ func TestOpenBIN_SeedFirstBeforeDatedCopy(t *testing.T) {
 
 	held := make(chan struct{})
 	release := make(chan struct{})
-	binTestHoldAfterSeed = func() {
+	lifecycleTestHoldFirstUpdate = func() {
 		close(held)
 		<-release
 	}
 	t.Cleanup(func() {
-		binTestHoldAfterSeed = nil
+		lifecycleTestHoldFirstUpdate = nil
 		select {
 		case <-release:
 		default:
@@ -288,11 +291,11 @@ func TestOpenBIN_SeedFirstBeforeDatedCopy(t *testing.T) {
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, `msg="BIN initialized"`) {
-		t.Fatalf("missing BIN initialized: %s", out)
+	if !strings.Contains(out, `msg="BIN opened"`) || !strings.Contains(out, "reason=seed") {
+		t.Fatalf("missing BIN opened reason=seed: %s", out)
 	}
-	if !strings.Contains(out, "pending_source_path=") || !strings.Contains(out, "20260831_paid.BIN") {
-		t.Fatalf("missing pending_source_path: %s", out)
+	if strings.Contains(out, "20260831_paid.BIN") {
+		t.Fatalf("seed line names the pending dated file: %s", out)
 	}
 	info, err := os.Stat(seed)
 	if err != nil {
@@ -306,7 +309,7 @@ func TestOpenBIN_SeedFirstBeforeDatedCopy(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		swapOut := buf.String()
-		if strings.Contains(swapOut, "BIN hot-swapped") &&
+		if strings.Contains(swapOut, "reason=promote") &&
 			strings.HasPrefix(filepath.Base(w.Path()), "bin_paid_") &&
 			w.SourcePath() == dated {
 			if !strings.Contains(swapOut, "size_bytes=") {
@@ -326,7 +329,7 @@ func TestOpenBIN_HotSwap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	if err := w.hotSwap(testBIN); err != nil {
+	if err := w.life.hotSwap(testBIN, dbsource.TriggerPromote); err != nil {
 		t.Fatalf("hotSwap: %v", err)
 	}
 	rec := testBINRecord(t, w)

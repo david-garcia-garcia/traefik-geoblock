@@ -106,7 +106,7 @@ func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenBIN: %v", err)
 	}
-	if a.updater == nil {
+	if a.life.updater == nil {
 		t.Fatal("expected keep-current loop")
 	}
 	cancel1()
@@ -119,7 +119,7 @@ func TestOpenBIN_SameHashReclaimKeepsTicker(t *testing.T) {
 	if a != b {
 		t.Fatal("expected same wrapper")
 	}
-	if a.updater != b.updater {
+	if a.life.updater != b.life.updater {
 		t.Fatal("expected one ticker")
 	}
 	rec := testBINRecord(t, b)
@@ -179,7 +179,7 @@ func TestOpenBIN_HashChangeDisposesOld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("H1: %v", err)
 	}
-	if h1.updater == nil {
+	if h1.life.updater == nil {
 		t.Fatal("expected H1 ticker")
 	}
 	cancel1()
@@ -226,7 +226,7 @@ func TestOpenMMDB_SameHashReclaimKeepsTicker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	if a.updater == nil {
+	if a.life.updater == nil {
 		t.Fatal("expected keep-current loop")
 	}
 	cancel1()
@@ -236,7 +236,7 @@ func TestOpenMMDB_SameHashReclaimKeepsTicker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB reclaim: %v", err)
 	}
-	if a != b || a.updater != b.updater {
+	if a != b || a.life.updater != b.life.updater {
 		t.Fatal("expected one wrapper and one ticker")
 	}
 	var rec struct {
@@ -298,7 +298,7 @@ func TestOpenMMDB_HashChangeDisposesOld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("H1: %v", err)
 	}
-	if h1.updater == nil {
+	if h1.life.updater == nil {
 		t.Fatal("expected H1 ticker")
 	}
 	cancel1()

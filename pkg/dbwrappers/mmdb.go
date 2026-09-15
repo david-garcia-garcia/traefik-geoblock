@@ -8,7 +8,7 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"log/slog"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbutils"
 	"github.com/david-garcia-garcia/traefik-middleware-utilities/reclaim"
 )
 
@@ -28,16 +29,21 @@ type MMDBConfig struct {
 	MinAge          time.Duration
 }
 
-// MMDB is one open MaxMind DB (FromBytes) with hot-swap and a download ticker.
+// MMDB is one open MaxMind DB (FromBytes) for the shared lifecycle.
+//
+// The published reader and its path are not mutex-protected. A lookup may see a stale
+// Path or the previous generation's reader during a hot-swap. That inconsistency is
+// accepted: the request path must not pay a lock. Readers copy w.db once, and a reader
+// a swap replaced is Closed only after a read grace: vendor Close nils the buffer, so a
+// lookup still inside that reader would fail (cannot call Lookup on a closed database)
+// instead of returning the answer it was already resolving.
 type MMDB struct {
-	mu      sync.RWMutex
-	db      *maxminddb.Reader
-	path    string
-	logger  *slog.Logger
-	cfg     MMDBConfig
-	updater *dbsource.Updater
-	// closed is the dispose flag under mu. db==nil plus empty path is also pre-first-open.
-	closed bool
+	cfg  MMDBConfig
+	life *lifecycle
+	db   *maxminddb.Reader
+	path string
+	// closed is set before Stop so a late publish cannot go live.
+	closed atomic.Bool
 }
 
 const keyPrefixMMDB = "mmdb:"
@@ -50,123 +56,103 @@ func mmdbKey(cfg MMDBConfig) string {
 // OpenMMDB returns the singleton MMDB for cfg and binds ctx on the process table.
 func OpenMMDB(ctx context.Context, cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	key := mmdbKey(cfg)
-	var w *MMDB
-	v, err := currentTable().Open(ctx, key, logger, func() (any, error) {
+	return reclaim.OpenTyped[*MMDB](ctx, currentTable(), key, logger, func() (any, reclaim.Hooks, error) {
 		created, err := newMMDB(cfg, logger)
 		if err != nil {
-			return nil, err
+			return nil, reclaim.Hooks{}, err
 		}
-		w = created
-		return created, nil
-	}, reclaim.Hooks{
-		Sleep: func() { w.sleep() },
-		Wake:  func() { w.wake() },
-		Close: func() { w.close() },
+		return created, reclaim.Hooks{
+			Sleep: created.life.sleep,
+			Wake:  created.life.wake,
+			Close: created.life.close,
+		}, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	typed, ok := v.(*MMDB)
-	if !ok {
-		return nil, fmt.Errorf("reclaim: %s: want *MMDB, got %T", key, v)
-	}
-	return typed, nil
 }
 
 func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	logger = logger.With("key", cfg.Source.Key)
-	w := &MMDB{logger: logger, cfg: cfg}
-	path, err := dbsource.Resolve(w.sourceCfg(), w.logger)
-	if err != nil {
+	w := &MMDB{cfg: cfg}
+	w.life = &lifecycle{
+		format:  w,
+		subject: "MMDB",
+		// FromBytes holds the whole file in memory, so a replaced file needs no temp copy.
+		servesFromFile: false,
+		// A bundled MMDB defaultFile may be a dummy fixture, so it does not go live
+		// ahead of a dated catalog file.
+		seedFirst:    false,
+		allowMissing: false,
+		source:       mmdbSourceCfg(cfg),
+		logger:       logger.With("key", cfg.Source.Key),
+	}
+	if err := w.life.initialize(); err != nil {
 		return nil, err
 	}
-	if err := w.open(path); err != nil {
-		return nil, err
-	}
-	w.startUpdate()
+	w.life.startUpdate()
 	return w, nil
 }
 
-// sleep stops the keep-current ticker while this wrapper is parked in grace.
-func (w *MMDB) sleep() {
-	if w.updater != nil {
-		w.updater.Stop()
+// mmdbSourceCfg is the catalog source for this MMDB.
+func mmdbSourceCfg(cfg MMDBConfig) dbsource.Config {
+	source := dbsource.WithDefaults(cfg.Source, cfg.Dir, dbsource.TypeMMDB, cfg.MinAge)
+	if source.DefaultFileName == "" {
+		source.DefaultFileName = cfg.DefaultFileName
 	}
+	return source
 }
 
-// wake starts the keep-current ticker after a reclaim.
-func (w *MMDB) wake() {
-	w.startUpdate()
-}
-
-func (w *MMDB) startUpdate() {
-	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
-		if path == "" || path == w.Path() {
-			return
-		}
-		if err := w.open(path); err != nil {
-			w.logger.Error("failed to open updated MMDB", "error", err)
-		}
-	})
-	if err != nil {
-		w.logger.Error("source updater", "error", err)
-		return
-	}
-	w.updater = updater
-}
-
-func (w *MMDB) sourceCfg() dbsource.Config {
-	cfg := dbsource.WithDefaults(w.cfg.Source, w.cfg.Dir, dbsource.TypeMMDB, w.cfg.MinAge)
-	if cfg.DefaultFileName == "" {
-		cfg.DefaultFileName = w.cfg.DefaultFileName
-	}
-	return cfg
-}
-
-func (w *MMDB) open(path string) error {
+// publishFile reads path into memory and publishes that reader without a lock. The
+// reader it replaces is Closed after a read grace; only then may the file that reader
+// was given be removed. MMDB has no version header: the catalog file name carries the date.
+func (w *MMDB) publishFile(path, sourcePath string, retire func()) (*dbutils.DBVersion, bool, error) {
 	buf, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("failed to read MMDB %s: %w", path, err)
+		return nil, false, fmt.Errorf("failed to read MMDB %s: %w", path, err)
 	}
 	db, err := maxminddb.FromBytes(buf)
 	if err != nil {
-		return fmt.Errorf("failed to open MMDB %s: %w", path, err)
+		return nil, false, fmt.Errorf("failed to open MMDB %s: %w", path, err)
 	}
-	old, published := w.swapReader(db, path)
-	if !published {
+	// A reader opened after Close stays disposed so this generation cannot come back.
+	if w.closed.Load() {
 		_ = db.Close()
-		return nil
+		return nil, false, nil
 	}
-	if old != nil {
-		_ = old.Close()
+	old := w.swapReader(db, path)
+	if old == nil {
+		retire()
+		return nil, true, nil
 	}
-	w.logger.Info("MMDB opened", "path", path)
-	return nil
+	disposeAfterGrace(func() { _ = old.Close() }, retire)
+	return nil, true, nil
 }
 
-// swapReader stores db at path and returns the previous reader. Caller Closes that reader.
-// A non-nil db is not stored after Close; published is false and the caller Closes db.
-func (w *MMDB) swapReader(db *maxminddb.Reader, path string) (old *maxminddb.Reader, published bool) {
-	w.mu.Lock()
-	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
-	defer w.mu.Unlock()
-	if w.closed && db != nil {
-		return nil, false
-	}
-	old = w.db
+// swapReader stores the published reader and its path, then returns the previous reader.
+// No lock: a concurrent lookup may observe a stale path or the previous reader. Accepted.
+func (w *MMDB) swapReader(db *maxminddb.Reader, path string) *maxminddb.Reader {
+	old := w.db
 	w.db = db
 	w.path = path
-	return old, true
+	return old
 }
 
-// Path is the file last opened.
+// refusePublish marks this MMDB disposed. The lifecycle sets it before joining Stop.
+func (w *MMDB) refusePublish() {
+	w.closed.Store(true)
+}
+
+// closeHandle Closes the live reader. It leaves the pointer in place: a closed vendor
+// reader already fails its own lookups cleanly, unlike BIN where a nil handle panics.
+// Later lookups see closed and fail without touching it.
+func (w *MMDB) closeHandle() {
+	if w.db != nil {
+		_ = w.db.Close()
+	}
+}
+
+// Path is the file last opened. May be stale during hot-swap. Accepted.
 func (w *MMDB) Path() string {
-	w.mu.RLock()
-	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
-	defer w.mu.RUnlock()
 	return w.path
 }
 
@@ -185,42 +171,28 @@ func (w *MMDB) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, erro
 	return extract.record(dest), nil
 }
 
-// Lookup decodes ip into dest (raw MMDB tags).
+// Lookup decodes ip into dest (raw MMDB tags). It copies the vendor pointer once and
+// calls Lookup on that local. No lock on this path. After Close, closed is true so this
+// fails without touching the pointer. A concurrent hot-swap may change w.db after the
+// copy; this lookup keeps the reader it already took, which stays readable for the grace.
 func (w *MMDB) Lookup(ip string, dest any) error {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
 		return fmt.Errorf("invalid IP address: %s", ip)
 	}
-	w.mu.RLock()
-	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
-	defer w.mu.RUnlock()
-	if w.db == nil {
+	if w.closed.Load() {
 		return fmt.Errorf("MMDB is not open")
 	}
-	return w.db.Lookup(parsed, dest)
+	db := w.db
+	if db == nil {
+		return fmt.Errorf("MMDB is not open")
+	}
+	return db.Lookup(parsed, dest)
 }
 
 // Close stops the updater and the reader. Tests may call this; production Close is the reclaim Hooks.Close.
 func (w *MMDB) Close() {
-	w.close()
-}
-
-// close stops the updater and the reader.
-func (w *MMDB) close() {
-	// Mark closed before joining Stop so a late open cannot publish.
-	func() {
-		w.mu.Lock()
-		// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
-		defer w.mu.Unlock()
-		w.closed = true
-	}()
-	if w.updater != nil {
-		w.updater.Stop()
-	}
-	old, _ := w.swapReader(nil, "")
-	if old != nil {
-		_ = old.Close()
-	}
+	w.life.close()
 }
 
 func configHash(v any) string {

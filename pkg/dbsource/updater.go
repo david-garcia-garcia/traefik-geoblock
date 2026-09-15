@@ -24,9 +24,20 @@ func WithDefaults(cfg Config, dir, databaseType string, minAge time.Duration) Co
 	return cfg
 }
 
+// UpdateTrigger says which tick step produced the path handed to onUpdate, so the
+// caller's own trail can name the event instead of this package logging it too.
+type UpdateTrigger string
+
+const (
+	// TriggerPromote is a dated file that was already on disk when the tick ran.
+	TriggerPromote UpdateTrigger = "promote"
+	// TriggerDownload is the path the tick's age check and GET returned.
+	TriggerDownload UpdateTrigger = "download"
+)
+
 // Start builds an Updater and starts promote-and-GET when Dir and Key can watch Latest.
 // A nil Updater means nothing to watch. GET still requires URL.
-func Start(cfg Config, logger *slog.Logger, onUpdate func(string)) (*Updater, error) {
+func Start(cfg Config, logger *slog.Logger, onUpdate func(string, UpdateTrigger)) (*Updater, error) {
 	u, err := newUpdater(cfg, logger)
 	if err != nil {
 		return nil, err
@@ -78,8 +89,9 @@ func (u *Updater) UpdateIfNeeded() (string, error) {
 	return UpdateIfNeeded(u.cfg, u.logger)
 }
 
-// Start runs one promote-and-GET pass now and again every 24h. onUpdate is called with a new path.
-func (u *Updater) Start(onUpdate func(path string)) {
+// Start runs one promote-and-GET pass now and again every 24h. onUpdate is called
+// with a new path and the tick step that produced it.
+func (u *Updater) Start(onUpdate func(path string, trigger UpdateTrigger)) {
 	u.ticker = time.NewTicker(24 * time.Hour)
 	u.stop = make(chan struct{})
 	u.exited = make(chan struct{})
@@ -97,13 +109,13 @@ func (u *Updater) Start(onUpdate func(path string)) {
 	}()
 }
 
-func (u *Updater) tick(onUpdate func(path string)) {
+func (u *Updater) tick(onUpdate func(path string, trigger UpdateTrigger)) {
 	// Promote a dated file already on disk (this pod or another writer). No GET.
 	latest, err := u.Latest()
 	if err != nil {
 		u.logger.Error("latest dated file", "error", err)
 	} else if latest != "" && onUpdate != nil {
-		onUpdate(latest)
+		onUpdate(latest, TriggerPromote)
 	}
 	if !u.CanDownload() {
 		return
@@ -119,7 +131,7 @@ func (u *Updater) tick(onUpdate func(path string)) {
 	// Sleep and Close both Stop+join. An in-flight GET still calls onUpdate:
 	// Sleep is only parking the ticker, the wrapper is still live. Close sets
 	// the wrapper disposed flag before Stop; that flag is what refuses the swap.
-	onUpdate(path)
+	onUpdate(path, TriggerDownload)
 }
 
 // Stop asks Start's goroutine to return and waits until it has.
