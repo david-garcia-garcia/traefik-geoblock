@@ -10,5 +10,5 @@ JobName: 2026-09-15-import-utilities-iplookup
 | implement | [x] | [x] | 2026-09-15T08:10:49Z |
 | codereview | [x] | [x] | 2026-09-15T08:16:34Z |
 | devdocsimpact | [x] | [ ] | |
-| archive | [ ] | [ ] | |
+| archive | [x] | [ ] | |
 | pullrequest | [ ] | [ ] | |
