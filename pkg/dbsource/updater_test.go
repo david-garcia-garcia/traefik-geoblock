@@ -66,7 +66,7 @@ func TestUpdaterStop_JoinsHeldGETAndRunsOnUpdate(t *testing.T) {
 	select {
 	case <-stopped:
 	case <-time.After(15 * time.Second):
-		t.Fatal("Stop did not join the ticker goroutine")
+		t.Fatal("Stop did not join Start's goroutine")
 	}
 
 	if n := onUpdateCount.Load(); n != 1 {

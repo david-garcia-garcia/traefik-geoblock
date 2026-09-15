@@ -24,7 +24,7 @@ func WithDefaults(cfg Config, dir, databaseType string, minAge time.Duration) Co
 	return cfg
 }
 
-// Start builds an Updater and runs its ticker when Dir and Key can watch Latest.
+// Start builds an Updater and starts promote-and-GET when Dir and Key can watch Latest.
 // A nil Updater means nothing to watch. GET still requires URL.
 func Start(cfg Config, logger *slog.Logger, onUpdate func(string)) (*Updater, error) {
 	u, err := newUpdater(cfg, logger)
@@ -38,14 +38,14 @@ func Start(cfg Config, logger *slog.Logger, onUpdate func(string)) (*Updater, er
 	return u, nil
 }
 
-// Updater is the keep-current loop for one source: promote Latest on disk, then GET if stale.
+// Updater promotes Latest on disk for one source, then GETs if that file is stale.
 type Updater struct {
 	cfg    Config
 	logger *slog.Logger
 	ticker *time.Ticker
 	stop   chan struct{}
-	// done is closed when the ticker goroutine exits.
-	done chan struct{}
+	// exited is closed when Start's goroutine returns so Stop can join.
+	exited chan struct{}
 }
 
 func newUpdater(cfg Config, logger *slog.Logger) (*Updater, error) {
@@ -78,13 +78,13 @@ func (u *Updater) UpdateIfNeeded() (string, error) {
 	return UpdateIfNeeded(u.cfg, u.logger)
 }
 
-// Start runs an immediate check and a 24h ticker. onUpdate is called with a new path.
+// Start runs one promote-and-GET pass now and again every 24h. onUpdate is called with a new path.
 func (u *Updater) Start(onUpdate func(path string)) {
 	u.ticker = time.NewTicker(24 * time.Hour)
 	u.stop = make(chan struct{})
-	u.done = make(chan struct{})
+	u.exited = make(chan struct{})
 	go func() {
-		defer close(u.done)
+		defer close(u.exited)
 		u.tick(onUpdate)
 		for {
 			select {
@@ -122,7 +122,7 @@ func (u *Updater) tick(onUpdate func(path string)) {
 	onUpdate(path)
 }
 
-// Stop ends the ticker and waits for the ticker goroutine to exit.
+// Stop asks Start's goroutine to return and waits until it has.
 func (u *Updater) Stop() {
 	if u == nil {
 		return
@@ -137,7 +137,7 @@ func (u *Updater) Stop() {
 			close(u.stop)
 		}
 	}
-	if u.done != nil {
-		<-u.done
+	if u.exited != nil {
+		<-u.exited
 	}
 }
