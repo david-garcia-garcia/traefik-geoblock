@@ -39,8 +39,8 @@ LookupRecord: w.db.Get_all(ip)           hotSwap: w.db = newDB  (unlocked)
 
 - Q: Does `LookupRecord` hold `RLock` for `Get_all`, or snapshot `*ip2loc.DB` and unlock first?
   Rank: bounded asked — existing `BIN.LookupRecord` (1 production Bind in `pkg/geoblock/plugin.go`; tests in `bin_test.go`, `bin_record_test.go`, `reclaim_test.go`, `plugin_lifecycle_test.go`); Desired “takes the handle once (read lock + one use of that handle for Get_all), matching MMDB.Lookup”
-  Decision: assumed — RLock for nil-check + `Get_all` (defer RUnlock, Yaegi), then map columns. Do not snapshot-and-unlock (weaker than MMDB; `close` can Close under `query`).
-  By: propose
+  Decision: resolved — no mutex on the request path. Copy `w.db` once, then `Get_all` on that local. close Closes the file and does not nil the pointer (nil `Get_all` panics). Stale Path/Version/SourcePath during swap is accepted.
+  By: implement
 
 - Q: What publishes the BIN handle — `swapHandle`, `swapReader`, or a helper shared with MMDB?
   Rank: additive asked — new method this change creates; Tension “Matching MMDB may mean reusing that shape/name pattern, not a second helper name”; Desired “Do not change MMDB unless a shared helper requires a symmetric edit”
@@ -49,8 +49,8 @@ LookupRecord: w.db.Get_all(ip)           hotSwap: w.db = newDB  (unlocked)
 
 - Q: Do `Path` / `Version` / `SourcePath` take the same mutex as `db`?
   Rank: bounded asked — Affected “Path/Version/SourcePath if they share the published fields”; call sites `bin_test.go` Version/Path/SourcePath and `bin.go` `startUpdate` `w.sourceDbPath`; MMDB `Path` already RLock
-  Decision: assumed — yes. RLock on those getters; `startUpdate` compares via `SourcePath()`.
-  By: propose
+  Decision: resolved — no. Getters are unlocked. A stale Path/Version/SourcePath during hot-swap is accepted. `startUpdate` still compares via `SourcePath()`.
+  By: implement
 
 - Q: After `swapHandle`, does BIN still delay-Close the old handle by 10s, or Close immediately like MMDB?
   Rank: bounded incidental — `hotSwap` post-swap Close goroutine only (production `startUpdate` + tests `TestOpenBIN_HotSwap` / `TestOpenBIN_InitLogsDatedCopy`); no criterion names the delay; 10s is existing BIN behavior

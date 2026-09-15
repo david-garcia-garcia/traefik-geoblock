@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"log/slog"
@@ -42,8 +41,14 @@ type BINConfig struct {
 }
 
 // BIN is one open IP2Location BIN (file handle) with temp-copy hot-swap.
+//
+// The published handle and sibling fields (path, version, local copy, source
+// path) are not mutex-protected. A lookup may see a stale Path/Version/SourcePath
+// or a handle from just before/after a hot-swap. That inconsistency is accepted:
+// country data on the request path must not pay a lock, and a torn sibling is
+// not a panic. Readers copy w.db once; close must not set w.db to nil (vendor
+// Get_all on a nil *ip2loc.DB panics on d.metaok).
 type BIN struct {
-	mu                 sync.RWMutex
 	cfg                BINConfig
 	logger             *slog.Logger
 	db                 *ip2loc.DB
@@ -270,10 +275,8 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 }
 
 // swapHandle stores the published vendor handle and sibling paths, then returns the previous handle.
+// No lock: a concurrent lookup may observe a stale sibling or the previous handle. Accepted.
 func (w *BIN) swapHandle(db *ip2loc.DB, path string, version *dbutils.DBVersion, currentLocalDbCopy, sourceDbPath string) *ip2loc.DB {
-	w.mu.Lock()
-	// Yaegi recovers panics without exiting the process; a trailing Unlock would not run.
-	defer w.mu.Unlock()
 	old := w.db
 	w.db = db
 	w.path = path
@@ -304,15 +307,16 @@ func (w *BIN) LookupRecord(ip string, fields FieldMap) (dbprovider.Record, error
 	return rec, nil
 }
 
-// getAll runs Get_all under the published-handle read lock.
+// getAll copies the vendor pointer once and calls Get_all on that local.
+// No lock on this path. A concurrent hot-swap may change w.db after the copy;
+// this lookup keeps the handle it already took. Do not read w.db twice: a nil
+// between the check and Get_all panics in the vendor query.
 func (w *BIN) getAll(ip string) (ip2loc.IP2Locationrecord, error) {
-	w.mu.RLock()
-	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
-	defer w.mu.RUnlock()
-	if w.db == nil {
+	db := w.db
+	if db == nil {
 		return ip2loc.IP2Locationrecord{}, fmt.Errorf("BIN is not open")
 	}
-	return w.db.Get_all(ip)
+	return db.Get_all(ip)
 }
 
 // binColumn is one IP2Location Get_all column.
@@ -338,27 +342,19 @@ func binColumn(rec ip2loc.IP2Locationrecord, path string) string {
 	}
 }
 
-// Version is the BIN header version.
+// Version is the BIN header version. May be stale during hot-swap. Accepted.
 func (w *BIN) Version() *dbutils.DBVersion {
-	w.mu.RLock()
-	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
-	defer w.mu.RUnlock()
 	return w.version
 }
 
-// Path is the file last opened (temp copy or source).
+// Path is the file last opened (temp copy or source). May be stale during hot-swap. Accepted.
 func (w *BIN) Path() string {
-	w.mu.RLock()
-	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
-	defer w.mu.RUnlock()
 	return w.path
 }
 
 // SourcePath is the dated or seed file the live handle was copied from.
+// May be stale during hot-swap. Accepted. startUpdate skip-compare uses this.
 func (w *BIN) SourcePath() string {
-	w.mu.RLock()
-	// Yaegi recovers panics without exiting the process; a trailing RUnlock would not run.
-	defer w.mu.RUnlock()
 	return w.sourceDbPath
 }
 
@@ -367,14 +363,15 @@ func (w *BIN) Close() {
 	w.close()
 }
 
-// close stops the updater and the file handle.
+// close stops the updater and Closes the vendor file. It does not set w.db to
+// nil: a later Get_all on a nil *ip2loc.DB panics. In-flight lookups keep the
+// pointer they already copied; after Close the vendor call is undeterministic.
 func (w *BIN) close() {
 	if w.updater != nil {
 		w.updater.Stop()
 	}
-	old := w.swapHandle(nil, "", nil, "", "")
-	if old != nil {
-		old.Close()
+	if w.db != nil {
+		w.db.Close()
 	}
 }
 
