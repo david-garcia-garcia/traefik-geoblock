@@ -25,3 +25,10 @@ phase: implement
 findings: Integration Tests failed on auto-update /bar German allow
 fixed: apply landed (utilities iplookup v1.0.2, delete pkg/iplookup)
 skipped: CI rerun (no gh)
+
+## codereview (2026-09-15)
+
+phase: codereview
+findings: Standards 2 hard comments; Coverage 2 hard tests, 1 judgement
+fixed: comments + InvalidStaticCIDR + SkipsNonTxt
+skipped: walk/read warn-and-continue judgement
