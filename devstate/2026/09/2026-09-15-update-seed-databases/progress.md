@@ -4,7 +4,7 @@ JobName: 2026-09-15-update-seed-databases
 
 | Phase | Work | Card | At |
 |-------|------|------|----|
-| prepare | [x] | [ ] | |
+| prepare | [x] | [x] | 2026-09-15T14:38:43Z |
 | explore | [ ] | [ ] | |
 | propose | [ ] | [ ] | |
 | implement | [ ] | [ ] | |
