@@ -18,3 +18,9 @@ findings: skip_specs; change update-bundled-seeds
 fixed: none
 skipped: spec deltas (no behavior change)
 
+## implement (2026-09-15T14:45:39Z)
+phase: implement
+findings: official LITE BIN landed; TestGetDBVersion month 9
+fixed: seeds/IP2LOCATION-LITE-DB1.IPV6.BIN
+skipped: IPinfo; MaxMind dummy; dbdownload verify
+
