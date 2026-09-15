@@ -42,6 +42,7 @@ func loadIPBlockHelper(cidrBlocks []string, directoryPath string, logger *slog.L
 	return helper, nil
 }
 
+// insertBlocksFromDirectory walks .txt files under directoryPath and stores each CIDR on the helper.
 func insertBlocksFromDirectory(helper *iplookup.Helper, directoryPath string, logger *slog.Logger) (int, error) {
 	if _, err := os.Stat(directoryPath); err != nil {
 		return 0, err
@@ -84,6 +85,7 @@ func insertBlocksFromDirectory(helper *iplookup.Helper, directoryPath string, lo
 	return helper.Count() - countBefore, nil
 }
 
+// readBlocksFromFile returns CIDR lines from the file, skipping blanks, # comments, and invalid CIDRs.
 func readBlocksFromFile(filePath string, logger *slog.Logger) ([]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {

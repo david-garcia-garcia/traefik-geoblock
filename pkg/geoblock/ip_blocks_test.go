@@ -85,6 +85,31 @@ not.an.ip/24
 	}
 }
 
+func TestLoadIPBlockHelper_InvalidStaticCIDR(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	_, err := loadIPBlockHelper([]string{"not-a-cidr"}, "", logger)
+	if err == nil {
+		t.Fatal("invalid static CIDR must fail the load")
+	}
+}
+
+func TestLoadIPBlockHelper_SkipsNonTxt(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	tempDir := t.TempDir()
+	writeIPBlockFile(t, filepath.Join(tempDir, "blocks.list"), []string{"10.0.0.0/8"})
+	helper, err := loadIPBlockHelper(nil, tempDir, logger)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	found, _, _, err := helper.Contains(net.ParseIP("10.0.0.1"))
+	if err != nil {
+		t.Fatalf("Contains: %v", err)
+	}
+	if found {
+		t.Fatal("non-.txt file must not load")
+	}
+}
+
 func TestLoadIPBlockHelper_FamilyIsolation(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	helper, err := loadIPBlockHelper([]string{"0.0.0.0/0"}, "", logger)
