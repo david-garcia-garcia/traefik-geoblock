@@ -54,7 +54,7 @@ func TestBIN_LookupRecordVsHotSwap(t *testing.T) {
 	}()
 
 	for i := 0; i < 20; i++ {
-		if err := w.hotSwap(testBIN); err != nil {
+		if err := w.life.hotSwap(testBIN, dbsource.TriggerPromote); err != nil {
 			t.Fatalf("hotSwap %d: %v", i, err)
 		}
 	}
@@ -96,7 +96,7 @@ func TestBIN_LookupRecordVsClose(t *testing.T) {
 		}
 	}()
 	<-started
-	w.close()
+	w.life.close()
 	wg.Wait()
 
 	_, _ = w.LookupRecord("8.8.8.8", fields)

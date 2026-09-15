@@ -27,3 +27,6 @@ testdata/IP2LOCATION-LITE-ASN*.BIN
 
 # Local download tokens (copy from .env.example). Never commit.
 .env
+
+# APM dependencies
+apm_modules/

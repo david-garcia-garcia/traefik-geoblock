@@ -150,7 +150,7 @@ func TestOpenBIN_HotSwapAfterClose(t *testing.T) {
 		t.Fatalf("OpenBIN: %v", err)
 	}
 	w.Close()
-	if err := w.hotSwap(testBIN); err != nil {
+	if err := w.life.hotSwap(testBIN, dbsource.TriggerPromote); err != nil {
 		t.Fatalf("hotSwap after Close: %v", err)
 	}
 	if _, err := w.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil {
@@ -161,7 +161,7 @@ func TestOpenBIN_HotSwapAfterClose(t *testing.T) {
 	}
 }
 
-// TestOpenMMDB_OpenAfterClose calls open after Close so swapReader refuse is
+// TestOpenMMDB_OpenAfterClose swaps after Close so the closed fail-closed branch is
 // proven even when tick still delivered onUpdate.
 func TestOpenMMDB_OpenAfterClose(t *testing.T) {
 	Reset()
@@ -174,7 +174,7 @@ func TestOpenMMDB_OpenAfterClose(t *testing.T) {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
 	w.Close()
-	if err := w.open(seed); err != nil {
+	if err := w.life.hotSwap(seed, dbsource.TriggerPromote); err != nil {
 		t.Fatalf("open after Close: %v", err)
 	}
 	var rec struct {

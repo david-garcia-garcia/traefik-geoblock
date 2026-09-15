@@ -56,7 +56,7 @@ func TestOpenMMDB_OpenIsHotSwap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenMMDB: %v", err)
 	}
-	if err := w.open(path); err != nil {
+	if err := w.life.hotSwap(path, dbsource.TriggerPromote); err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
 	var rec struct {

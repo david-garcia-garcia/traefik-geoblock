@@ -28,16 +28,15 @@ Root `New` builds the Plugin once per name+config and reuses it for later router
 if err := geoblock.Prepare(cfg, name); err != nil {
 	return nil, err
 }
-stored, err := pluginTable.Open(ctx, pluginKey(name, cfg), logger, func() (any, error) {
-	created, err := geoblock.NewCore(name, cfg)
-	if err != nil {
-		return nil, err
-	}
-	pluginInstance = created
-	return created, nil
-}, reclaim.Hooks{Close: func() { pluginInstance.Close() }})
-pluginInstance, ok := stored.(*geoblock.Plugin)
-return pluginInstance.ForRoute(next)
+plugin, err := reclaim.OpenTyped[*geoblock.Plugin](ctx, pluginTable, pluginKey(name, cfg), logger,
+	func() (any, reclaim.Hooks, error) {
+		created, err := geoblock.NewCore(name, cfg)
+		if err != nil {
+			return nil, reclaim.Hooks{}, err
+		}
+		return created, reclaim.Hooks{Close: created.Close}, nil
+	})
+return plugin.ForRoute(next)
 ```
 
 ## Key files
@@ -53,5 +52,5 @@ return pluginInstance.ForRoute(next)
 
 - Hash is JSON+FNV of `Config` after `Prepare` (defaults, reserved catalog rows, temp auto-update dir, ban-HTML path search).
 - Two middleware names never share, even with the same config.
-- Do not write `Table[*Plugin]` (Yaegi).
+- Do not write `Table[*Plugin]` (Yaegi). `reclaim.OpenTyped[*geoblock.Plugin]` is fine: the type argument comes from `pkg/geoblock` while the call sits in the root package, and that shape is measured on Traefik v3.7.11.
 - `pkg/geoblock` tests use `newTestPlugin` / `newRoute`, not a production `New`. Instance tests must call root `New`.

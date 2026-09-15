@@ -2,7 +2,6 @@ package dbsource
 
 import (
 	"log/slog"
-	"strings"
 	"time"
 )
 
@@ -25,27 +24,39 @@ func WithDefaults(cfg Config, dir, databaseType string, minAge time.Duration) Co
 	return cfg
 }
 
-// Start builds an Updater and runs its ticker when URL is set. A nil Updater means no download.
-func Start(cfg Config, logger *slog.Logger, onUpdate func(string)) (*Updater, error) {
-	if strings.TrimSpace(cfg.URL) == "" {
-		return nil, nil
-	}
+// UpdateTrigger says which tick step produced the path handed to onUpdate, so the
+// caller's own trail can name the event instead of this package logging it too.
+type UpdateTrigger string
+
+const (
+	// TriggerPromote is a dated file that was already on disk when the tick ran.
+	TriggerPromote UpdateTrigger = "promote"
+	// TriggerDownload is the path the tick's age check and GET returned.
+	TriggerDownload UpdateTrigger = "download"
+)
+
+// Start builds an Updater and starts promote-and-GET when Dir and Key can watch Latest.
+// A nil Updater means nothing to watch. GET still requires URL.
+func Start(cfg Config, logger *slog.Logger, onUpdate func(string, UpdateTrigger)) (*Updater, error) {
 	u, err := newUpdater(cfg, logger)
 	if err != nil {
 		return nil, err
+	}
+	if !u.canWatchLatest() {
+		return nil, nil
 	}
 	u.Start(onUpdate)
 	return u, nil
 }
 
-// Updater is the keep-current loop for one source (ticker + GET).
+// Updater promotes Latest on disk for one source, then GETs if that file is stale.
 type Updater struct {
 	cfg    Config
 	logger *slog.Logger
 	ticker *time.Ticker
 	stop   chan struct{}
-	// done is closed when the ticker goroutine exits.
-	done chan struct{}
+	// exited is closed when Start's goroutine returns so Stop can join.
+	exited chan struct{}
 }
 
 func newUpdater(cfg Config, logger *slog.Logger) (*Updater, error) {
@@ -63,6 +74,11 @@ func (u *Updater) Latest() (string, error) {
 	return Latest(u.cfg.Dir, u.cfg.Key, u.cfg.DatabaseType)
 }
 
+// canWatchLatest reports whether Dir and Key can resolve a dated catalog file.
+func (u *Updater) canWatchLatest() bool {
+	return u.cfg.Dir != "" && u.cfg.Key != ""
+}
+
 // CanDownload reports whether a URL is configured.
 func (u *Updater) CanDownload() bool {
 	return u.cfg.URL != "" && u.cfg.Dir != ""
@@ -73,16 +89,14 @@ func (u *Updater) UpdateIfNeeded() (string, error) {
 	return UpdateIfNeeded(u.cfg, u.logger)
 }
 
-// Start runs an immediate check and a 24h ticker. onUpdate is called with a new path.
-func (u *Updater) Start(onUpdate func(path string)) {
-	if !u.CanDownload() {
-		return
-	}
+// Start runs one promote-and-GET pass now and again every 24h. onUpdate is called
+// with a new path and the tick step that produced it.
+func (u *Updater) Start(onUpdate func(path string, trigger UpdateTrigger)) {
 	u.ticker = time.NewTicker(24 * time.Hour)
 	u.stop = make(chan struct{})
-	u.done = make(chan struct{})
+	u.exited = make(chan struct{})
 	go func() {
-		defer close(u.done)
+		defer close(u.exited)
 		u.tick(onUpdate)
 		for {
 			select {
@@ -95,7 +109,17 @@ func (u *Updater) Start(onUpdate func(path string)) {
 	}()
 }
 
-func (u *Updater) tick(onUpdate func(path string)) {
+func (u *Updater) tick(onUpdate func(path string, trigger UpdateTrigger)) {
+	// Promote a dated file already on disk (this pod or another writer). No GET.
+	latest, err := u.Latest()
+	if err != nil {
+		u.logger.Error("latest dated file", "error", err)
+	} else if latest != "" && onUpdate != nil {
+		onUpdate(latest, TriggerPromote)
+	}
+	if !u.CanDownload() {
+		return
+	}
 	path, err := u.UpdateIfNeeded()
 	if err != nil {
 		u.logger.Error("database update failed", "error", err)
@@ -107,10 +131,10 @@ func (u *Updater) tick(onUpdate func(path string)) {
 	// Sleep and Close both Stop+join. An in-flight GET still calls onUpdate:
 	// Sleep is only parking the ticker, the wrapper is still live. Close sets
 	// the wrapper disposed flag before Stop; that flag is what refuses the swap.
-	onUpdate(path)
+	onUpdate(path, TriggerDownload)
 }
 
-// Stop ends the ticker and waits for the ticker goroutine to exit.
+// Stop asks Start's goroutine to return and waits until it has.
 func (u *Updater) Stop() {
 	if u == nil {
 		return
@@ -125,7 +149,7 @@ func (u *Updater) Stop() {
 			close(u.stop)
 		}
 	}
-	if u.done != nil {
-		<-u.done
+	if u.exited != nil {
+		<-u.exited
 	}
 }

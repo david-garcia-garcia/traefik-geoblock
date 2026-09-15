@@ -73,25 +73,18 @@ func New(ctx context.Context, next http.Handler, cfg *Config, name string) (http
 
 // bindPlugin stores or reclaims the NewCore Plugin, then ForRoutes this next.
 func bindPlugin(ctx context.Context, next http.Handler, name string, cfg *Config) (http.Handler, error) {
-	var pluginInstance *geoblock.Plugin
-	stored, err := currentPluginTable().Open(ctx, pluginKey(name, cfg), geoblock.PluginLogger(name, cfg), func() (any, error) {
-		created, err := geoblock.NewCore(name, cfg)
-		if err != nil {
-			return nil, err
-		}
-		pluginInstance = created
-		return created, nil
-	}, reclaim.Hooks{
-		Close: func() { pluginInstance.Close() },
-	})
+	plugin, err := reclaim.OpenTyped[*geoblock.Plugin](ctx, currentPluginTable(), pluginKey(name, cfg),
+		geoblock.PluginLogger(name, cfg), func() (any, reclaim.Hooks, error) {
+			created, err := geoblock.NewCore(name, cfg)
+			if err != nil {
+				return nil, reclaim.Hooks{}, err
+			}
+			return created, reclaim.Hooks{Close: created.Close}, nil
+		})
 	if err != nil {
 		return nil, err
 	}
-	storedPlugin, ok := stored.(*geoblock.Plugin)
-	if !ok {
-		return nil, fmt.Errorf("%s: reclaim: want *geoblock.Plugin, got %T", name, stored)
-	}
-	return storedPlugin.ForRoute(next)
+	return plugin.ForRoute(next)
 }
 
 // pluginKey is the process-table key for one Plugin incarnation.

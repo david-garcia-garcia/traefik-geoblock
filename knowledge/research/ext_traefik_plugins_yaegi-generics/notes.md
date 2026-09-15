@@ -22,6 +22,26 @@ Go has no inheritance. The usual stand-ins still name that type in the consumer 
 | `type dbTable = reclaim.Table[*db]` + `var dbs *dbTable` | Panic `nodeType2` |
 | `type dbTable struct { *reclaim.Table[*db] }` + `var dbs *dbTable` | Panic `nodeType2` |
 
+## What works: a cross-package generic FUNCTION (2026-09-15, same image)
+
+A generic **function** in another package, instantiated with the consumer package's own type,
+loads and runs. Throwaway plugin `yaegi-generic-fn-probe`, three packages in the real topology:
+`pkg/box` owns `OpenTypedWithHooks[T any](key string, create func() (any, Hooks, error)) (T, error)`,
+`pkg/wrappers` owns `*BIN` and calls `box.OpenTypedWithHooks[*BIN](...)`, the root package calls
+only `wrappers.OpenBIN`.
+
+| Shape | Result |
+|---|---|
+| `box.OpenTyped[*db]` in the root package, result in a local | PASS, typed return, `same=true` on the second call |
+| Factory returns `(any, Hooks, error)`, hooks are **method values** on the created pointer | PASS, stored Sleep fired later |
+| `box.OpenTypedWithHooks[*BIN]` instantiated inside the package that owns `*BIN` | PASS, `same=true`, stored Sleep fired |
+
+So the caller can lose both the type assert and the captured variable the hooks close over, as
+long as the instantiation stays a **call expression** and no package-level declaration names
+`Table[*BIN]`. The root package must be named after the module, or load dies before Yaegi runs
+(`failed to eval New: undefined: yaegi_generic_fn_probe`). Extract:
+[`.sources/compose-v3.7.11-generic-func-probe.md`](.sources/compose-v3.7.11-generic-func-probe.md).
+
 ## What works (2026-08-28 matrix, same image)
 
 | # | Shape | Result |
@@ -50,3 +70,7 @@ Host: compose `traefik:v3.7.11` (built 2026-08-19), local plugin GOPATH, `useUns
 3. **Two concrete non-generic tables** in `dbwrappers` (08). No `any`, no generics. Duplicate `Open` for BIN and MMDB.
 
 Do not put `Table[T]` in `pkg/reclaim` and name `*reclaim.Table[*BIN]` in `dbwrappers`.
+
+4. **Non-generic `Table` plus a generic `Open` helper** beside it, so `dbwrappers` writes
+   `reclaim.OpenTyped[*BIN](...)` and keeps a typed value without an assert. Measured 2026-09-15.
+   The table itself stays non-generic; only the helper takes `T`.

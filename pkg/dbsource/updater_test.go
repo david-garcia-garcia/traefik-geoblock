@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func TestUpdaterStop_JoinsHeldGETAndRunsOnUpdate(t *testing.T) {
 		URL:          srv.URL + "/db.mmdb",
 		DatabaseType: TypeMMDB,
 		Dir:          t.TempDir(),
-	}, testLogger(), func(string) {
+	}, testLogger(), func(string, UpdateTrigger) {
 		onUpdateCount.Add(1)
 	})
 	if err != nil {
@@ -65,7 +66,7 @@ func TestUpdaterStop_JoinsHeldGETAndRunsOnUpdate(t *testing.T) {
 	select {
 	case <-stopped:
 	case <-time.After(15 * time.Second):
-		t.Fatal("Stop did not join the ticker goroutine")
+		t.Fatal("Stop did not join Start's goroutine")
 	}
 
 	if n := onUpdateCount.Load(); n != 1 {
@@ -74,4 +75,53 @@ func TestUpdaterStop_JoinsHeldGETAndRunsOnUpdate(t *testing.T) {
 
 	u.Stop()
 	(*Updater)(nil).Stop()
+}
+
+func TestUpdater_ReconcilesLatestWithoutURL(t *testing.T) {
+	dir := t.TempDir()
+	dated := filepath.Join(dir, "20260915_paid.BIN")
+	if err := os.WriteFile(dated, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// One onUpdate delivery: the dated file and the tick step that produced it.
+	type updateCall struct {
+		path    string
+		trigger UpdateTrigger
+	}
+	calls := make(chan updateCall, 1)
+	u, err := Start(Config{
+		Key:          "paid",
+		DatabaseType: TypeBIN,
+		Dir:          dir,
+	}, testLogger(), func(path string, trigger UpdateTrigger) {
+		calls <- updateCall{path: path, trigger: trigger}
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if u == nil {
+		t.Fatal("expected updater without URL")
+	}
+	select {
+	case call := <-calls:
+		if call.path != dated {
+			t.Fatalf("onUpdate path=%s want %s", call.path, dated)
+		}
+		if call.trigger != TriggerPromote {
+			t.Fatalf("onUpdate trigger=%s want %s", call.trigger, TriggerPromote)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("onUpdate never ran")
+	}
+	u.Stop()
+}
+
+func TestUpdater_NoWatchDirReturnsNil(t *testing.T) {
+	u, err := Start(Config{Key: "paid", URL: "https://example.com/db.BIN", DatabaseType: TypeBIN}, testLogger(), nil)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if u != nil {
+		t.Fatal("expected nil updater without Dir")
+	}
 }
