@@ -266,6 +266,8 @@ func (w *BIN) hotSwap(newDatabasePath string) error {
 	old := w.swapHandle(newDB, newLocalCopy, newVersion, newLocalCopy, newDatabasePath)
 	if old != nil {
 		go func() {
+			// Grace for a lookup that already copied this handle. Get_all is
+			// short; 10s is more than enough. No lock waits for those readers.
 			time.Sleep(10 * time.Second)
 			old.Close()
 		}()
