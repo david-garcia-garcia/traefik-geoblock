@@ -14,8 +14,8 @@ import (
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbwrappers"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/logging"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/iplookup"
 )
 
 const (
@@ -60,8 +60,8 @@ type Plugin struct {
 	allowPrivate          bool
 	banIfError            bool
 	disallowedStatusCode  int
-	allowedIPBlocks       *iplookup.IpLookupFileMonitor
-	blockedIPBlocks       *iplookup.IpLookupFileMonitor
+	allowedIPBlocks       *iplookup.Helper
+	blockedIPBlocks       *iplookup.Helper
 	banHtmlContent        string // Changed from banHtmlTemplate
 	logger                *slog.Logger
 	bypassHeaders         map[string]string
@@ -129,12 +129,12 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich)
 	}
 
-	allowedIPHelper, err := iplookup.NewIpLookupFileMonitor(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
+	allowedIPHelper, err := loadIPBlockHelper(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading allowed IP blocks: %w", name, err)
 	}
 
-	blockedIPHelper, err := iplookup.NewIpLookupFileMonitor(cfg.BlockedIPBlocks, cfg.BlockedIPBlocksDir, logger)
+	blockedIPHelper, err := loadIPBlockHelper(cfg.BlockedIPBlocks, cfg.BlockedIPBlocksDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed loading blocked IP blocks: %w", name, err)
 	}
@@ -372,6 +372,10 @@ func (p Plugin) blockSkipReason(req *http.Request, ipChain string) string {
 		return PhaseExcludedRegex
 	}
 	for header, expectedValue := range p.bypassHeaders {
+		// Presence first so an absent header cannot match a leftover empty expected value.
+		if len(req.Header.Values(header)) == 0 {
+			continue
+		}
 		if actualValue := req.Header.Get(header); actualValue == expectedValue {
 			logging.Trace(p.logger, "bypassing geoblock due to bypass header match",
 				"header", header, "value", logging.Redact(expectedValue),
@@ -617,12 +621,14 @@ func (p Plugin) writePublicLookupHeaders(req *http.Request, rec dbprovider.Recor
 
 // isAllowedIPBlocks checks if an IP is allowed based on the allowed CIDR blocks using fast radix tree lookup
 func (p Plugin) isAllowedIPBlocks(ipAddr net.IP) (bool, int, error) {
-	return p.allowedIPBlocks.IsContained(ipAddr)
+	found, prefixLen, _, err := p.allowedIPBlocks.Contains(ipAddr)
+	return found, prefixLen, err
 }
 
 // isBlockedIPBlocks checks if an IP is blocked based on the blocked CIDR blocks using fast radix tree lookup
 func (p Plugin) isBlockedIPBlocks(ipAddr net.IP) (bool, int, error) {
-	return p.blockedIPBlocks.IsContained(ipAddr)
+	found, prefixLen, _, err := p.blockedIPBlocks.Contains(ipAddr)
+	return found, prefixLen, err
 }
 
 // Update the serveBanHtml function to use simple string replacement

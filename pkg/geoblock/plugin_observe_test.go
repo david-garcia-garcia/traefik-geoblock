@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
-	"github.com/david-garcia-garcia/traefik-geoblock/pkg/iplookup"
+	"github.com/david-garcia-garcia/traefik-middleware-utilities/iplookup"
 )
 
 func TestLogHeader_ShouldSetDecisionOnRequest(t *testing.T) {
@@ -483,10 +483,7 @@ const (
 
 func TestRequestHeaderEnrich(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	emptyBlocks, err := iplookup.NewIpLookupFileMonitor(nil, "", logger)
-	if err != nil {
-		t.Fatalf("cidr monitor: %v", err)
-	}
+	emptyBlocks := iplookup.New()
 
 	t.Run("writes country region city", func(t *testing.T) {
 		plugin := &Plugin{
@@ -701,10 +698,7 @@ func TestRequestHeaderEnrich(t *testing.T) {
 
 func TestEnrichNullSentinel(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	emptyBlocks, err := iplookup.NewIpLookupFileMonitor(nil, "", logger)
-	if err != nil {
-		t.Fatalf("cidr monitor: %v", err)
-	}
+	emptyBlocks := iplookup.New()
 
 	allKeys := map[string]string{
 		"X-Geo-Country":        dbprovider.MetaCountry,

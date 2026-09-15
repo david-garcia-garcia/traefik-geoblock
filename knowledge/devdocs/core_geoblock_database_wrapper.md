@@ -10,6 +10,10 @@ _Avoid_: Factory, vendor brand, slot
 How the bytes are opened (`bin` / `mmdb`). Column maps are named presets or an operator path → Field (Record key + MMDB scalar type, default string).
 _Avoid_: treating a file brand as a wrapper type; hidden vendor structs; inferring MMDB type from the Record key
 
+**Published handle**:
+The live vendor database object currently visible on a Wrapper (`*ip2loc.DB` or `*maxminddb.Reader`). MMDB publishes under a write lock. BIN does not: a lookup may see a stale Path/Version/SourcePath or the previous generation’s handle.
+_Avoid_: a request-path mutex on BIN Get_all; setting BIN `w.db` to nil on Close; a lock helper shared by BIN and MMDB
+
 ## Overview
 
 `pkg/dbwrappers` owns BIN and MMDB open/hot-swap and the named presets. `BIN.LookupRecord` and `MMDB.LookupRecord` take a `FieldMap` (path → Field) and fill a `Record`. MMDB decode uses each Field's type (`string` or `uint32`) so unused keys are skipped. The plugin never type-asserts a wrapper. Prepare expands `fieldsPreconfigured` into that map.
@@ -29,6 +33,8 @@ _Avoid_: treating a file brand as a wrapper type; hidden vendor structs; inferri
 - **Do** open the Lite MMDB with `os.ReadFile` + `maxminddb.FromBytes`. After `go mod vendor`, run `scripts/apply-oschwald-yaegi-patch.ps1` so Yaegi never loads upstream mmap / `x/sys` (`incomplete type ifreq`).
 - Sleep/Close on a URL-backed wrapper may wait out an in-flight GET (up to `dbutils.HTTPGetTimeout`, 30m). Reclaim parks that key only; other keys stay usable.
 - Ignore a late update with a closed flag set before Stop and a re-check before publish. Do not add a mutex around BIN `LookupRecord` for that ignore.
+- BIN does not lock the published handle on the request path. Copy `w.db` once, then `Get_all` on that local. Path, Version, and SourcePath may be stale during hot-swap — accepted. Close the vendor file; do not set `w.db` to nil (nil `Get_all` panics on `d.metaok`). After Close, Lookup fails on the disposed flag. MMDB still uses `sync.RWMutex` / `swapReader` / `RLock` across `db.Lookup`. `defer` Unlock on MMDB: Yaegi recovers panics without exiting.
+- BIN hot-swap delayed-Closes the previous vendor handle after 10s. Reclaim Close Closes the live handle and leaves the pointer. Do not extract a helper shared with MMDB.
 
 ## Pattern snippet
 

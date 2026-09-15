@@ -1,0 +1,17 @@
+issueKey: 2026-09-15-import-utilities-iplookup
+jobName: 2026-09-15-import-utilities-iplookup
+issueHost: local
+issueRef: none
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified-with-gaps
+src: 60c4435fdfdc8f8f35e5b7dd2d22aabe14140303e7dfa3a980e81e26728b975f
+localTests: passed
+requirement: requirement.md
+comments: none
+explore: explore.md
+change: import-utilities-iplookup
+pr:
+  id: 89
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/89

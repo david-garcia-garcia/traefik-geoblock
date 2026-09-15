@@ -63,7 +63,7 @@ Field maps and named presets SHALL live in `pkg/dbwrappers`. Open and hot-swap S
 - **AND** the Record ASN is the string form with an `AS` prefix when the number has none
 
 ### Requirement: BIN Lookup applies mapped Get_all columns
-`BIN.LookupRecord` SHALL call `Get_all` once and SHALL copy only mapped paths onto the Record. Unused Get_all columns SHALL not be written. Path `asn` SHALL use the Get_all Asn field. Lookup MUST NOT call `Get_asn`. Path `country_short` SHALL map IP2Location `-`, empty, and unavailable strings to empty on the Record through the same empty-vendor mapping as the other BIN columns. An invalid `country_short` SHALL remain a lookup error. The BIN wrapper MUST NOT write `XX`.
+`BIN.LookupRecord` SHALL call `Get_all` once and SHALL copy only mapped paths onto the Record. Unused Get_all columns SHALL not be written. Path `asn` SHALL use the Get_all Asn field. Lookup MUST NOT call `Get_asn`. Path `country_short` SHALL map IP2Location `-`, empty, and unavailable strings to empty on the Record through the same empty-vendor mapping as the other BIN columns. An invalid `country_short` SHALL remain a lookup error. The BIN wrapper MUST NOT write `XX`. `LookupRecord` SHALL copy the published vendor pointer once and call `Get_all` on that local. It MUST NOT take a mutex on the request path. It MUST NOT call `Get_all` on a nil receiver. A concurrent hot-swap or Close MAY leave Path, Version, or SourcePath stale relative to the handle used for `Get_all`; that inconsistency is accepted.
 
 #### Scenario: ASN-only map does not write country
 - **WHEN** the Field map is `ip2location_asn`
@@ -74,6 +74,11 @@ Field maps and named presets SHALL live in `pkg/dbwrappers`. Open and hot-swap S
 - **WHEN** the Field map includes `country_short` and `Get_all` `country_short` is `-`
 - **THEN** Record country is empty
 - **AND** Combined MAY copy country from a later source
+
+#### Scenario: Get_all uses a one-copy local handle
+- **WHEN** `LookupRecord` is called on an open BIN while Close or hot-swap runs
+- **THEN** `Get_all` runs at most once on one non-nil vendor handle, or `LookupRecord` returns that the BIN is not open without calling `Get_all`
+- **AND** Close does not set the published pointer to nil
 
 ### Requirement: Open and hot-swap are per format
 The format-wrapper package SHALL expose one BIN wrapper and one MMDB wrapper. IPinfo and MaxMind files SHALL open through the MMDB wrapper. IP2Location geo and ASN files SHALL open through the BIN wrapper (one instance per catalog row). The same wrapper configuration SHALL share one open file and one download ticker. Closing the merged Lookup MUST NOT close that shared wrapper.
