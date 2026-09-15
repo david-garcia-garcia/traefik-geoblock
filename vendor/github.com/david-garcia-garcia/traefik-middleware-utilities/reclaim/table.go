@@ -367,6 +367,29 @@ func (t *Table) createErrOf(incarnation *slot) error {
 // (value, nil) means this call bound a holder that was still live at return. If ctx.Err() is
 // set at bind, Open returns that error and not the pointer, and drops the holder on this call.
 func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, create func() (any, error), hooks Hooks) (any, error) {
+	if create == nil {
+		// Guarded before wrapping: the closure below is never nil, so OpenWithHooks could not
+		// report a nil create. The table and logger keep their precedence over this error.
+		if t == nil {
+			return nil, fmt.Errorf("reclaim: open %q: nil table", key)
+		}
+		if logger == nil {
+			return nil, fmt.Errorf("reclaim: open %q: nil logger", key)
+		}
+		return nil, fmt.Errorf("reclaim: create %q: nil create", key)
+	}
+	return t.OpenWithHooks(ctx, key, logger, func() (any, Hooks, error) {
+		value, err := create()
+		return value, hooks, err
+	})
+}
+
+// OpenWithHooks is Open with the hooks coming back from create instead of alongside it, so the
+// caller does not need a variable declared before Open that the hooks close over. create returns
+// the value and the hooks for that one incarnation; the table stores both at put, and a later
+// Open (bind or reclaim) never runs create and keeps the stored hooks. Everything else, including
+// EnforceCloseBeforeOpen, behaves exactly as documented on Open.
+func (t *Table) OpenWithHooks(ctx context.Context, key string, logger *slog.Logger, create func() (any, Hooks, error)) (any, error) {
 	if t == nil {
 		return nil, fmt.Errorf("reclaim: open %q: nil table", key)
 	}
@@ -385,7 +408,7 @@ func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, creat
 		}
 		switch step.action {
 		case openCreate:
-			return t.put(ctx, key, step.incarnation, logger, create, hooks)
+			return t.put(ctx, key, step.incarnation, logger, create)
 		case openBind:
 			logger.Debug(MsgBind, "key", key)
 			return t.finishBind(ctx, key, step.incarnation, step.value)
@@ -403,11 +426,13 @@ func (t *Table) Open(ctx context.Context, key string, logger *slog.Logger, creat
 }
 
 // put runs create for a slot this Open registered, then publishes the value or the failure to
-// every caller waiting on that slot.
-func (t *Table) put(ctx context.Context, key string, incarnation *slot, logger *slog.Logger, create func() (any, error), hooks Hooks) (any, error) {
+// every caller waiting on that slot. The hooks create returns are the ones stored on this
+// incarnation, so a Sleep or Close hook may close over what create just built.
+func (t *Table) put(ctx context.Context, key string, incarnation *slot, logger *slog.Logger, create func() (any, Hooks, error)) (any, error) {
 	var value any
+	var hooks Hooks
 	var err error
-	if recovered := runHook(func() { value, err = create() }); recovered != nil {
+	if recovered := runHook(func() { value, hooks, err = create() }); recovered != nil {
 		err = fmt.Errorf("reclaim: create %q: panic: %v", key, recovered)
 	}
 	if err != nil {
