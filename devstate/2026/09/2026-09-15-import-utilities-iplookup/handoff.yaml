@@ -11,7 +11,7 @@ localTests: none
 requirement: requirement.md
 comments: none
 explore: explore.md
-change: none
+change: import-utilities-iplookup
 pr:
   id: 89
   url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/89
