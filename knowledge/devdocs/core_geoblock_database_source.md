@@ -19,7 +19,7 @@ Named vendor map (`ip2location_db8`, `ipinfo_lite`, `maxmind_country`, `maxmind_
 _Avoid_: inventing a `vendor` key; combining with `fields`
 
 **Updater**:
-Keep-current loop for one source (ticker + GET).
+Keep-current loop for one source (ticker: promote Latest on disk, then GET if stale).
 _Avoid_: slot
 
 ## Overview
@@ -34,7 +34,7 @@ Each enabled catalog row is one wrapper plus one source. Merge happens after Loo
 - Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path). A set `path` that is not a file WARNs `seed was specified but not found`. Else `{TRAEFIK_PLUGIN_GEOBLOCK_PATH}/seeds/<defaultFile>` then `{env}/<defaultFile>`. Empty `defaultFile` skips bundled search. No directory walk. An ASN LITE row (`databaseType: bin`, `fieldsPreconfigured: ip2location_asn`) ships no `defaultFile`; BIN open allows a missing file when both `path` and `defaultFile` are empty. There is no `*_databaseFilePath`.
 - Need the bundled `defaultFile` without dated Latest winning: `dbsource.BundledFile` (same Search as Resolve’s last step). BIN seed-first initialize calls that.
 - Wrapper and source logs include `key` (the `databaseSources` map key).
-- `Start` returns a nil Updater when the URL is empty. `Stop` ends the ticker and waits for that goroutine to exit. An in-flight GET still calls `onUpdate` (Sleep only parks the ticker; the wrapper is still live). Close sets the wrapper disposed flag before Stop; that flag refuses the swap. Wrappers Sleep/Close call this Stop only; do not add a second join.
+- `Start` returns a nil Updater when Dir or Key is empty (nothing to watch). URL is not required: a tick promotes Latest already on disk (this process or another writer on the share), then GETs only when a URL is set and Latest is missing or older than MinAge. `Stop` ends the ticker and waits for that goroutine to exit. An in-flight GET still calls `onUpdate` (Sleep only parks the ticker; the wrapper is still live). Close sets the wrapper disposed flag before Stop; that flag refuses the swap. Wrappers Sleep/Close call this Stop only; do not add a second join.
 
 ## Gotchas
 

@@ -43,7 +43,7 @@ When the plugin opens a BIN wrapper, the wrapper logger SHALL include `owner_plu
 - **AND** that line does not include `plugin=`
 
 ### Requirement: Dated BIN initialize opens bundled seed first
-When initialize would copy a dated catalog BIN and a bundled `defaultFile` exists, OpenBIN SHALL open that seed and return before the dated copy finishes. Lookups SHALL use the seed until hot-swap. When the dated copy is ready, the wrapper SHALL hot-swap to that copy. When no bundled seed exists, initialize SHALL copy the dated file before return.
+When initialize would copy a dated catalog BIN and a bundled `defaultFile` exists, OpenBIN SHALL open that seed and return before the dated copy finishes. Lookups SHALL use the seed until hot-swap. The keep-current updater SHALL promote an on-disk Latest that differs from the live handle without a GET, then GET only when a URL is set and Latest is missing or older than MinAge. When the dated copy is ready, the wrapper SHALL hot-swap to that copy. When no bundled seed exists, initialize SHALL copy the dated file before return.
 
 #### Scenario: Seed is live before dated copy
 - **WHEN** a dated catalog BIN exists

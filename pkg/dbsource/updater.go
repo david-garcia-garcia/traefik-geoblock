@@ -2,7 +2,6 @@ package dbsource
 
 import (
 	"log/slog"
-	"strings"
 	"time"
 )
 
@@ -25,20 +24,21 @@ func WithDefaults(cfg Config, dir, databaseType string, minAge time.Duration) Co
 	return cfg
 }
 
-// Start builds an Updater and runs its ticker when URL is set. A nil Updater means no download.
+// Start builds an Updater and runs its ticker when Dir and Key can watch Latest.
+// A nil Updater means nothing to watch. GET still requires URL.
 func Start(cfg Config, logger *slog.Logger, onUpdate func(string)) (*Updater, error) {
-	if strings.TrimSpace(cfg.URL) == "" {
-		return nil, nil
-	}
 	u, err := newUpdater(cfg, logger)
 	if err != nil {
 		return nil, err
+	}
+	if !u.canWatchLatest() {
+		return nil, nil
 	}
 	u.Start(onUpdate)
 	return u, nil
 }
 
-// Updater is the keep-current loop for one source (ticker + GET).
+// Updater is the keep-current loop for one source: promote Latest on disk, then GET if stale.
 type Updater struct {
 	cfg    Config
 	logger *slog.Logger
@@ -63,6 +63,11 @@ func (u *Updater) Latest() (string, error) {
 	return Latest(u.cfg.Dir, u.cfg.Key, u.cfg.DatabaseType)
 }
 
+// canWatchLatest reports whether Dir and Key can resolve a dated catalog file.
+func (u *Updater) canWatchLatest() bool {
+	return u.cfg.Dir != "" && u.cfg.Key != ""
+}
+
 // CanDownload reports whether a URL is configured.
 func (u *Updater) CanDownload() bool {
 	return u.cfg.URL != "" && u.cfg.Dir != ""
@@ -75,9 +80,6 @@ func (u *Updater) UpdateIfNeeded() (string, error) {
 
 // Start runs an immediate check and a 24h ticker. onUpdate is called with a new path.
 func (u *Updater) Start(onUpdate func(path string)) {
-	if !u.CanDownload() {
-		return
-	}
 	u.ticker = time.NewTicker(24 * time.Hour)
 	u.stop = make(chan struct{})
 	u.done = make(chan struct{})
@@ -96,6 +98,16 @@ func (u *Updater) Start(onUpdate func(path string)) {
 }
 
 func (u *Updater) tick(onUpdate func(path string)) {
+	// Promote a dated file already on disk (this pod or another writer). No GET.
+	latest, err := u.Latest()
+	if err != nil {
+		u.logger.Error("latest dated file", "error", err)
+	} else if latest != "" && onUpdate != nil {
+		onUpdate(latest)
+	}
+	if !u.CanDownload() {
+		return
+	}
 	path, err := u.UpdateIfNeeded()
 	if err != nil {
 		u.logger.Error("database update failed", "error", err)

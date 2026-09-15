@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -74,4 +75,45 @@ func TestUpdaterStop_JoinsHeldGETAndRunsOnUpdate(t *testing.T) {
 
 	u.Stop()
 	(*Updater)(nil).Stop()
+}
+
+func TestUpdater_ReconcilesLatestWithoutURL(t *testing.T) {
+	dir := t.TempDir()
+	dated := filepath.Join(dir, "20260915_paid.BIN")
+	if err := os.WriteFile(dated, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan string, 1)
+	u, err := Start(Config{
+		Key:          "paid",
+		DatabaseType: TypeBIN,
+		Dir:          dir,
+	}, testLogger(), func(path string) {
+		got <- path
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if u == nil {
+		t.Fatal("expected updater without URL")
+	}
+	select {
+	case path := <-got:
+		if path != dated {
+			t.Fatalf("onUpdate path=%s want %s", path, dated)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("onUpdate never ran")
+	}
+	u.Stop()
+}
+
+func TestUpdater_NoWatchDirReturnsNil(t *testing.T) {
+	u, err := Start(Config{Key: "paid", URL: "https://example.com/db.BIN", DatabaseType: TypeBIN}, testLogger(), nil)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if u != nil {
+		t.Fatal("expected nil updater without Dir")
+	}
 }

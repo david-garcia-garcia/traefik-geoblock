@@ -57,14 +57,12 @@ type BIN struct {
 	version            *dbutils.DBVersion
 	currentLocalDbCopy string
 	sourceDbPath       string
-	// pendingDated is a dated catalog path to copy after initialize returns.
-	pendingDated string
-	updater      *dbsource.Updater
+	updater            *dbsource.Updater
 	// closed is set before Stop so a late hotSwap cannot publish.
 	closed atomic.Bool
 }
 
-// binTestHoldAfterSeed, when set by tests, runs in the dated-copy goroutine before hotSwap.
+// binTestHoldAfterSeed, when set by tests, runs once on the first updater promote before hotSwap.
 var binTestHoldAfterSeed func()
 
 const keyPrefixBIN = "bin:"
@@ -114,28 +112,8 @@ func newBIN(cfg BINConfig, logger *slog.Logger) (*BIN, error) {
 	if err := w.initialize(); err != nil {
 		return nil, err
 	}
-	w.startDatedCopy()
-	if strings.TrimSpace(cfg.Source.URL) != "" {
-		w.startUpdate()
-	}
+	w.startUpdate()
 	return w, nil
-}
-
-// startDatedCopy copies pendingDated off New and hot-swaps when the copy is ready.
-func (w *BIN) startDatedCopy() {
-	dated := w.pendingDated
-	if dated == "" {
-		return
-	}
-	w.pendingDated = ""
-	go func() {
-		if binTestHoldAfterSeed != nil {
-			binTestHoldAfterSeed()
-		}
-		if err := w.hotSwap(dated); err != nil {
-			w.logger.Error("failed to perform hot swap", "error", err)
-		}
-	}()
 }
 
 func (w *BIN) sourceCfg() dbsource.Config {
@@ -158,12 +136,13 @@ func (w *BIN) initialize() error {
 	}
 
 	var targetPath string
+	var pendingSourcePath string
 	if resolved != "" {
 		if latest, lerr := dbsource.Latest(cfg.Dir, cfg.Key, dbsource.TypeBIN); lerr == nil && latest != "" && latest == resolved {
 			if seed, serr := dbsource.BundledFile(cfg, w.logger); serr == nil && seed != "" {
 				w.sourceDbPath = seed
 				targetPath = seed
-				w.pendingDated = latest
+				pendingSourcePath = latest
 			} else {
 				w.sourceDbPath = latest
 				copied, cerr := w.createLocalCopy(latest)
@@ -205,8 +184,8 @@ func (w *BIN) initialize() error {
 	w.path = targetPath
 	w.version = version
 	attrs := []any{"path", targetPath, "source_path", w.sourceDbPath, "version", version.String(), "size_bytes", openedFileSize(targetPath)}
-	if w.pendingDated != "" {
-		attrs = append(attrs, "pending_source_path", w.pendingDated)
+	if pendingSourcePath != "" {
+		attrs = append(attrs, "pending_source_path", pendingSourcePath)
 	}
 	w.logger.Info("BIN initialized", attrs...)
 	if time.Since(version.Date()) > 60*24*time.Hour {
@@ -274,9 +253,14 @@ func (w *BIN) wake() {
 	w.startUpdate()
 }
 
-// startUpdate starts the keep-current ticker that hot-swaps a newer dated BIN.
+// startUpdate starts the keep-current ticker that promotes Latest and may GET.
 func (w *BIN) startUpdate() {
 	updater, err := dbsource.Start(w.sourceCfg(), w.logger, func(path string) {
+		// Tests hold the first promote so OpenBIN can return while the seed is still live.
+		if hold := binTestHoldAfterSeed; hold != nil {
+			binTestHoldAfterSeed = nil
+			hold()
+		}
 		if path == "" || path == w.SourcePath() {
 			return
 		}
