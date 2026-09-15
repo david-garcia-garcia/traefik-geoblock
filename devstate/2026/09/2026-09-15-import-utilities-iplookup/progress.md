@@ -9,6 +9,6 @@ JobName: 2026-09-15-import-utilities-iplookup
 | propose | [x] | [x] | 2026-09-15T08:05:46Z |
 | implement | [x] | [x] | 2026-09-15T08:10:49Z |
 | codereview | [x] | [x] | 2026-09-15T08:16:34Z |
-| devdocsimpact | [x] | [ ] | |
-| archive | [x] | [ ] | |
-| pullrequest | [ ] | [ ] | |
+| devdocsimpact | [x] | [x] | 2026-09-15T08:20:45Z |
+| archive | [x] | [x] | 2026-09-15T08:20:45Z |
+| pullrequest | [x] | [x] | 2026-09-15T08:20:45Z |
