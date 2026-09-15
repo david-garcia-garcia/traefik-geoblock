@@ -6,7 +6,7 @@ JobName: 2026-09-15-import-utilities-iplookup
 |-------|------|------|----|
 | prepare | [x] | [x] | 2026-09-15T07:59:49Z |
 | explore | [x] | [x] | 2026-09-15T08:03:22Z |
-| propose | [x] | [ ] | |
+| propose | [x] | [x] | 2026-09-15T08:05:46Z |
 | implement | [ ] | [ ] | |
 | codereview | [ ] | [ ] | |
 | devdocsimpact | [ ] | [ ] | |
