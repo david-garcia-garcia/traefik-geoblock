@@ -1,4 +1,4 @@
-Developer review: in progress — 2026-09-16T10:19:47Z
+Developer review: ready for review — 2026-09-16T10:29:27Z
 
 ## What this changes
 **Operators.** None.
@@ -17,28 +17,28 @@ DestBranch still has that mix: `bin_test.go` next to `bin.go`, `plugin_instance_
 If this PR does not land, later work keeps adding unprefixed test files and the explorer stays mixed. No operator, admin, or end-user path is wrong today.
 
 ## Merge readiness
-Apply renamed the thirty package tests. Local `go test ./...` passed. Remote CI on this head is still running. 1 item remains.
+Apply prefixed the thirty package tests. Local `go test ./...` passed. CI on this head succeeded. 0 items remain.
 
 Priority: P3 — Spec, docs, tests, or internal clarity — no current user or operator harm
-Reviewed head: 9deb328
+Reviewed head: 75190ca
 Owner decision: None.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 3/6 | Rename landed; CI still in progress |
-| CI proof | 3/6 | Run 35084387273 in progress — https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/35084387273 |
-| Local tests proof | N/A | Remote PR; localTests passed is recorded on handoff |
+| Overall readiness | 6/6 | Rename landed; CI succeeded; no open comments |
+| CI proof | 6/6 | Lint, Test, and Integration Tests succeeded — https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/35084958982 |
+| Local tests proof | N/A | Remote PR; handoff localTests passed |
 | Review resolution | 6/6 | No open PR comments |
 
 ## Verification
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Branch | 2026-09-16-zzz-test-prefix pushed | `git` / origin `9deb328` |
-| OpenSpec | zzz-test-file-prefix | `openspec/changes/zzz-test-file-prefix/` |
+| Branch | 2026-09-16-zzz-test-prefix pushed | `git` / origin `75190ca` |
+| OpenSpec | zzz-test-file-prefix archived | `openspec/changes/archive/2026-09-16-zzz-test-file-prefix/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/91 | pr-host List |
-| CI | build 35084387273 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/35084387273 | Lint, Test, Integration Tests in_progress |
-| Local tests | passed | `go test ./...` ok on eight packages; tools/dbdownload has no tests |
+| CI | build 35084958982 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/35084958982 | Lint success, Test success, Integration Tests success |
+| Local tests | passed | `go test ./...` ok on eight packages |
 | PR comments | no comments | inventory empty |
 
 ## Specs
@@ -48,10 +48,10 @@ None.
 None.
 
 ## Follow-up issues
-None.
+- [ ] [Update test-harness Key files to `zzz_*_test.go`](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-16-zzz-test-prefix/knowledge/debt/2026-09-16-zzz-test-harness-stems.md) — Key files still cite unprefixed stems after the `zzz_` rename.
 
 ## How this fits together
-Ticket 2026-09-16-zzz-test-prefix is on branch 2026-09-16-zzz-test-prefix with stub PR 91 into master. Apply prefixed the thirty first-party `*_test.go` files.
+Ticket 2026-09-16-zzz-test-prefix is on branch 2026-09-16-zzz-test-prefix with PR 91 into master. CI run 35084958982 succeeded.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -59,14 +59,19 @@ Ticket 2026-09-16-zzz-test-prefix is on branch 2026-09-16-zzz-test-prefix with s
 | Must this change rewrite `knowledge/devdocs/core_geoblock_test-harness.md` Key files and how-to-use stems to `zzz_*`? | bounded incidental | assumed — do not rewrite those packets in apply; honor Out of scope. `*_test.go` globs stay true. Stale explicit stems wait for devdocsimpact / a follow-up note. | explore |
 
 ## Before merge
-- [x] Prefix first-party `*_test.go` files with `zzz_` and keep the `_test.go` suffix [P3]
-- [ ] CI on PR 91
+None.
 
 ## Findings
 None.
 
 ## Axis review
-None.
+[Standards](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-16-zzz-test-prefix/devstate/2026/09/2026-09-16-zzz-test-prefix/codereview_standards.md) — 0 total, 0 pending, 0 completed
+[Nitpicks](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-16-zzz-test-prefix/devstate/2026/09/2026-09-16-zzz-test-prefix/codereview_nitpicks.md) — 0 total, 0 pending, 0 completed
+[Spec](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-16-zzz-test-prefix/devstate/2026/09/2026-09-16-zzz-test-prefix/codereview_spec.md) — 0 total, 0 pending, 0 completed
+[Security](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-16-zzz-test-prefix/devstate/2026/09/2026-09-16-zzz-test-prefix/codereview_security.md) — 0 total, 0 pending, 0 completed
+[Performance](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-16-zzz-test-prefix/devstate/2026/09/2026-09-16-zzz-test-prefix/codereview_performance.md) — 0 total, 0 pending, 0 completed
+[Dead](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-16-zzz-test-prefix/devstate/2026/09/2026-09-16-zzz-test-prefix/codereview_dead.md) — 0 total, 0 pending, 0 completed
+[Test coverage](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-09-16-zzz-test-prefix/devstate/2026/09/2026-09-16-zzz-test-prefix/codereview_coverage.md) — 0 total, 0 pending, 0 completed
 
 ## Agent review details
 
@@ -75,13 +80,13 @@ None.
 | --- | --- | --- |
 | Specs in this PR | none | Same list as ## Specs; do not paste diff --stat |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 9deb3284b1fac12871a866887d4ab3b90a20c761 | Card must match the branch you measured |
+| Reviewed head | 75190ca56497a86f5ef53ba45c7583dc90c0c9d0 | Card must match the branch you measured |
 
 ### Stored data model
 None.
 
 ### Technical review
-Best possible solution versus DestBranch: `git mv` only to `zzz_<stem>_test.go`; local `go test ./...` passed.
+Best possible solution versus DestBranch: `git mv` only to `zzz_<stem>_test.go`; local `go test ./...` passed; CI succeeded.
 
 Do we have a high-confidence way to reproduce? Yes, DestBranch still has unprefixed `*_test.go`; this head has thirty `zzz_*_test.go` files.
 
@@ -90,8 +95,10 @@ Is this the best way to solve the issue? Yes — rename only those files and kee
 ### Evidence
 What I checked:
 - Thirty first-party `*_test.go` renamed; vendor excluded; no `zzz_proof_*` added
-- `go test ./...` passed (worktree `9deb328`)
-- CI run 35084387273 in progress
+- `go test ./...` passed
+- CI run 35084958982: Lint, Test, Integration Tests success
+- Seven-axis review: all `none.`
+- Usage Key files left stale on purpose (Out of scope); debt note written
 
 ### Rank-up moves
 None.
