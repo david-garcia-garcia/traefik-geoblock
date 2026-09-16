@@ -5,7 +5,7 @@ JobName: 2026-09-16-zzz-test-prefix
 | Phase | Work | Card | At |
 |-------|------|------|----|
 | prepare | [x] | [x] | 2026-09-16T10:06:38Z |
-| explore | [x] | [ ] | |
+| explore | [x] | [x] | 2026-09-16T10:10:57Z |
 | propose | [ ] | [ ] | |
 | implement | [ ] | [ ] | |
 | codereview | [ ] | [ ] | |

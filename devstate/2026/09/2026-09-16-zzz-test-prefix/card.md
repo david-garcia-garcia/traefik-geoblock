@@ -1,4 +1,4 @@
-Developer review: in progress — 2026-09-16T10:06:38Z
+Developer review: in progress — 2026-09-16T10:10:57Z
 
 ## What this changes
 **Operators.** None.
@@ -17,27 +17,27 @@ DestBranch still has that mix: `bin_test.go` next to `bin.go`, `plugin_instance_
 If this PR does not land, later work keeps adding unprefixed test files and the explorer stays mixed. No operator, admin, or end-user path is wrong today.
 
 ## Merge readiness
-Prepare grounded the ask and opened stub PR 91. Product renames are not on this head yet. 2 items remain.
+Explore recorded assumed decisions. Product renames are not on this head yet. 2 items remain.
 
 Priority: P3 — Spec, docs, tests, or internal clarity — no current user or operator harm
-Reviewed head: 871ee8d
+Reviewed head: b95a3b4
 Owner decision: None.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 1/6 | Stub PR exists; CI not seen; no product delta yet |
-| CI proof | 1/6 | Pushed; CI not seen |
+| Overall readiness | 3/6 | Explore done; product rename not applied; CI still in progress |
+| CI proof | 3/6 | Lint and Test succeeded; Integration Tests in progress — https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/35083509999 |
 | Local tests proof | N/A | Remote PR; implement has not run |
 | Review resolution | 6/6 | No open PR comments |
 
 ## Verification
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Branch | 2026-09-16-zzz-test-prefix pushed | `git` / origin |
+| Branch | 2026-09-16-zzz-test-prefix pushed | `git` / origin `b95a3b4` |
 | OpenSpec | none | `openspec/` |
-| Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/91 | pr-host List/Create |
-| CI | not seen | pr-host CI |
+| Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/91 | pr-host List |
+| CI | build 35083509999 in progress https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/35083509999 | Lint success, Test success, Integration Tests in_progress |
 | Local tests | none | handoff.yaml localTests |
 | PR comments | no comments | inventory empty |
 
@@ -51,10 +51,14 @@ None.
 None.
 
 ## How this fits together
-Ticket 2026-09-16-zzz-test-prefix is on branch 2026-09-16-zzz-test-prefix with stub PR 91 into master. CI has not been seen.
+Ticket 2026-09-16-zzz-test-prefix is on branch 2026-09-16-zzz-test-prefix with stub PR 91 into master. Explore assumed the rename-only path; apply has not started.
 
 ## Explore Decisions
-None.
+| Question | Rank | Decision | By |
+| --- | --- | --- | --- |
+| Must this change rewrite `knowledge/devdocs/core_geoblock_test-harness.md` Key files and how-to-use stems to `zzz_*`? | bounded incidental | assumed — do not rewrite those packets in apply; honor Out of scope. `*_test.go` globs stay true. Stale explicit stems wait for devdocsimpact / a follow-up note. | explore |
+| Must a new spec leaf mandate the `zzz_` basename, or does the rename alone satisfy Desired? | additive incidental | assumed — no new spec leaf unless propose FindSpecHost names a host that already owns test-file naming. Default is rename-only plus tasks that `git mv` the Affected list. | explore |
+| What if dest gains another first-party `*_test.go` after the dump? | additive asked | assumed — implement re-lists first-party `*_test.go` (exclude `vendor/`) at apply and prefixes whatever is present then. | explore |
 
 ## Before merge
 - [ ] Prefix first-party `*_test.go` files with `zzz_` and keep the `_test.go` suffix [P3]
@@ -73,7 +77,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | none | Same list as ## Specs; do not paste diff --stat |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 871ee8d42b81ff8efca5784feee3b61e5de16c26 | Card must match the branch you measured |
+| Reviewed head | b95a3b4e3e8b07ca1706ac6ae2aeddd30e117584 | Card must match the branch you measured |
 
 ### Stored data model
 None.
@@ -87,9 +91,9 @@ Is this the best way to solve the issue? Yes — rename only those files and kee
 
 ### Evidence
 What I checked:
-- Dest tree `pkg/` and root `plugin_instance_test.go` on `origin/master` (`509e6c0`)
-- Thirty first-party `*_test.go`; vendor has none
-- CI workflow has no basename glob (`.github/workflows/ci.yml`)
+- Worktree first-party `*_test.go` count is thirty; none already `zzz_*`
+- Usage packet `knowledge/devdocs/core_geoblock_test-harness.md` still describes `*_test.go`
+- CI run 35083509999: Lint success, Test success, Integration Tests in_progress
 - Stub PR 91 open; comment inventory empty
 
 ### Rank-up moves
