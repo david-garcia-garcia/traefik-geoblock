@@ -48,5 +48,5 @@ pkg/dbwrappers/ today          after prefix
 
 - Q: What if dest gains another first-party `*_test.go` after the dump?
   Rank: additive asked — Desired is every first-party Go package test file; Unknowns already names this
-  Decision: assumed — implement re-lists first-party `*_test.go` (exclude `vendor/`) at apply and prefixes whatever is present then.
-  By: explore
+  Decision: resolved — re-listed at apply; thirty files, none new; all prefixed. `vendor/` still has none.
+  By: implement
