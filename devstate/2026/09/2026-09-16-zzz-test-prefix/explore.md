@@ -43,8 +43,8 @@ pkg/dbwrappers/ today          after prefix
 
 - Q: Must a new spec leaf mandate the `zzz_` basename, or does the rename alone satisfy Desired?
   Rank: additive incidental — no existing spec SHALL on test basenames; requirement Desired is the rename, not a new contract folder
-  Decision: assumed — no new spec leaf unless propose FindSpecHost names a host that already owns test-file naming. Default is rename-only plus tasks that `git mv` the Affected list.
-  By: explore
+  Decision: resolved — rename alone. `skip_specs: true` because plugin and lookup requirements do not change. No spec folder; FindSpecHost not run (no delta to host).
+  By: propose
 
 - Q: What if dest gains another first-party `*_test.go` after the dump?
   Rank: additive asked — Desired is every first-party Go package test file; Unknowns already names this

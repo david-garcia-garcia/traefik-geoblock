@@ -11,3 +11,9 @@ phase: explore
 findings: none
 fixed: none
 skipped: product delta empty; three assumed open questions; CI in progress on stub PR 91 (run 35083509999)
+
+## propose (2026-09-16T10:16:15Z)
+phase: propose
+findings: none
+fixed: none
+skipped: skip_specs; rename not applied; CI in progress on PR 91 (run 35084072476)
