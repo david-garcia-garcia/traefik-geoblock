@@ -87,6 +87,7 @@ type lifecycle struct {
 
 // initialize opens the first handle for this source: the bundled seed while a dated file
 // is still pending, a temp copy of that dated file, or the resolved file in place.
+// If that dated file cannot be opened, it warns and publishes catalog Path then BundledFile.
 func (l *lifecycle) initialize() error {
 	resolved, err := dbsource.Resolve(l.source, l.logger)
 	if err != nil && resolved == "" && !l.allowMissing {

@@ -33,7 +33,7 @@ const (
 
 // Phase constants for logging and testing
 const (
-	PhaseNone             = "none" // No specific rule matched (e.g., no IPs found)
+	PhaseNone             = "none" // No specific rule matched after hops were evaluated
 	PhaseAllowPrivate     = "allow_private"
 	PhaseBlockedIPBlock   = "blocked_ip_block"
 	PhaseAllowedIPBlock   = "allowed_ip_block"
