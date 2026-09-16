@@ -8,7 +8,7 @@ JobName: 2026-09-16-zzz-test-prefix
 | explore | [x] | [x] | 2026-09-16T10:10:57Z |
 | propose | [x] | [x] | 2026-09-16T10:16:15Z |
 | implement | [x] | [x] | 2026-09-16T10:19:47Z |
-| codereview | [ ] | [ ] | |
-| devdocsimpact | [ ] | [ ] | |
-| archive | [ ] | [ ] | |
-| pullrequest | [ ] | [ ] | |
+| codereview | [x] | [ ] | |
+| devdocsimpact | [x] | [ ] | |
+| archive | [x] | [ ] | |
+| pullrequest | [x] | [ ] | |
