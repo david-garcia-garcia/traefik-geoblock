@@ -1,5 +1,5 @@
 {
-  "commentId": "local",
+  "commentId": "pr-body",
   "issueKey": "2026-09-16-zzz-test-prefix",
   "markerValue": "[sgsi-dev-ticket-status:2026-09-16-zzz-test-prefix]",
   "issueHost": "local"
