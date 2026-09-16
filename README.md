@@ -472,8 +472,8 @@ excludedPathsRegex: "^[^/]*/(health|ready|live)$"
 | `ipHeaders` | Where to read client IPs (`remoteAddress` is the direct connection) |
 | `ipHeaderStrategy` | Which hop to evaluate when several IPs are present |
 | `ignoreVerbs` / path regex / `bypassHeaders` | Skip blocking; enrichment still runs |
-| `banIfError` / `disallowedStatusCode` / `banHtmlFilePath` | Lookup failure and ban response |
-| `databaseSources` / `databaseAutoUpdateDir` | Local files and optional download |
+| `banIfError` / `disallowedStatusCode` / `banHtmlFilePath` | Lookup failure, missing country header, or no client IP |
+| `databaseSources` / `databaseAutoUpdateDir` | Local files and optional download. An unreadable dated file falls back to the seed and warns. |
 | `logLevel` / `logFormat` | Plugin logs on Traefik stdout (`logFormat` default `text`) |
 
 ---

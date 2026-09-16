@@ -127,6 +127,7 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 	}
 	if ModeLooksUp(mode) {
 		requestHeaderEnrich = foldCountryHeader(cfg.CountryHeader, requestHeaderEnrich)
+		warnCountryHeaderNonCountry(logger, cfg.CountryHeader, requestHeaderEnrich)
 	}
 
 	allowedIPHelper, err := loadIPBlockHelper(cfg.AllowedIPBlocks, cfg.AllowedIPBlocksDir, logger)
@@ -415,6 +416,18 @@ func (p Plugin) enrich(req *http.Request, remoteIPs []string, ipChain string) (l
 
 // blockFromHeader runs CIDR / private / country using countryHeader. true means banned.
 func (p Plugin) blockFromHeader(rw http.ResponseWriter, req *http.Request, remoteIPs []string, ipChain string) bool {
+	if len(remoteIPs) == 0 {
+		p.logger.Warn("no client IP extracted",
+			"host", req.Host, "method", req.Method, "path", req.URL.Path,
+			"remote_addr", req.RemoteAddr)
+		if p.banIfError {
+			p.setDecisionLogHeader(req, LogStatusBlock, "error")
+			p.serveBanHtml(rw, "", "Unknown", req.Method)
+			return true
+		}
+		p.setDecisionLogHeader(req, LogStatusPass, "error")
+		return false
+	}
 	country := req.Header.Get(p.countryHeader)
 	if country == "" || country == EnrichNullAlias {
 		if p.banIfError {
@@ -533,20 +546,17 @@ func (p Plugin) decide(ip, country string) (allow bool, phase string, err error)
 		return false, "", fmt.Errorf("failed to check if IP %q is allowed by IP block: %w", ip, err)
 	}
 
-	if (allowedNetworkLength < blockedNetworkLength) && (allowedNetworkLength > 0) && (blockedNetworkLength > 0) {
-		if blocked {
+	if allowed && blocked {
+		if blockedNetworkLength > allowedNetworkLength {
 			return false, PhaseBlockedIPBlock, nil
 		}
-		if allowed {
-			return true, PhaseAllowedIPBlock, nil
-		}
-	} else {
-		if allowed {
-			return true, PhaseAllowedIPBlock, nil
-		}
-		if blocked {
-			return false, PhaseBlockedIPBlock, nil
-		}
+		return true, PhaseAllowedIPBlock, nil
+	}
+	if allowed {
+		return true, PhaseAllowedIPBlock, nil
+	}
+	if blocked {
+		return false, PhaseBlockedIPBlock, nil
 	}
 
 	if country == PrivateIpCountryAlias {
@@ -573,8 +583,11 @@ func countryForBan(ip, country string) string {
 	return country
 }
 
-// Lookup returns geo metadata for ip.
+// Lookup returns geo metadata for ip. Block mode has no catalog.
 func (p Plugin) Lookup(ip string) (dbprovider.Record, error) {
+	if p.db == nil {
+		return dbprovider.Record{}, fmt.Errorf("catalog is not bound")
+	}
 	return p.db.Lookup(ip)
 }
 

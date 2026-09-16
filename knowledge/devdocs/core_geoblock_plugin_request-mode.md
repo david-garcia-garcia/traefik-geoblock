@@ -28,6 +28,10 @@ One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeade
 - Write country from lookup onto `countryHeader`, then read that header in the block stage. Do not pass `Record.Country` into country maps.
 - Do not call `writeDefaultEnrichHeaders` in `block` (it would overwrite the inbound country).
 - After CIDR, a `countryHeader` value of `PRIVATE` follows `allowPrivate`. Private or loopback IPs still apply `allowPrivate` first.
+- When both CIDR lists match, the longer prefix wins. Length 0 (`0.0.0.0/0`) is a match, so a `/32` block beats a `/0` allow. Equal lengths keep allow-before-block.
+- Empty `GetRemoteIPs` is a lookup-class error: warn, then `banIfError`. Do not invent a hop.
+- After `foldCountryHeader`, if `countryHeader` maps to a non-country enrich key, warn and keep that mapping.
+- `Lookup` / `CheckAllowed` on `mode=block` return that the catalog is not bound. Do not dereference a nil catalog.
 - A public IP whose merged lookup returns an empty country is written as `XX`, never `PRIVATE`, so it reaches the country maps and `defaultAllow`. `writePublicLookupHeaders` writes `XX` without marking the country written, so a later hop that does resolve still wins. `Combined` fills only empty fields. A `bin` `country_short` `-` is empty, so an enabled `bin` row does not pre-empt a later source or `XX`.
 
 ## Pattern snippet
@@ -65,7 +69,7 @@ for header, expectedValue := range p.bypassHeaders {
 
 ## Gotchas
 
-- Chain enrich before block. Missing `countryHeader` uses `banIfError`.
+- Chain enrich before block. Missing `countryHeader` or an empty hop list uses `banIfError`.
 - `Header.Get` is `""` when the header is absent, so an empty configured value would match every omitted header. Presence is `len(Values) > 0`. Prepare is the load-time fail; the presence check covers a leftover empty map entry (`NewCore` without `Prepare`). A leftover empty entry must not write `pass:bypass_header`.
 - Country rules use the one `countryHeader` value (first public written). `CheckAll` still applies CIDR and private per selected IP.
 - Every selected hop can deny: `blockFromHeader` returns on the first hop `decide` rejects. `passReason` names the first *allowing* phase for the `pass:{reason}` header and must not gate the deny.

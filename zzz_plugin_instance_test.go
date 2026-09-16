@@ -396,3 +396,17 @@ func TestNew_DifferentConfigSharesMMDBWrapper(t *testing.T) {
 		t.Fatalf("later New must put a new MMDB wrapper, got %d ev=%+v", got, ev)
 	}
 }
+
+func TestNew_CorruptDatedFileUsesSeed(t *testing.T) {
+	shortInstanceLeases(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "20990101_seed.BIN"), make([]byte, 4096), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := instanceBIN(filepath.Join(instanceModuleRoot(), "seeds", "IP2LOCATION-LITE-DB1.IPV6.BIN"))
+	cfg.DatabaseAutoUpdateDir = dir
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	p := mustRootPlugin(t, ctx, cfg, "geoblock")
+	requireLookupUS(t, p)
+}

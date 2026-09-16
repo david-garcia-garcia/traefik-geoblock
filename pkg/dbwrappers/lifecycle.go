@@ -101,10 +101,32 @@ func (l *lifecycle) initialize() error {
 	}
 	version, err := l.publish(l.chooseStartupTarget(resolved))
 	if err != nil {
-		return err
+		seed := l.startupSeed(resolved)
+		if seed == "" {
+			return err
+		}
+		l.logger.Warn("dated catalog file unreadable, using seed",
+			"dated", resolved, "seed", seed, "error", err)
+		version, err = l.publish(openTarget{openPath: seed, sourcePath: seed, reason: reasonSeed})
+		if err != nil {
+			return err
+		}
 	}
 	l.warnStaleVersion(version)
 	return nil
+}
+
+// startupSeed is catalog Path then BundledFile when those paths are not the file that failed to open.
+func (l *lifecycle) startupSeed(failed string) string {
+	path := strings.TrimSpace(l.source.Path)
+	if path != "" && path != failed && fileutils.Exists(path) {
+		return path
+	}
+	seed, err := dbsource.BundledFile(l.source, l.logger)
+	if err != nil || seed == "" || seed == failed {
+		return ""
+	}
+	return seed
 }
 
 // chooseStartupTarget picks the file initialize opens for an already resolved path. Only
