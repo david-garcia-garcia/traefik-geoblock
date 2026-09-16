@@ -427,7 +427,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 		t.Logf("SUCCESS: BlockedIPBlock sets headers to %s and %s", LogStatusBlock, expectedDetail)
 	})
 
-	t.Run("NoIPsFound_should_set_pass_none", func(t *testing.T) {
+	t.Run("NoIPsFound_should_set_pass_error", func(t *testing.T) {
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseSources:       seedCatalog(dbFilePath),
@@ -457,7 +457,7 @@ func TestLogHeader_GeoRuleReasons(t *testing.T) {
 		if capturedLogStatus != "" {
 			t.Errorf("expected no logStatusHeader, got '%s'", capturedLogStatus)
 		}
-		expectedDetail := LogStatusPass + ":" + PhaseNone
+		expectedDetail := LogStatusPass + ":error"
 		if capturedLogStatusDetail != expectedDetail {
 			t.Errorf("Expected logStatusDetailHeader '%s', got '%s'", expectedDetail, capturedLogStatusDetail)
 		}

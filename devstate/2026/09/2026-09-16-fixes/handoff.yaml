@@ -1,0 +1,15 @@
+issueKey: 2026-09-16-fixes
+jobName: 2026-09-16-fixes
+issueHost: local
+issueRef: none
+prHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified-with-gaps
+src: b10637cf143c6530
+localTests: passed
+requirement: requirement.md
+comments: none
+explore: explore.md
+change: policy-guards-and-seed-fallback
+pr: { id: 92, url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/92 }

@@ -87,6 +87,7 @@ type lifecycle struct {
 
 // initialize opens the first handle for this source: the bundled seed while a dated file
 // is still pending, a temp copy of that dated file, or the resolved file in place.
+// If that dated file cannot be opened, it warns and publishes catalog Path then BundledFile.
 func (l *lifecycle) initialize() error {
 	resolved, err := dbsource.Resolve(l.source, l.logger)
 	if err != nil && resolved == "" && !l.allowMissing {
@@ -101,10 +102,32 @@ func (l *lifecycle) initialize() error {
 	}
 	version, err := l.publish(l.chooseStartupTarget(resolved))
 	if err != nil {
-		return err
+		seed := l.startupSeed(resolved)
+		if seed == "" {
+			return err
+		}
+		l.logger.Warn("dated catalog file unreadable, using seed",
+			"dated", resolved, "seed", seed, "error", err)
+		version, err = l.publish(openTarget{openPath: seed, sourcePath: seed, reason: reasonSeed})
+		if err != nil {
+			return err
+		}
 	}
 	l.warnStaleVersion(version)
 	return nil
+}
+
+// startupSeed is catalog Path then BundledFile when those paths are not the file that failed to open.
+func (l *lifecycle) startupSeed(failed string) string {
+	path := strings.TrimSpace(l.source.Path)
+	if path != "" && path != failed && fileutils.Exists(path) {
+		return path
+	}
+	seed, err := dbsource.BundledFile(l.source, l.logger)
+	if err != nil || seed == "" || seed == failed {
+		return ""
+	}
+	return seed
 }
 
 // chooseStartupTarget picks the file initialize opens for an already resolved path. Only

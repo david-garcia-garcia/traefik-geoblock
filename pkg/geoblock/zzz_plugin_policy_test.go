@@ -652,3 +652,104 @@ func TestServeHTTP_LocalhostWithAllowPrivate(t *testing.T) {
 
 	t.Logf("SUCCESS: Localhost request with allowPrivate=true was allowed (status %d)", rr.Code)
 }
+
+func TestDecide_CatchAllAllowLosesToMoreSpecificBlock(t *testing.T) {
+	plugin, err := newTestPlugin(holdCtx(t), &Config{
+		Mode:                  ModeBlock,
+		CountryHeader:         "X-IPCountry",
+		AllowedIPBlocks:       []string{"0.0.0.0/0"},
+		BlockedIPBlocks:       []string{"8.8.8.8/32"},
+		DefaultAllow:          false,
+		DisallowedStatusCode:  http.StatusForbidden,
+		IPHeaders:             []string{"x-real-ip"},
+		IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+		LogStatusDetailHeader: "X-Geoblock-Decision",
+	}, pluginName)
+	if err != nil {
+		t.Fatalf("newTestPlugin: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Real-IP", "8.8.8.8")
+	req.Header.Set("X-IPCountry", "DE")
+	rr := httptest.NewRecorder()
+	plugin.ServeHTTP(rr, req, &noopHandler{})
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status %d, want %d (decision %q)", rr.Code, http.StatusForbidden, req.Header.Get("X-Geoblock-Decision"))
+	}
+	if got := req.Header.Get("X-Geoblock-Decision"); got != LogStatusBlock+":"+PhaseBlockedIPBlock {
+		t.Fatalf("decision %q, want %s:%s", got, LogStatusBlock, PhaseBlockedIPBlock)
+	}
+}
+
+func TestBlock_NoClientIPUsesBanIfError(t *testing.T) {
+	t.Run("blocks", func(t *testing.T) {
+		plugin, err := newTestPlugin(holdCtx(t), &Config{
+			Mode:                  ModeBlock,
+			CountryHeader:         "X-IPCountry",
+			DefaultAllow:          false,
+			BanIfError:            true,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("newTestPlugin: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req, &noopHandler{})
+		if rr.Code != http.StatusForbidden {
+			t.Fatalf("status %d, want %d (decision %q)", rr.Code, http.StatusForbidden, req.Header.Get("X-Geoblock-Decision"))
+		}
+		if got := req.Header.Get("X-Geoblock-Decision"); got != LogStatusBlock+":error" {
+			t.Fatalf("decision %q, want block:error", got)
+		}
+	})
+	t.Run("passes when banIfError is false", func(t *testing.T) {
+		plugin, err := newTestPlugin(holdCtx(t), &Config{
+			Mode:                  ModeBlock,
+			CountryHeader:         "X-IPCountry",
+			BanIfError:            false,
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
+			LogStatusDetailHeader: "X-Geoblock-Decision",
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("newTestPlugin: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		rr := httptest.NewRecorder()
+		plugin.ServeHTTP(rr, req, &noopHandler{})
+		if rr.Code != http.StatusTeapot {
+			t.Fatalf("status %d, want %d (decision %q)", rr.Code, http.StatusTeapot, req.Header.Get("X-Geoblock-Decision"))
+		}
+	})
+}
+
+func TestLookup_BlockModeReturnsError(t *testing.T) {
+	plugin, err := newTestPlugin(holdCtx(t), &Config{
+		Mode:                 ModeBlock,
+		CountryHeader:        "X-IPCountry",
+		DefaultAllow:         true,
+		DisallowedStatusCode: http.StatusForbidden,
+		IPHeaders:            []string{"x-real-ip"},
+		IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+	}, pluginName)
+	if err != nil {
+		t.Fatalf("newTestPlugin: %v", err)
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("Lookup panicked: %v", recovered)
+		}
+	}()
+	_, lerr := plugin.Lookup("8.8.8.8")
+	if lerr == nil {
+		t.Fatal("Lookup on block mode must error")
+	}
+	if !strings.Contains(lerr.Error(), "catalog is not bound") {
+		t.Fatalf("Lookup error %v, want catalog is not bound", lerr)
+	}
+}

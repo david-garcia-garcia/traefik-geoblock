@@ -463,3 +463,14 @@ func foldCountryHeader(countryHeader string, enrich map[string]string) map[strin
 	}
 	return enrich
 }
+
+// warnCountryHeaderNonCountry logs when countryHeader is mapped to a non-country enrich key.
+func warnCountryHeaderNonCountry(logger *slog.Logger, countryHeader string, enrich map[string]string) {
+	canon := http.CanonicalHeaderKey(strings.TrimSpace(countryHeader))
+	key, ok := enrich[canon]
+	if !ok || key == dbprovider.MetaCountry {
+		return
+	}
+	logger.Warn("countryHeader is filled with a non-country enrich value",
+		"header", canon, "key", key)
+}

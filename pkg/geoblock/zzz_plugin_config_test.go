@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -673,6 +674,26 @@ func TestNew(t *testing.T) {
 		p := plugin.(*Route)
 		if got := p.requestHeaderEnrich[http.CanonicalHeaderKey("X-Geo-Country")]; got != dbprovider.MetaCity {
 			t.Errorf("explicit enrich should win: got %q want %s", got, dbprovider.MetaCity)
+		}
+	})
+
+	t.Run("CountryHeaderNonCountryMappingWarns", func(t *testing.T) {
+		var buf strings.Builder
+		SetTestPluginLogger(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+		t.Cleanup(func() { SetTestPluginLogger(nil) })
+		_, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                 ModeEnrichAndBlock,
+			CountryHeader:        "X-IPCountry",
+			RequestHeaderEnrich:  map[string]string{"X-IPCountry": "city"},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if !strings.Contains(buf.String(), "non-country enrich value") {
+			t.Fatalf("want non-country warning, got %q", buf.String())
 		}
 	})
 
