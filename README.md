@@ -66,9 +66,9 @@ The backend already received the same request headers. Clients do not.
 
 ### Decision reasons (`logStatusDetailHeader`)
 
-Format `{action}:{reason}`. These are the values on `X-Geoblock-Decision` (or whatever name you set) and in the dashboard donut.
+Format `{action}:{reason}`. These are the values on `X-Geoblock-Decision` (or whatever name you set) and in the dashboard donut. The header is written only in `block` / `enrichandblock`, and only when `logStatusDetailHeader` is set.
 
-**Bypass (blocking skipped, checked first):**
+**Bypass (skip blocking after enrichment):**
 
 | Value | Description | Example |
 | --- | --- | --- |
@@ -95,7 +95,7 @@ Format `{action}:{reason}`. These are the values on `X-Geoblock-Decision` (or wh
 | `block:blocked_ip_block` | CIDR in `blockedIPBlocks` or `blockedIPBlocksDir` | Known bad range |
 | `block:blocked_country` | Country is in `blockedCountries` | Request from a blocked region |
 | `block:default_allow` | No rule matched and `defaultAllow` is false | Unknown country, strict config |
-| `block:error` | Lookup failed (or `countryHeader` missing in `block` mode) and `banIfError` is true | Database lookup failure |
+| `block:error` | Lookup failed, or `countryHeader` is missing/`null` in `block` mode, and `banIfError` is true. A skip reason above wins over a failed lookup. | Database lookup failure |
 
 ### Enrich configuration
 
@@ -129,7 +129,7 @@ Which fields are populated depends on the database you load (country-only LITE v
 | --- | --- |
 | `requestHeaderEnrich` | Geo fields on the request |
 | `countryHeader` | ISO country (default `X-IPCountry`). Lookup writes it; block reads it |
-| `logStatusDetailHeader` | `pass:{reason}` or `block:{reason}` |
+| `logStatusDetailHeader` | `pass:{reason}` or `block:{reason}` when set; unused in `enrich` / `disabled` |
 
 ## Optional geoblock
 
@@ -190,7 +190,7 @@ experimental:
   plugins:
     geoblock:
       moduleName: github.com/david-garcia-garcia/traefik-geoblock
-      version: v1.0.1
+      version: v1.2.0
       settings:
         useunsafe: true
 ```
@@ -212,10 +212,10 @@ Clone the plugin into the Traefik plugins tree:
 RUN mkdir -p /plugins-local/src/github.com/david-garcia-garcia
 RUN git clone https://github.com/david-garcia-garcia/traefik-geoblock \
     /plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock \
-    --branch v1.0.1 --single-branch
+    --branch v1.2.0 --single-branch
 ```
 
-Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to that plugin root (the local clone, or the catalog unpack such as `/plugins-storage/sources/github.com/david-garcia-garcia/traefik-geoblock`). Traefik's process working directory is not the plugin tree. The plugin opens `{that dir}/seeds/<filename>` or `{that dir}/<filename>` — it does not walk the tree. `geoblockban.html` is at the plugin root, not under `seeds/`. If the env is unset, logs say it must be the plugin root. If it is set and those exact files are missing, logs say the env is probably not the plugin root. Without this variable, empty seed paths fail unless a dated file is already on an auto-update volume.
+Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to that plugin root (the local clone, or the catalog unpack such as `/plugins-storage/sources/github.com/david-garcia-garcia/traefik-geoblock`). Traefik's process working directory is not the plugin tree. The plugin opens `{that dir}/seeds/<filename>` or `{that dir}/<filename>` — it does not walk the tree. `geoblockban.html` is at the plugin root, not under `seeds/`. If the env is unset, logs say it must be the plugin root. If it is set but is not a directory, or those exact files are missing, logs say the env is probably not the plugin root. Without this variable, empty seed paths fail unless a dated file is already on an auto-update volume.
 
 ```bash
 # Docker Compose
@@ -230,7 +230,7 @@ docker run -e TRAEFIK_PLUGIN_GEOBLOCK_PATH=/plugins-local/src/github.com/david-g
 
 Lookups are local. There is no outbound GeoIP API on the request path. Enable **auto-update** and point `databaseAutoUpdateDir` at a persistent volume so the file stays current and hot-swaps without restarting Traefik.
 
-An empty catalog opens the bundled IP2Location LITE country database (`default_ip2location`). Enable another source and set `default_ip2location.enabled: false` if you do not want both. Several enabled rows merge (first non-empty field wins).
+An empty catalog opens the bundled IP2Location LITE country database (`default_ip2location`). Enable another source and set `default_ip2location.enabled: false` if you do not want both. Several enabled rows merge in **lexicographic catalog-key order** (first non-empty field wins).
 
 ```yaml
 databaseAutoUpdateDir: "/data/geoblock"
@@ -330,7 +330,7 @@ For automatic updates, allow outbound HTTPS to the vendor you configured:
 - `ipinfo.io` — IPinfo Lite MMDB (token; the response redirects to IPinfo’s CDN)
 - `download.maxmind.com` — MaxMind GeoLite2/GeoIP2 permalink (`accountId:licenseKey`; the response redirects)
 
-If `databaseSources` is empty, no external network is required after the bundled seed is on disk.
+An empty `databaseSources` still inserts enabled `default_ip2location` with the LITE ZIP URL, so auto-update still needs `download.ip2location.com` unless you disable that row or keep the reserved key without a URL. Lookups stay local either way.
 
 ## Configuration reference
 
@@ -342,7 +342,7 @@ http:
         geoblock:
           mode: enrichandblock
           defaultAllow: false
-          allowPrivate: true
+          allowPrivate: true             # default is false
           banIfError: true
           disallowedStatusCode: 403
 
@@ -393,15 +393,15 @@ http:
               enabled: true
 
           logLevel: info                 # trace | debug | info | warn | error
-          logFormat: json                # json | text
+          logFormat: json                # json | text (default text)
           # Plugin logs go to stdout (Traefik process log).
-          # banHtmlFilePath: "/path/to/geoblockban.html"   # {{.IP}} {{.Country}}
+          # banHtmlFilePath: "/path/to/geoblockban.html"   # {{.IP}} {{.Country}}; GET only
           # With ban HTML, use a real status (not 204).
 ```
 
 ### Client IP (`ipHeaders`)
 
-`ipHeaders` cannot be empty. Header order matters: headers are read in list order; within a header, IPs are left-to-right (leftmost is usually the original client). Duplicates are dropped, first occurrence kept.
+`ipHeaders` cannot be empty (except `mode: disabled`, which skips this check). Header order matters: headers are read in list order; within a header, IPs are left-to-right (leftmost is usually the original client). Duplicates are dropped, first occurrence kept.
 
 `remoteAddress` is a synthetic name for `req.RemoteAddr` (the direct connection). Use it when you also need the hop that connected to Traefik:
 
@@ -415,17 +415,17 @@ ipHeaders:
 | --- | --- |
 | `CheckAll` | Every IP found (default) |
 | `CheckFirst` | Only the first IP |
-| `CheckFirstNonePrivate` | First public IP; if none, first private IP |
+| `CheckFirstNonePrivate` | First public IP; if none, the last private hop |
 
 Country allow/block uses the single `countryHeader` value (first public country written). `CheckAll` still applies CIDR and private rules to every selected IP. To choose which hop’s country is written, use `CheckFirst` / `CheckFirstNonePrivate`. To deny a later hop by address, use `blockedIPBlocks`, or omit that hop from `ipHeaders`.
 
-**Every selected hop can deny.** An earlier allowed hop does not vouch for the ones after it; `pass:{reason}` names the first *allowing* hop. If a forwarding proxy leaves its own private address in the chain, set `allowPrivate: true` or use `CheckFirstNonePrivate` — `allowedIPBlocks` cannot allow a private hop, because private and loopback addresses answer to `allowPrivate` before the CIDR lists are consulted.
+**Every selected hop can deny.** An earlier allowed hop does not vouch for the ones after it; `pass:{reason}` names the first *allowing* hop. If a forwarding proxy leaves its own private address in the chain, set `allowPrivate: true` or use `CheckFirstNonePrivate` — `allowedIPBlocks` cannot allow a private hop, because private, IPv6 ULA, and loopback addresses answer to `allowPrivate` before the CIDR lists are consulted. CGNAT (`100.64/10`), link-local, and benchmark IPs are not `PRIVATE`; they enrich as `XX`.
 
 On lookup modes, `countryHeader` starts as `PRIVATE` and is overwritten by the first real country. An IP header value the plugin cannot parse enriches as `XX`, never as itself — the header only ever carries an ISO country, `PRIVATE` or `XX`. A public IP for which no enabled source returns a country is `XX`, so it reaches the country rules and `defaultAllow` rather than `allowPrivate`. `XX` is ISO 3166-1 user-assigned and may be listed in `allowedCountries` / `blockedCountries`. An IP2Location `bin` miss (`country_short` `-`) is empty at merge, so a later catalog source may fill country and a BIN-only miss still writes `XX`.
 
 ### Path include / exclude
 
-`includedPathsRegex` and `excludedPathsRegex` are one Go RE2 regex each, matched against `{host}{path}` (for example `example.com/api/users`). Host omits the port for 80/443. Path starts with `/` and has no query string. Empty is unset (no effect). Include runs first; exclude still wins after a match. Requests that skip blocking still get enrichment.
+`includedPathsRegex` and `excludedPathsRegex` are one Go RE2 regex each, matched against `{host}{path}` (for example `example.com/api/users`). The plugin uses `req.Host` as Traefik sent it and does not strip a port. Path starts with `/` and has no query string. Empty is unset (no effect). Include runs first; exclude still wins after a match. Skip-blocking requests were already enriched.
 
 A public URL match is not a secret — anyone who can guess the path skips blocking. For health checks, `bypassHeaders` is stronger.
 
@@ -445,30 +445,28 @@ excludedPathsRegex: "^[^/]*/(health|ready|live)$"
 
 ### Ban page
 
-`banHtmlFilePath` is a full path, or empty (status only). If the path is missing, the plugin opens `$TRAEFIK_PLUGIN_GEOBLOCK_PATH/geoblockban.html`. Template variables: `{{.IP}}` and `{{.Country}}`. Do not pair HTML with status `204`.
+`banHtmlFilePath` empty means status only. If you set a path and that file is not there, the plugin looks for `geoblockban.html` under `$TRAEFIK_PLUGIN_GEOBLOCK_PATH` (`seeds/` then the plugin root). Placeholders: `{{.IP}}` and `{{.Country}}`. The HTML body is written only for GET; other methods get the status with no body. Do not pair HTML with status `204`.
 
 ### Processing order
 
 1. `mode: disabled` → pass through
-2. `bypassHeaders`
-3. `ignoreVerbs` → skip blocking, keep enrichment
-4. `includedPathsRegex` set and no match → skip blocking, keep enrichment
-5. `excludedPathsRegex` match → skip blocking, keep enrichment (still wins after include)
-6. Read IPs from `ipHeaders` in list order
-7. Apply `ipHeaderStrategy`
-8. `enrich` / `enrichandblock` → lookup and write `countryHeader` + `requestHeaderEnrich`
-9. `block` / `enrichandblock` → private and CIDR rules per selected IP, then country from `countryHeader`
-10. `defaultAllow` if no country rule matched
+2. Read IPs from `ipHeaders` in list order and apply `ipHeaderStrategy`
+3. `enrich` / `enrichandblock` → lookup and write `countryHeader` + `requestHeaderEnrich`
+4. `enrich` (no block) → pass through
+5. Skip blocking (enrichment already done): `ignoreVerbs`, then `includedPathsRegex` miss, then `excludedPathsRegex` match, then `bypassHeaders`
+6. Lookup failed and `banIfError` → `block:error`
+7. `block` / `enrichandblock` → private and CIDR per selected IP, then country from `countryHeader`
+8. `defaultAllow` if no country rule matched
 
 | Setting | Role |
 | --- | --- |
 | `mode` | `disabled` \| `enrich` \| `block` \| `enrichandblock` (empty = `enrichandblock`) |
 | `requestHeaderEnrich` | Header name → geo key |
 | `countryHeader` | Country bridge between enrich and block (default `X-IPCountry`) |
-| `logStatusDetailHeader` | `pass:{reason}` / `block:{reason}` on the request |
+| `logStatusDetailHeader` | `pass:{reason}` / `block:{reason}` on the request when set; unused in `enrich` / `disabled` |
 | `allowedCountries` / `blockedCountries` | ISO 3166-1 alpha-2 |
 | `defaultAllow` | When no country or CIDR rule matches |
-| `allowPrivate` | RFC 1918 / loopback (country `PRIVATE`) |
+| `allowPrivate` | RFC 1918, IPv6 ULA, and loopback (country `PRIVATE`). Default false. |
 | `allowedIPBlocks` / `blockedIPBlocks` | CIDR allow / deny (more specific prefix wins) |
 | `allowedIPBlocksDir` / `blockedIPBlocksDir` | Shared `.txt` CIDR files, loaded at start |
 | `ipHeaders` | Where to read client IPs (`remoteAddress` is the direct connection) |
@@ -476,7 +474,7 @@ excludedPathsRegex: "^[^/]*/(health|ready|live)$"
 | `ignoreVerbs` / path regex / `bypassHeaders` | Skip blocking; enrichment still runs |
 | `banIfError` / `disallowedStatusCode` / `banHtmlFilePath` | Lookup failure and ban response |
 | `databaseSources` / `databaseAutoUpdateDir` | Local files and optional download |
-| `logLevel` / `logFormat` | Plugin logs on Traefik stdout |
+| `logLevel` / `logFormat` | Plugin logs on Traefik stdout (`logFormat` default `text`) |
 
 ---
 
