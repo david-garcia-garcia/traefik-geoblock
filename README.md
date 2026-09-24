@@ -14,7 +14,7 @@ A Traefik middleware that looks up the client IP in a **local** GeoIP database (
 > The basic middlewares you need to secure your Traefik ingress:
 >
 > 🌍 **Geoblock**: [david-garcia-garcia/traefik-geoblock](https://github.com/david-garcia-garcia/traefik-geoblock) — Geo-enrich requests for logs and backends; optionally allow or block by country
-> 🛡️ **CrowdSec**: [maxlerebourg/crowdsec-bouncer-traefik-plugin](https://github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin) — Real-time threat intelligence and automated blocking
+> 🛡️ **CrowdSec**: [david-garcia-garcia/crowdsec-bouncer-traefik-plugin](https://github.com/david-garcia-garcia/crowdsec-bouncer-traefik-plugin) — Real-time threat intelligence and automated blocking
 > 🔒 **ModSecurity CRS**: [david-garcia-garcia/traefik-modsecurity](https://github.com/david-garcia-garcia/traefik-modsecurity) — Web Application Firewall with OWASP Core Rule Set
 > 🚦 **Ratelimit**: [Traefik Rate Limit](https://doc.traefik.io/traefik/reference/routing-configuration/http/middlewares/ratelimit/) — Control request rates and prevent abuse
 
