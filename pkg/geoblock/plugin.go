@@ -67,6 +67,7 @@ type Plugin struct {
 	bypassHeaders         map[string]string
 	ipHeaders             []string            // List of headers to check for client IP addresses
 	ipHeaderStrategy      string              // Strategy for processing multiple IP addresses
+	trustedProxies        []*net.IPNet        // Proxy ranges skipped from the right by RightmostUntrusted
 	ignoreVerbs           map[string]struct{} // Set of HTTP verbs to ignore for blocking
 	includedPathsRegex    *regexp.Regexp      // When set, only matching {host}{path} may be blocked
 	excludedPathsRegex    *regexp.Regexp      // Matching {host}{path} skip blocking (after include)
@@ -164,6 +165,11 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		ignoreVerbs[strings.ToUpper(verb)] = struct{}{}
 	}
 
+	trustedProxies, err := parseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+
 	includedPathsRegex, err := compilePathRegex(name, "includedPathsRegex", cfg.IncludedPathsRegex)
 	if err != nil {
 		return nil, err
@@ -198,6 +204,7 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		bypassHeaders:         cfg.BypassHeaders,
 		ipHeaders:             canonicalIPHeaders(cfg.IPHeaders),
 		ipHeaderStrategy:      cfg.IPHeaderStrategy,
+		trustedProxies:        trustedProxies,
 		ignoreVerbs:           ignoreVerbs,
 		includedPathsRegex:    includedPathsRegex,
 		excludedPathsRegex:    excludedPathsRegex,
@@ -317,6 +324,9 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request, next http.H
 	}
 
 	remoteIPs := p.GetRemoteIPs(req)
+	if p.ipHeaderStrategy == IPHeaderStrategyRightmostUntrusted {
+		remoteIPs = p.rightmostUntrusted(remoteIPs)
+	}
 	ipChain := p.traceIPChain(remoteIPs)
 
 	// 1. Enrich: look up and write countryHeader / requestHeaderEnrich. Does not ban.

@@ -370,7 +370,8 @@ http:
             - x-real-ip
             # - cf-connecting-ip          # Cloudflare
             # - remoteAddress             # SYNTHETIC: req.RemoteAddr
-          ipHeaderStrategy: CheckAll   # CheckAll | CheckFirst | CheckFirstNonePrivate
+          ipHeaderStrategy: CheckAll   # CheckAll | CheckFirst | CheckFirstNonePrivate | RightmostUntrusted
+          # trustedProxies: ["10.0.0.0/8"]   # RightmostUntrusted only: proxies skipped from the right
           ignoreVerbs:
             - OPTIONS
             - HEAD
@@ -416,8 +417,20 @@ ipHeaders:
 | `CheckAll` | Every IP found (default) |
 | `CheckFirst` | Only the first IP |
 | `CheckFirstNonePrivate` | First public IP; if none, the last private hop |
+| `RightmostUntrusted` | Only the rightmost IP not in `trustedProxies` |
 
 Country allow/block uses the single `countryHeader` value (first public country written). `CheckAll` still applies CIDR and private rules to every selected IP. To choose which hop’s country is written, use `CheckFirst` / `CheckFirstNonePrivate`. To deny a later hop by address, use `blockedIPBlocks`, or omit that hop from `ipHeaders`.
+
+**Behind your own proxies, use `RightmostUntrusted`.** Proxies append to `X-Forwarded-For`, so everything left of the hop your first proxy added was written by the client and can be forged: a client sending `X-Forwarded-For: 1.2.3.4` decides the country under `CheckFirst`. `RightmostUntrusted` walks the collected IPs from the right, skips every hop inside `trustedProxies` (CIDRs or single addresses: your load balancer, CDN edges) and evaluates exactly one hop: the first one not trusted. That is the same rule as Traefik's `ipStrategy.excludedIPs`. If every hop is trusted there is no client IP, and the "no client IP" handling applies (`banIfError`). An invalid `trustedProxies` entry fails at plugin creation.
+
+```yaml
+ipHeaders:
+  - x-forwarded-for
+ipHeaderStrategy: RightmostUntrusted
+trustedProxies:
+  - 10.10.60.0/24      # load balancer
+  - 203.0.113.0/24     # CDN edges
+```
 
 **Every selected hop can deny.** An earlier allowed hop does not vouch for the ones after it; `pass:{reason}` names the first *allowing* hop. If a forwarding proxy leaves its own private address in the chain, set `allowPrivate: true` or use `CheckFirstNonePrivate` — `allowedIPBlocks` cannot allow a private hop, because private, IPv6 ULA, and loopback addresses answer to `allowPrivate` before the CIDR lists are consulted. CGNAT (`100.64/10`), link-local, and benchmark IPs are not `PRIVATE`; they enrich as `XX`.
 

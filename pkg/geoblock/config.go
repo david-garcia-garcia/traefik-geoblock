@@ -43,6 +43,10 @@ const (
 	IPHeaderStrategyCheckAll              = "CheckAll"
 	IPHeaderStrategyCheckFirst            = "CheckFirst"
 	IPHeaderStrategyCheckFirstNonePrivate = "CheckFirstNonePrivate"
+	// IPHeaderStrategyRightmostUntrusted takes one hop: the rightmost one not in TrustedProxies.
+	// Proxies append to X-Forwarded-For, so everything left of the last untrusted hop can be
+	// forged by the client; this is the hop Traefik's own ipStrategy.excludedIPs selects.
+	IPHeaderStrategyRightmostUntrusted = "RightmostUntrusted"
 )
 
 // Mode is the Traefik Config field that selects lookup, block, both, or pass-through.
@@ -100,7 +104,10 @@ type Config struct {
 
 	// IP extraction settings
 	IPHeaders        []string // List of headers to check for client IP addresses (cannot be empty)
-	IPHeaderStrategy string   // Strategy for processing multiple IP addresses: "CheckAll", "CheckFirst", "CheckFirstNonePrivate"
+	IPHeaderStrategy string   // Strategy for processing multiple IP addresses: "CheckAll", "CheckFirst", "CheckFirstNonePrivate", "RightmostUntrusted"
+	// TrustedProxies are the CIDRs of the proxies in front of Traefik (load balancer, CDN). Used by
+	// RightmostUntrusted: hops in these ranges are skipped from the right.
+	TrustedProxies []string
 
 	// HTTP verb filtering
 	IgnoreVerbs []string // List of HTTP verbs to ignore for blocking (still enriched with GeoIP)
@@ -200,10 +207,14 @@ func Prepare(cfg *Config, name string) error {
 	}
 	if cfg.IPHeaderStrategy != IPHeaderStrategyCheckAll &&
 		cfg.IPHeaderStrategy != IPHeaderStrategyCheckFirst &&
-		cfg.IPHeaderStrategy != IPHeaderStrategyCheckFirstNonePrivate {
-		return fmt.Errorf("%s: invalid IPHeaderStrategy '%s', must be one of: %s, %s, %s",
+		cfg.IPHeaderStrategy != IPHeaderStrategyCheckFirstNonePrivate &&
+		cfg.IPHeaderStrategy != IPHeaderStrategyRightmostUntrusted {
+		return fmt.Errorf("%s: invalid IPHeaderStrategy '%s', must be one of: %s, %s, %s, %s",
 			name, cfg.IPHeaderStrategy,
-			IPHeaderStrategyCheckAll, IPHeaderStrategyCheckFirst, IPHeaderStrategyCheckFirstNonePrivate)
+			IPHeaderStrategyCheckAll, IPHeaderStrategyCheckFirst, IPHeaderStrategyCheckFirstNonePrivate, IPHeaderStrategyRightmostUntrusted)
+	}
+	if _, err := parseTrustedProxies(cfg.TrustedProxies); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
 	}
 	if strings.TrimSpace(cfg.CountryHeader) == "" {
 		cfg.CountryHeader = DefaultCountryHeader
