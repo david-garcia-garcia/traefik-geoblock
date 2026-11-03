@@ -30,3 +30,29 @@ change: plugin-path-glob
 
 - fold core_geoblock_database_url-download
 - fold core_geoblock_database_source-catalog
+
+## Archive FindSpecHost
+
+- deltaId: core_geoblock_database_source-catalog
+  verdict: fold
+  spec-id: core_geoblock_database_source-catalog
+  confidence: high
+  candidates:
+    - core_geoblock_database_source-catalog
+    - core_geoblock_database_url-download
+    - policy-guards-and-seed-fallback/specs/core_geoblock_database_url-download
+  why: Live leaf already owns shipped reserved rows and the defaultFile basename join; this MODIFIED restates that join to url-download Search so the two leaves do not disagree.
+
+- deltaId: core_geoblock_database_url-download
+  verdict: fold
+  spec-id: core_geoblock_database_url-download
+  confidence: high
+  candidates:
+    - core_geoblock_database_url-download
+    - core_geoblock_database_source-catalog
+    - core_geoblock_database_lookup
+    - core_geoblock_database_wrapper-reclaim
+    - core_geoblock_plugin_request-mode
+    - core_geoblock_database_bin-copy
+    - policy-guards-and-seed-fallback/specs/core_geoblock_database_url-download
+  why: Live leaf already owns pluginDir Search, exact seeds joins, env-unset log, and ASN wait-without-file; glob, URL+missing wait, and miss log levels adjust that same Resolve/startup contract.
