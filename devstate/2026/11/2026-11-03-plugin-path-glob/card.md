@@ -14,17 +14,17 @@ Not yet.
 **End users.** None.
 
 ## Merge readiness
-In progress. 0 items remain.
+Ready for review. 0 items remain.
 
 Priority: unknown — motivation not written
-Reviewed head: d53cec9
+Reviewed head: 090fef7
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 1/6 | Not ready |
-| CI proof | 1/6 | not seen |
+| Overall readiness | 6/6 | Ready |
+| CI proof | 6/6 | succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41710046270 |
 | Local tests proof | N/A | remote PR — CI proof covers this |
 | Review resolution | 6/6 | no open PR comments |
 
@@ -34,8 +34,8 @@ Owner decision: Required. See Explore Decisions.
 | Branch | 2026-11-03-plugin-path-glob pushed | `git` |
 | OpenSpec | plugin-path-glob | `openspec/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/96 | pr-host |
-| CI | not seen | caller omitted CI snapshot |
-| Local tests | none | handoff.yaml localTests |
+| CI | build 41710046270 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41710046270 | https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41710046270 |
+| Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | devstate/comments.md |
 
 ## Specs
@@ -51,7 +51,7 @@ None.
 None.
 
 ## How this fits together
-Ticket 2026-11-03-plugin-path-glob on branch 2026-11-03-plugin-path-glob targeting master; PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/96; CI not seen.
+Ticket 2026-11-03-plugin-path-glob on branch 2026-11-03-plugin-path-glob targeting master; PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/96; CI build 41710046270 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41710046270.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -72,7 +72,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 0 added / 2 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | d53cec99a594c772fb8a9d9c45a04340b8ba8a30 | Card must match the branch you measured |
+| Reviewed head | 090fef73f5480fe482550b70e0344b7793a1c42d | Card must match the branch you measured |
 
 ### Stored data model
 None.
