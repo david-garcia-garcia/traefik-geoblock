@@ -20,7 +20,7 @@ Hop collection is split: `collectHops` reads headers and `cleanIPAddress` with n
 Ready for review. 0 items remain.
 
 Priority: P2 — real operator pain selecting the client hop behind proxies, with CheckAll as a different-semantics workaround
-Reviewed head: e94f937
+Reviewed head: 12cfb35
 Owner decision: None.
 
 ## Review scores
@@ -79,7 +79,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 1 added / 0 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | e94f9376f590988f1fac6cbdb2d51dce841564bf | Card must match the branch you measured |
+| Reviewed head | 12cfb35233f91394bf4acd1968826ad55f059fb7 | Card must match the branch you measured |
 
 ### Stored data model
 None.
