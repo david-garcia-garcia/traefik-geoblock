@@ -101,29 +101,29 @@ Live contract: `openspec/specs/core_geoblock_database_url-download` (must change
 - Q: Who already owns the on-disk plugin-root path that `Search` reconstructs from `TRAEFIK_PLUGIN_GEOBLOCK_PATH`?
   Rank: bounded asked — existing Search contract (must be a directory); 2 production call sites enumerated (`BundledFile`, `Prepare` ban HTML), roots `pkg/**`; criterion 1 names find the plugin folder without a fixed path
   Decision: assumed — Traefik’s plugin Manager owns `GoPath()` (`os.MkdirTemp(sourcesRootPath, "gop-*")` then `src/<module>`). That value is not given to plugin code. Reconstruct it from the operator env (exact directory still works) or the asked default globs that match Manager layout and `./plugins-local/`. Do not re-derive it from a peer library or from Yaegi internals.
-  By: explore
+  By: propose
 
 - Q: When several glob matches all contain `seeds/<defaultFile>`, or two catalog rows pass different `defaultFile` names, which plugin root wins?
   Rank: additive asked — new disambiguation this change adds; criterion 1 names several matches keep the one containing `seeds/<defaultFile>`
   Decision: assumed — first sorted Glob match that contains `seeds/<that call’s defaultFile>`, else `<defaultFile>` at root, else not-found. Search stays per-call (ban HTML uses `geoblockban.html`). Two rows picking two roots is accepted; Traefik normally has one `gop-*`.
-  By: explore
+  By: propose
 
 - Q: BundledFile missing-seed while a dated file is already the resolved path: DEBUG or WARN?
   Rank: additive asked — log-level change on an existing miss path; criterion 3 names DEBUG or WARN
   Decision: assumed — DEBUG. The operator already has a working dated file; WARN implies action. `initialize`’s return remains the fatal signal when there is no URL.
-  By: explore
+  By: propose
 
 - Q: What operator contract is required for `banIfError: false` while the database is missing?
   Rank: additive asked — documentation of an existing branch; criterion 2 names decide and document; Out of scope: changing the `BanIfError` default
   Decision: assumed — default stays true (fail-closed until a handle exists). `false` is fail-open on lookup errors only: `ServeHTTP` does not ban for `lookupFailed` / empty country, then `decide()` still applies CIDR, private, country lists, and `defaultAllow`. Document that in README and url-download. Do not add a new bypass flag.
-  By: explore
+  By: propose
 
 - Q: Exact on-disk `gop-*` shape versus the example glob (`*` vs `gop-*`)?
   Rank: additive asked — README wording; criterion 4 names `gop-*` docs; Out of scope: inventing a layout other than the named glob, local fallback, and `gop-*` docs
   Decision: assumed — keep the asked default glob `*` (it matches Traefik `MkdirTemp(..., "gop-*")`). README names the folder `gop-*` under `/plugins-storage/sources` and the full `{gop-*}/src/github.com/david-garcia-garcia/traefik-geoblock` shape. Do not change the glob to `gop-*` only.
-  By: explore
+  By: propose
 
 - Q: Does `filepath.Glob` work under Traefik Yaegi for `/plugins-storage/sources/*/…`?
   Rank: additive asked — criterion 1 names filepath.Glob must be tested
   Decision: resolved — Yaegi v0.16.1 `interp` + `stdlib.Symbols` returned the `gop-12345` plugin dir for a middle-`*` pattern; native `filepath.Glob` matched the same layout; `pkg/dbutils` already calls `filepath.Glob` in production. Live Traefik container not run.
-  By: explore
+  By: propose
