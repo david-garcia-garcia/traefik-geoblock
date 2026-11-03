@@ -30,17 +30,17 @@ README names Traefik's `gop-*` unpack and documents `banIfError: false` as fail-
 **End users.** Until that download lands, lookups error and the default `banIfError: true` bans those requests.
 
 ## Merge readiness
-In progress. 0 items remain.
+Ready for review. 0 items remain.
 
 Priority: P2 — real operator, admin-user, or end-user pain, with a workaround or limited blast radius
-Reviewed head: c5c5b7a
+Reviewed head: 3de4849
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 1/6 | Not ready |
-| CI proof | 1/6 | not seen |
+| Overall readiness | 6/6 | Ready |
+| CI proof | 6/6 | succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41714220036 |
 | Local tests proof | N/A | remote PR — CI proof covers this |
 | Review resolution | 6/6 | no open PR comments |
 
@@ -50,7 +50,7 @@ Owner decision: Required. See Explore Decisions.
 | Branch | 2026-11-03-plugin-path-glob pushed | `git` |
 | OpenSpec | plugin-path-glob | `openspec/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/96 | pr-host |
-| CI | not seen | caller omitted CI snapshot |
+| CI | build 41714220036 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41714220036 | https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41714220036 |
 | Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | devstate/comments.md |
 
@@ -71,7 +71,7 @@ None.
 None.
 
 ## How this fits together
-Ticket 2026-11-03-plugin-path-glob on branch 2026-11-03-plugin-path-glob targeting master; PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/96; CI not seen.
+Ticket 2026-11-03-plugin-path-glob on branch 2026-11-03-plugin-path-glob targeting master; PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/96; CI build 41714220036 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41714220036.
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -100,7 +100,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 0 added / 4 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | c5c5b7a157e5cc2941a9da3002a88e2a24cff604 | Card must match the branch you measured |
+| Reviewed head | 3de48495e7a607c5dfffc875d26780914a23c61a | Card must match the branch you measured |
 
 ### Stored data model
 None.

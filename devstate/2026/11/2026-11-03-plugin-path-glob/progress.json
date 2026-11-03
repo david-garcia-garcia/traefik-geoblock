@@ -40,8 +40,8 @@
     },
     "pullrequest": {
       "work": true,
-      "card": false,
-      "at": null
+      "card": true,
+      "at": "2026-11-03T20:40:22.702Z"
     }
   }
 }
