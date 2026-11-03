@@ -74,7 +74,6 @@ func TestOpenMMDB_OpenIsHotSwap(t *testing.T) {
 
 func TestOpenMMDB_URLMissingDefaultFileStarts(t *testing.T) {
 	Reset()
-	t.Cleanup(Reset)
 	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "missing", http.StatusNotFound)

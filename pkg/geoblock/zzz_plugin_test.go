@@ -52,6 +52,17 @@ func holdCtx(tb testing.TB) context.Context {
 	return ctx
 }
 
+// leakUpdateDir is a keep-current directory the test does not RemoveAll.
+// Go 1.21 t.TempDir fails on Linux when a writer still creates files during cleanup.
+func leakUpdateDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "geoblock-upd-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func moduleRoot() string {
 	dir, err := os.Getwd()
 	if err != nil {

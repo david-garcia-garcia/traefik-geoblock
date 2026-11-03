@@ -101,7 +101,6 @@ func TestOpenBIN_AllowMissing(t *testing.T) {
 
 func TestOpenBIN_URLMissingDefaultFileStarts(t *testing.T) {
 	Reset()
-	t.Cleanup(Reset)
 	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "missing", http.StatusNotFound)
@@ -152,7 +151,6 @@ func TestOpenBIN_MissingDefaultFileNoURLFails(t *testing.T) {
 
 func TestOpenBIN_DatedWonBundledMissIsDebug(t *testing.T) {
 	Reset()
-	t.Cleanup(Reset)
 	src, err := os.ReadFile(testBIN)
 	if err != nil {
 		t.Fatal(err)
@@ -174,6 +172,7 @@ func TestOpenBIN_DatedWonBundledMissIsDebug(t *testing.T) {
 			DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
 		},
 	}, logger)
+	t.Cleanup(Reset)
 	if err != nil {
 		t.Fatalf("dated file should open: %v", err)
 	}

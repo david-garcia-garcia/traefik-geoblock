@@ -30,6 +30,7 @@ func pluginRootDir(t *testing.T) string {
 
 func TestNew(t *testing.T) {
 	t.Setenv(fileutils.PluginPathEnv, pluginRootDir(t))
+	t.Cleanup(dbwrappers.Reset)
 	t.Run("Disabled", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{Mode: ModeDisabled, IPHeaders: []string{"x-real-ip"}, IPHeaderStrategy: IPHeaderStrategyCheckAll}, pluginName)
 		if err != nil {
@@ -571,10 +572,11 @@ func TestNew(t *testing.T) {
 
 	t.Run("DefaultIP2LocationCatalog", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Mode:                 ModeEnrichAndBlock,
-			DisallowedStatusCode: http.StatusForbidden,
-			IPHeaders:            []string{"x-real-ip"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			Mode:                  ModeEnrichAndBlock,
+			DatabaseAutoUpdateDir: leakUpdateDir(t),
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 		}, pluginName)
 		if err != nil {
 			t.Errorf("expected no error with default catalog, but got: %v", err)
@@ -586,11 +588,12 @@ func TestNew(t *testing.T) {
 
 	t.Run("EmptyMapLeavesASNEmpty", func(t *testing.T) {
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Mode:                 ModeEnrichAndBlock,
-			DatabaseSources:      map[string]DatabaseSource{},
-			DisallowedStatusCode: http.StatusForbidden,
-			IPHeaders:            []string{"x-real-ip"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			Mode:                  ModeEnrichAndBlock,
+			DatabaseSources:       map[string]DatabaseSource{},
+			DatabaseAutoUpdateDir: leakUpdateDir(t),
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 		}, pluginName)
 		if err != nil {
 			t.Errorf("empty download map must not fail New, got: %v", err)
@@ -993,7 +996,6 @@ func TestNew(t *testing.T) {
 
 	t.Run("BIN_URL_MissingDefaultFile_Starts", func(t *testing.T) {
 		dbwrappers.Reset()
-		t.Cleanup(dbwrappers.Reset)
 		t.Setenv(fileutils.PluginPathEnv, t.TempDir())
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "missing", http.StatusNotFound)
@@ -1011,22 +1013,22 @@ func TestNew(t *testing.T) {
 					FieldsPreconfigured: dbwrappers.PresetIP2LocationLite,
 				},
 			},
-			DisallowedStatusCode: http.StatusForbidden,
-			IPHeaders:            []string{"x-real-ip"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			DatabaseAutoUpdateDir: leakUpdateDir(t),
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 		}, pluginName)
+		t.Cleanup(dbwrappers.Reset)
 		if err != nil {
 			t.Fatalf("BIN URL + missing defaultFile should start: %v", err)
 		}
 		if plugin == nil {
 			t.Fatal("expected plugin")
 		}
-		t.Cleanup(dbwrappers.Reset)
 	})
 
 	t.Run("MMDB_URL_MissingDefaultFile_Starts", func(t *testing.T) {
 		dbwrappers.Reset()
-		t.Cleanup(dbwrappers.Reset)
 		t.Setenv(fileutils.PluginPathEnv, t.TempDir())
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "missing", http.StatusNotFound)
@@ -1044,17 +1046,18 @@ func TestNew(t *testing.T) {
 					FieldsPreconfigured: dbwrappers.PresetMaxMindCountry,
 				},
 			},
-			DisallowedStatusCode: http.StatusForbidden,
-			IPHeaders:            []string{"x-real-ip"},
-			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+			DatabaseAutoUpdateDir: leakUpdateDir(t),
+			DisallowedStatusCode:  http.StatusForbidden,
+			IPHeaders:             []string{"x-real-ip"},
+			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 		}, pluginName)
+		t.Cleanup(dbwrappers.Reset)
 		if err != nil {
 			t.Fatalf("MMDB URL + missing defaultFile should start: %v", err)
 		}
 		if plugin == nil {
 			t.Fatal("expected plugin")
 		}
-		t.Cleanup(dbwrappers.Reset)
 	})
 
 	t.Run("MissingDefaultFile_NoURL_ShouldError", func(t *testing.T) {
@@ -1231,7 +1234,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create empty temp dir: %v", err)
 		}
-		defer os.RemoveAll(emptyDir)
+		t.Cleanup(func() { _ = os.RemoveAll(emptyDir) })
 
 		cfg := &Config{
 			Mode:                  ModeEnrichAndBlock,
@@ -1242,6 +1245,7 @@ func TestNew_AutoUpdate(t *testing.T) {
 		}
 
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, cfg, pluginName)
+		t.Cleanup(dbwrappers.Reset)
 		if err != nil {
 			t.Errorf("expected no error when falling back to default database, but got: %v", err)
 		}
