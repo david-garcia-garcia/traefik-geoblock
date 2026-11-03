@@ -41,7 +41,7 @@ Each enabled catalog row is one wrapper plus one source. Merge happens after Loo
 
 - Failed GET/unpack errors use `DownloadHint` only. Do not log the URL (tokens may be in the query).
 - `Stop` waits out an in-flight GET (`HTTPGetTimeout` is 30m). `HTTPGet` has no `context`.
-- `TRAEFIK_PLUGIN_GEOBLOCK_PATH` may be an exact plugin directory or a glob. Unset tries the default globs. Env glob with zero directory matches does not fall through. File miss under a chosen directory is DEBUG. Exclusive glob/directory miss is WARN. BundledFile miss while a dated file already won is DEBUG. Unset with no default match WARNs that the env must be set. Do not document a second plugin-directory calculation.
+- `TRAEFIK_PLUGIN_GEOBLOCK_PATH` may be an exact plugin directory or a glob. Unset tries the default globs. Env glob with zero directory matches does not fall through. File miss under a chosen directory (only remaining Resolve path) is WARN. Exclusive glob/directory miss is WARN. BundledFile miss while a dated file already won is DEBUG. Unset with no default match WARNs that the env must be set. Do not document a second plugin-directory calculation.
 - Disable `default_ip2location` when another country row should win or be the only source.
 
 ## Pattern snippet

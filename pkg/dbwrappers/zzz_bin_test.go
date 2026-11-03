@@ -183,6 +183,9 @@ func TestOpenBIN_DatedWonBundledMissIsDebug(t *testing.T) {
 	if !strings.Contains(out, "bundled file not found") {
 		t.Fatalf("bundled miss should DEBUG: %s", out)
 	}
+	if strings.Contains(strings.ToLower(out), `level=warn`) && strings.Contains(out, "bundled file not found") {
+		t.Fatalf("dated-won bundled miss must not WARN: %s", out)
+	}
 	if strings.Contains(strings.ToLower(out), `level=error`) && strings.Contains(out, "bundled file not found") {
 		t.Fatalf("bundled miss must not Error: %s", out)
 	}

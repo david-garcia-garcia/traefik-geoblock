@@ -388,17 +388,20 @@ func TestFileUtils_Search(t *testing.T) {
 		}
 	})
 
-	t.Run("file miss under chosen directory is debug", func(t *testing.T) {
+	t.Run("file miss under chosen directory is warn", func(t *testing.T) {
 		var buf bytes.Buffer
-		debugLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		warnLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		t.Setenv(PluginPathEnv, t.TempDir())
-		_, err := fu.Search("", "missing.bin", debugLogger)
+		_, err := fu.Search("", "missing.bin", warnLogger)
 		if err == nil {
 			t.Fatal("expected file miss")
 		}
 		out := buf.String()
 		if !strings.Contains(out, "bundled file not found") {
-			t.Errorf("file miss should DEBUG: %s", out)
+			t.Errorf("file miss should WARN: %s", out)
+		}
+		if !strings.Contains(strings.ToLower(out), "level=warn") {
+			t.Errorf("only-path file miss should WARN: %s", out)
 		}
 		if strings.Contains(strings.ToLower(out), "level=error") {
 			t.Errorf("Search must not Error: %s", out)

@@ -82,7 +82,7 @@ func (fu *FileUtils) Copy(src string, dst string, overwrite bool) error {
 	return nil
 }
 
-// PluginPathEnv is the plugin-root directory (local clone or registry unpack).
+// PluginPathEnv is an exact plugin directory or a glob (local clone or registry unpack).
 const PluginPathEnv = "TRAEFIK_PLUGIN_GEOBLOCK_PATH"
 
 const (
@@ -184,7 +184,7 @@ func (fu *FileUtils) bundledFileUnder(pluginDir, defaultFile string, logger *slo
 	if fu.ExistsAndIsFile(rootPath) {
 		return rootPath, nil
 	}
-	logger.Debug("bundled file not found; "+PluginPathEnv+" is probably not the plugin root",
+	logger.Warn("bundled file not found; "+PluginPathEnv+" is probably not the plugin root",
 		"tried", seedsPath, "also", rootPath)
 	return "", fmt.Errorf("file not found: %s (tried %s and %s)", defaultFile, seedsPath, rootPath)
 }

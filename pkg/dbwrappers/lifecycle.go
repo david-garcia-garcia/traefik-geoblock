@@ -2,6 +2,7 @@ package dbwrappers
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -141,7 +142,9 @@ func (l *lifecycle) chooseStartupTarget(resolved string) openTarget {
 		return inPlace
 	}
 	if l.seedFirst && strings.TrimSpace(l.source.DefaultFileName) != "" {
-		if seed, serr := dbsource.BundledFile(l.source, l.logger); serr == nil && seed != "" {
+		// Peek without Search miss logs: dated already won, so a bundled miss is DEBUG only.
+		quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+		if seed, serr := dbsource.BundledFile(l.source, quiet); serr == nil && seed != "" {
 			// Serve the seed so New returns; the keep-current loop promotes the dated file.
 			return openTarget{openPath: seed, sourcePath: seed, reason: reasonSeed}
 		}
