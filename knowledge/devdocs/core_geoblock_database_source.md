@@ -22,6 +22,14 @@ _Avoid_: inventing a `vendor` key; combining with `fields`
 Keep-current loop for one source (ticker: promote Latest on disk, then GET if stale).
 _Avoid_: slot
 
+**Plugin directory**:
+The on-disk Traefik plugin tree Search joins (`seeds/<defaultFile>` then `<defaultFile>`). Located from `TRAEFIK_PLUGIN_GEOBLOCK_PATH` as an exact directory, an env glob, or the unset default globs.
+_Avoid_: Plugin root (the Yaegi entrypoint package); `GoPath()`; walking for a basename
+
+**Search**:
+The `fileutils` locator for a bundled file under the plugin directory.
+_Avoid_: directory walk; a second plugin-directory calculation
+
 ## Overview
 
 Each enabled catalog row is one wrapper plus one source. Merge happens after Lookup (`core_geoblock_database_lookup`). `tools/dbdownload` is the seed CLI, not this package.
@@ -55,5 +63,6 @@ u, err := dbsource.Start(cfg, logger, onUpdate)
 ## Key files
 
 - `pkg/dbsource` — Config, Resolve, Update, unpack, Updater
+- `pkg/fileutils/fileutils.go` — `Search`, `PluginPathEnv`
 - `pkg/geoblock/config.go` — `databaseSources`, `insertReservedCatalog`, `catalogSource`
 - `pkg/dbutils` — HTTP GET, `DatedKeyGlob`, `DownloadHint`
