@@ -25,7 +25,7 @@ func (fu *FileUtils) ExistsPath(filename string) bool {
 // ExistsAndIsFile checks if a file exists and is not a directory
 func (fu *FileUtils) ExistsAndIsFile(filename string) bool {
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return !info.IsDir()
@@ -34,7 +34,7 @@ func (fu *FileUtils) ExistsAndIsFile(filename string) bool {
 // ExistsAndIsDir checks if a file exists and is a directory
 func (fu *FileUtils) ExistsAndIsDir(filename string) bool {
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return info.IsDir()
@@ -85,9 +85,19 @@ func (fu *FileUtils) Copy(src string, dst string, overwrite bool) error {
 // PluginPathEnv is the plugin-root directory (local clone or registry unpack).
 const PluginPathEnv = "TRAEFIK_PLUGIN_GEOBLOCK_PATH"
 
+const (
+	// defaultCatalogPluginGlob is Traefik’s catalog unpack: sources/gop-*/src/<module>.
+	defaultCatalogPluginGlob = "/plugins-storage/sources/*/src/github.com/david-garcia-garcia/traefik-geoblock"
+	// defaultLocalPluginDir is Traefik’s local plugin GOPATH module directory.
+	defaultLocalPluginDir = "/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock"
+	// bundledSeedsDir is the committed seed folder under the plugin directory.
+	bundledSeedsDir = "seeds"
+)
+
 // Search returns an existing file path. It does not walk a directory tree.
 // If basePathOrFile is an existing file, that path is returned.
-// Otherwise it joins PluginPathEnv with seeds/<defaultFile>, then <defaultFile>.
+// Otherwise it locates the plugin directory (exact env path, env glob, or unset
+// defaults) and joins seeds/<defaultFile>, then <defaultFile>.
 func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *slog.Logger) (string, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -101,30 +111,92 @@ func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *s
 		return "", fmt.Errorf("fileutils: defaultFile must be provided when performing a search")
 	}
 
-	envPath := os.Getenv(PluginPathEnv)
-	// Env unset: operator must point at the plugin root.
-	if envPath == "" {
-		logger.Error(PluginPathEnv + " must be set to the plugin root")
-		return "", fmt.Errorf("%s must be set to the plugin root", PluginPathEnv)
+	pluginDirs, envSet := fu.pluginDirCandidates()
+	if len(pluginDirs) == 0 {
+		return "", fu.noPluginDir(envSet, logger)
 	}
-	// Env set but not a directory: wrong plugin-root value.
-	if !fu.ExistsAndIsDir(envPath) {
-		logger.Error(PluginPathEnv+" is not a directory; it is probably not the plugin root", "path", envPath)
-		return "", fmt.Errorf("%s is not a directory: %s", PluginPathEnv, envPath)
+	pluginDir := fu.firstPluginDirWithDefaultFile(pluginDirs, defaultFile)
+	if pluginDir != "" {
+		return fu.bundledFileUnder(pluginDir, defaultFile, logger)
 	}
+	found, err := fu.bundledFileUnder(pluginDirs[0], defaultFile, logger)
+	if err != nil && !envSet {
+		logger.Warn(PluginPathEnv + " must be set to the plugin root")
+	}
+	return found, err
+}
 
-	// Exact joins only: seeds/<name>, then <name> at the plugin root.
-	seedsPath := filepath.Join(envPath, "seeds", defaultFile)
-	rootPath := filepath.Join(envPath, defaultFile)
+// pluginDirCandidates is the plugin directories Search may join. envSet is true
+// when PluginPathEnv is set: those results are exclusive and must not add defaults.
+func (fu *FileUtils) pluginDirCandidates() (pluginDirs []string, envSet bool) {
+	envPath := os.Getenv(PluginPathEnv)
+	if envPath != "" {
+		if fu.ExistsAndIsDir(envPath) {
+			return []string{envPath}, true
+		}
+		return fu.globPluginDirs(envPath), true
+	}
+	pluginDirs = fu.globPluginDirs(defaultCatalogPluginGlob)
+	if fu.ExistsAndIsDir(defaultLocalPluginDir) {
+		pluginDirs = append(pluginDirs, defaultLocalPluginDir)
+	}
+	return pluginDirs, false
+}
+
+// globPluginDirs is the directory matches of pattern in lexicographic order.
+func (fu *FileUtils) globPluginDirs(pattern string) []string {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil
+	}
+	var pluginDirs []string
+	for _, match := range matches {
+		if fu.ExistsAndIsDir(match) {
+			pluginDirs = append(pluginDirs, match)
+		}
+	}
+	return pluginDirs
+}
+
+// firstPluginDirWithDefaultFile is the first directory that has seeds/<defaultFile>,
+// else the first that has <defaultFile> at that directory.
+func (fu *FileUtils) firstPluginDirWithDefaultFile(pluginDirs []string, defaultFile string) string {
+	for _, pluginDir := range pluginDirs {
+		if fu.ExistsAndIsFile(filepath.Join(pluginDir, bundledSeedsDir, defaultFile)) {
+			return pluginDir
+		}
+	}
+	for _, pluginDir := range pluginDirs {
+		if fu.ExistsAndIsFile(filepath.Join(pluginDir, defaultFile)) {
+			return pluginDir
+		}
+	}
+	return ""
+}
+
+// bundledFileUnder is seeds/<defaultFile> then <defaultFile> under pluginDir.
+func (fu *FileUtils) bundledFileUnder(pluginDir, defaultFile string, logger *slog.Logger) (string, error) {
+	seedsPath := filepath.Join(pluginDir, bundledSeedsDir, defaultFile)
+	rootPath := filepath.Join(pluginDir, defaultFile)
 	if fu.ExistsAndIsFile(seedsPath) {
 		return seedsPath, nil
 	}
 	if fu.ExistsAndIsFile(rootPath) {
 		return rootPath, nil
 	}
-	logger.Error("bundled file not found; "+PluginPathEnv+" is probably not the plugin root",
+	logger.Debug("bundled file not found; "+PluginPathEnv+" is probably not the plugin root",
 		"tried", seedsPath, "also", rootPath)
 	return "", fmt.Errorf("file not found: %s (tried %s and %s)", defaultFile, seedsPath, rootPath)
+}
+
+// noPluginDir logs a miss when Search found no plugin directory.
+func (fu *FileUtils) noPluginDir(envSet bool, logger *slog.Logger) error {
+	if envSet {
+		logger.Warn(PluginPathEnv+" matched no plugin directory", "path", os.Getenv(PluginPathEnv))
+		return fmt.Errorf("%s matched no plugin directory: %s", PluginPathEnv, os.Getenv(PluginPathEnv))
+	}
+	logger.Warn(PluginPathEnv + " must be set to the plugin root")
+	return fmt.Errorf("%s must be set to the plugin root", PluginPathEnv)
 }
 
 // Default is the shared FileUtils used by package-level helpers.

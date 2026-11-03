@@ -215,7 +215,7 @@ RUN git clone https://github.com/david-garcia-garcia/traefik-geoblock \
     --branch v1.2.0 --single-branch
 ```
 
-Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to that plugin root (the local clone, or the catalog unpack such as `/plugins-storage/sources/github.com/david-garcia-garcia/traefik-geoblock`). Traefik's process working directory is not the plugin tree. The plugin opens `{that dir}/seeds/<filename>` or `{that dir}/<filename>` — it does not walk the tree. `geoblockban.html` is at the plugin root, not under `seeds/`. If the env is unset, logs say it must be the plugin root. If it is set but is not a directory, or those exact files are missing, logs say the env is probably not the plugin root. Without this variable, empty seed paths fail unless a dated file is already on an auto-update volume.
+Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to that plugin root. An exact directory still wins. The value may also be a glob. Traefik unpacks catalog plugins under `/plugins-storage/sources/gop-<random>/src/github.com/david-garcia-garcia/traefik-geoblock` (`{dir}/sources/gop-<random>/src/github.com/david-garcia-garcia/traefik-geoblock`). If the env is unset, the plugin tries `/plugins-storage/sources/*/src/github.com/david-garcia-garcia/traefik-geoblock` then `/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock`. A set env (glob or exact) does not fall through to those defaults. Traefik's process working directory is not the plugin tree. The plugin opens `{that dir}/seeds/<filename>` or `{that dir}/<filename>` — it does not walk the tree. `geoblockban.html` is at the plugin root, not under `seeds/`. If the env is unset and those defaults miss, logs say it must be the plugin root. If a set glob matches no directory, logs warn. If the chosen directory is missing those exact files, logs say the env is probably not the plugin root.
 
 ```bash
 # Docker Compose
@@ -343,7 +343,7 @@ http:
           mode: enrichandblock
           defaultAllow: false
           allowPrivate: true             # default is false
-          banIfError: true
+          banIfError: true              # default true (fail-closed until a handle exists)
           disallowedStatusCode: 403
 
           allowedCountries:
@@ -472,7 +472,7 @@ excludedPathsRegex: "^[^/]*/(health|ready|live)$"
 | `ipHeaders` | Where to read client IPs (`remoteAddress` is the direct connection) |
 | `ipHeaderStrategy` | Which hop to evaluate when several IPs are present |
 | `ignoreVerbs` / path regex / `bypassHeaders` | Skip blocking; enrichment still runs |
-| `banIfError` / `disallowedStatusCode` / `banHtmlFilePath` | Lookup failure, missing country header, or no client IP |
+| `banIfError` / `disallowedStatusCode` / `banHtmlFilePath` | Lookup failure, missing country header, or no client IP. Default `banIfError: true`. `false` is fail-open on lookup only: CIDR, private, country lists, and `defaultAllow` still apply. |
 | `databaseSources` / `databaseAutoUpdateDir` | Local files and optional download. An unreadable dated file falls back to the seed and warns. |
 | `logLevel` / `logFormat` | Plugin logs on Traefik stdout (`logFormat` default `text`) |
 

@@ -1,8 +1,13 @@
 package dbwrappers
 
 import (
+	"bytes"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
@@ -64,5 +69,56 @@ func TestOpenMMDB_OpenIsHotSwap(t *testing.T) {
 	}
 	if err := w.Lookup("8.8.8.8", &rec); err != nil || rec.CountryCode != "US" {
 		t.Fatalf("after reopen: %+v %v", rec, err)
+	}
+}
+
+func TestOpenMMDB_URLMissingDefaultFileStarts(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "missing", http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	w, err := OpenMMDB(holdCtx(t), MMDBConfig{
+		Dir:             t.TempDir(),
+		AllowMissing:    true,
+		DefaultFileName: "GeoLite2-Country.mmdb",
+		Source: dbsource.Config{
+			URL:             srv.URL + "/db.mmdb",
+			Key:             "geolite",
+			DatabaseType:    dbsource.TypeMMDB,
+			Archive:         dbsource.ArchiveNone,
+			DefaultFileName: "GeoLite2-Country.mmdb",
+		},
+	}, logger)
+	if err != nil {
+		t.Fatalf("URL + missing defaultFile: %v", err)
+	}
+	if !strings.Contains(buf.String(), "no database file yet") {
+		t.Fatalf("waiting should WARN: %s", buf.String())
+	}
+	if err := w.Lookup("8.8.8.8", &struct{}{}); err == nil ||
+		!strings.Contains(err.Error(), "MMDB is not open") {
+		t.Fatalf("nil handle: %v", err)
+	}
+}
+
+func TestOpenMMDB_MissingDefaultFileNoURLFails(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+	_, err := OpenMMDB(holdCtx(t), MMDBConfig{
+		DefaultFileName: "GeoLite2-Country.mmdb",
+		Source: dbsource.Config{
+			Key:             "geolite",
+			DatabaseType:    dbsource.TypeMMDB,
+			DefaultFileName: "GeoLite2-Country.mmdb",
+		},
+	}, testLogger())
+	if err == nil {
+		t.Fatal("missing defaultFile with no URL must fail")
 	}
 }

@@ -1,6 +1,7 @@
 package fileutils
 
 import (
+	"bytes"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -259,10 +260,21 @@ func TestFileUtils_Search(t *testing.T) {
 	})
 
 	t.Run("empty base path returns error without env var", func(t *testing.T) {
+		var buf bytes.Buffer
+		warnLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		t.Setenv(PluginPathEnv, "")
-		_, err := fu.Search("", "default.txt", logger)
+		_, err := fu.Search("", "default.txt", warnLogger)
 		if err == nil {
 			t.Error("expected error when no base path and no env var")
+		}
+		if !strings.Contains(err.Error(), "must be set to the plugin root") {
+			t.Errorf("got %v", err)
+		}
+		if !strings.Contains(buf.String(), "must be set to the plugin root") {
+			t.Errorf("unset miss should WARN: %s", buf.String())
+		}
+		if strings.Contains(strings.ToLower(buf.String()), "level=error") {
+			t.Errorf("Search must not Error: %s", buf.String())
 		}
 	})
 
@@ -271,13 +283,125 @@ func TestFileUtils_Search(t *testing.T) {
 		if err := os.WriteFile(envFile, []byte("x"), 0600); err != nil {
 			t.Fatal(err)
 		}
+		var buf bytes.Buffer
+		warnLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		t.Setenv(PluginPathEnv, envFile)
-		_, err := fu.Search("", "default.txt", logger)
+		_, err := fu.Search("", "default.txt", warnLogger)
 		if err == nil {
 			t.Fatal("expected error when plugin-root env is a file")
 		}
-		if !strings.Contains(err.Error(), "is not a directory") {
+		if !strings.Contains(err.Error(), "matched no plugin directory") {
 			t.Errorf("got %v", err)
+		}
+		if !strings.Contains(buf.String(), "matched no plugin directory") {
+			t.Errorf("exclusive miss should WARN: %s", buf.String())
+		}
+	})
+
+	t.Run("env glob locates gop plugin directory", func(t *testing.T) {
+		layout := t.TempDir()
+		pluginDir := filepath.Join(layout, "gop-12345", "src", "github.com", "david-garcia-garcia", "traefik-geoblock")
+		seedsDir := filepath.Join(pluginDir, "seeds")
+		if err := os.MkdirAll(seedsDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		targetFile := filepath.Join(seedsDir, "target.bin")
+		if err := os.WriteFile(targetFile, []byte("test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(PluginPathEnv, filepath.Join(layout, "*", "src", "github.com", "david-garcia-garcia", "traefik-geoblock"))
+		result, err := fu.Search("", "target.bin", logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != targetFile {
+			t.Errorf("expected %q, got %q", targetFile, result)
+		}
+	})
+
+	t.Run("exact directory skips glob", func(t *testing.T) {
+		base := t.TempDir()
+		exactDir := filepath.Join(base, "plugin")
+		otherDir := filepath.Join(base, "plugin-other")
+		if err := os.MkdirAll(filepath.Join(exactDir, "seeds"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(otherDir, "seeds"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		exactFile := filepath.Join(exactDir, "seeds", "target.bin")
+		otherFile := filepath.Join(otherDir, "seeds", "target.bin")
+		if err := os.WriteFile(exactFile, []byte("exact"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(otherFile, []byte("other"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(PluginPathEnv, exactDir)
+		result, err := fu.Search("", "target.bin", logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != exactFile {
+			t.Errorf("expected exact directory %q, got %q", exactFile, result)
+		}
+	})
+
+	t.Run("env glob with zero matches does not fall through", func(t *testing.T) {
+		hidden := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(hidden, "seeds"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(hidden, "seeds", "target.bin"), []byte("hidden"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(PluginPathEnv, filepath.Join(t.TempDir(), "no-such", "*", "plugin"))
+		if _, err := fu.Search("", "target.bin", logger); err == nil {
+			t.Fatal("exclusive glob miss must not find another directory")
+		}
+	})
+
+	t.Run("several glob matches prefer seeds defaultFile", func(t *testing.T) {
+		layout := t.TempDir()
+		dirA := filepath.Join(layout, "a", "src", "github.com", "david-garcia-garcia", "traefik-geoblock")
+		dirB := filepath.Join(layout, "b", "src", "github.com", "david-garcia-garcia", "traefik-geoblock")
+		if err := os.MkdirAll(dirA, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(dirB, "seeds"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dirA, "target.bin"), []byte("root-a"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		want := filepath.Join(dirB, "seeds", "target.bin")
+		if err := os.WriteFile(want, []byte("seeds-b"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(PluginPathEnv, filepath.Join(layout, "*", "src", "github.com", "david-garcia-garcia", "traefik-geoblock"))
+		result, err := fu.Search("", "target.bin", logger)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != want {
+			t.Errorf("expected seeded directory %q, got %q", want, result)
+		}
+	})
+
+	t.Run("file miss under chosen directory is debug", func(t *testing.T) {
+		var buf bytes.Buffer
+		debugLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		t.Setenv(PluginPathEnv, t.TempDir())
+		_, err := fu.Search("", "missing.bin", debugLogger)
+		if err == nil {
+			t.Fatal("expected file miss")
+		}
+		out := buf.String()
+		if !strings.Contains(out, "bundled file not found") {
+			t.Errorf("file miss should DEBUG: %s", out)
+		}
+		if strings.Contains(strings.ToLower(out), "level=error") {
+			t.Errorf("Search must not Error: %s", out)
 		}
 	})
 

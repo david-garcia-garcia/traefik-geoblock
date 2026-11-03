@@ -8,7 +8,7 @@ import (
 )
 
 // Resolve returns the file to open: dated update, then catalog Path (existing file),
-// then the bundled default at {TRAEFIK_PLUGIN_GEOBLOCK_PATH}/seeds/<name> or {env}/<name>.
+// then the bundled default Search locates under the plugin directory.
 func Resolve(cfg Config, logger *slog.Logger) (string, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -30,7 +30,7 @@ func Resolve(cfg Config, logger *slog.Logger) (string, error) {
 	return BundledFile(cfg, logger)
 }
 
-// BundledFile is the plugin-root defaultFile ({env}/seeds/<name> or {env}/<name>), or empty.
+// BundledFile is the plugin-directory defaultFile (seeds/<name> then <name>), or empty.
 func BundledFile(cfg Config, logger *slog.Logger) (string, error) {
 	if logger == nil {
 		logger = slog.Default()

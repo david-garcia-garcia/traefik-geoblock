@@ -91,13 +91,14 @@ type lifecycle struct {
 func (l *lifecycle) initialize() error {
 	resolved, err := dbsource.Resolve(l.source, l.logger)
 	if err != nil && resolved == "" && !l.allowMissing {
+		l.logger.Warn("failed to resolve database path", "error", err)
 		return fmt.Errorf("failed to resolve database path: %w", err)
 	}
 	if resolved == "" {
 		if !l.allowMissing {
 			return fmt.Errorf("database file not found")
 		}
-		l.logger.Info("no database file yet; waiting for auto-update")
+		l.logger.Warn("no database file yet; waiting for auto-update")
 		return nil
 	}
 	version, err := l.publish(l.chooseStartupTarget(resolved))
@@ -139,11 +140,12 @@ func (l *lifecycle) chooseStartupTarget(resolved string) openTarget {
 		// Operator seed path or bundled default: no writer replaces it, open it in place.
 		return inPlace
 	}
-	if l.seedFirst {
+	if l.seedFirst && strings.TrimSpace(l.source.DefaultFileName) != "" {
 		if seed, serr := dbsource.BundledFile(l.source, l.logger); serr == nil && seed != "" {
 			// Serve the seed so New returns; the keep-current loop promotes the dated file.
 			return openTarget{openPath: seed, sourcePath: seed, reason: reasonSeed}
 		}
+		l.logger.Debug("bundled file not found")
 	}
 	if !l.servesFromFile {
 		return inPlace

@@ -991,34 +991,89 @@ func TestNew(t *testing.T) {
 		}
 	})
 
-	// NEW: Test error when no filepath and no environment variable are provided
-	t.Run("NoFilePath_NoEnvironmentVariable_ShouldError", func(t *testing.T) {
-		// Cleanup any existing factories to avoid conflicts
+	t.Run("BIN_URL_MissingDefaultFile_Starts", func(t *testing.T) {
 		dbwrappers.Reset()
-		defer dbwrappers.Reset()
-
-		// Ensure no environment variable is set
-		originalEnv := os.Getenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
-		os.Unsetenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH")
-		defer func() {
-			if originalEnv != "" {
-				os.Setenv("TRAEFIK_PLUGIN_GEOBLOCK_PATH", originalEnv)
-			}
-		}()
-
+		t.Cleanup(dbwrappers.Reset)
+		t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "missing", http.StatusNotFound)
+		}))
+		t.Cleanup(srv.Close)
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                  ModeEnrichAndBlock,
 			DatabaseAutoUpdateDir: t.TempDir(),
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
+				"lite": {
+					URL:                 srv.URL + "/db.BIN",
+					DatabaseType:        dbsource.TypeBIN,
+					Archive:             dbsource.ArchiveNone,
+					DefaultFile:         DefaultIP2LocationGeoFile,
+					FieldsPreconfigured: dbwrappers.PresetIP2LocationLite,
+				},
+			},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("BIN URL + missing defaultFile should start: %v", err)
+		}
+		if plugin == nil {
+			t.Fatal("expected plugin")
+		}
+	})
+
+	t.Run("MMDB_URL_MissingDefaultFile_Starts", func(t *testing.T) {
+		dbwrappers.Reset()
+		t.Cleanup(dbwrappers.Reset)
+		t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "missing", http.StatusNotFound)
+		}))
+		t.Cleanup(srv.Close)
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                  ModeEnrichAndBlock,
+			DatabaseAutoUpdateDir: t.TempDir(),
+			DatabaseSources: map[string]DatabaseSource{
+				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
+				"geolite": {
+					URL:                 srv.URL + "/db.mmdb",
+					DatabaseType:        dbsource.TypeMMDB,
+					Archive:             dbsource.ArchiveNone,
+					DefaultFile:         "GeoLite2-Country.mmdb",
+					FieldsPreconfigured: dbwrappers.PresetMaxMindCountry,
+				},
+			},
+			DisallowedStatusCode: http.StatusForbidden,
+			IPHeaders:            []string{"x-real-ip"},
+			IPHeaderStrategy:     IPHeaderStrategyCheckAll,
+		}, pluginName)
+		if err != nil {
+			t.Fatalf("MMDB URL + missing defaultFile should start: %v", err)
+		}
+		if plugin == nil {
+			t.Fatal("expected plugin")
+		}
+	})
+
+	t.Run("MissingDefaultFile_NoURL_ShouldError", func(t *testing.T) {
+		dbwrappers.Reset()
+		t.Cleanup(dbwrappers.Reset)
+		t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
+			Mode:                  ModeEnrichAndBlock,
+			DatabaseAutoUpdateDir: t.TempDir(),
+			DatabaseSources:       seedCatalog(""),
 			DisallowedStatusCode:  http.StatusForbidden,
 			IPHeaders:             []string{"x-real-ip"},
 			IPHeaderStrategy:      IPHeaderStrategyCheckAll,
 		}, pluginName)
-
 		if err == nil {
-			t.Error("expected error when TRAEFIK_PLUGIN_GEOBLOCK_PATH is unset and no catalog path")
+			t.Error("expected error when defaultFile is missing and the row has no URL")
 		}
 		if plugin != nil {
-			t.Error("expected plugin to be nil without plugin-root env or catalog path")
+			t.Error("expected plugin to be nil")
 		}
 	})
 }

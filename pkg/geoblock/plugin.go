@@ -269,7 +269,7 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, ownerName string, log
 			Dir:             cfg.DatabaseAutoUpdateDir,
 			Source:          src,
 			DefaultFileName: src.DefaultFileName,
-			AllowMissing:    src.Path == "" && src.DefaultFileName == "",
+			AllowMissing:    catalogAllowsMissing(src),
 			MinAge:          dbwrappers.DefaultBINMinAge,
 			OwnerPlugin:     ownerName,
 			OwnerLevel:      cfg.LogLevel,
@@ -287,6 +287,7 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, ownerName string, log
 			Dir:             cfg.DatabaseAutoUpdateDir,
 			Source:          src,
 			DefaultFileName: src.DefaultFileName,
+			AllowMissing:    catalogAllowsMissing(src),
 			MinAge:          dbsource.DefaultMinAge,
 		}, logger)
 		if err != nil {
@@ -299,6 +300,12 @@ func openCatalogRow(ctx context.Context, cfg *Config, key, ownerName string, log
 	default:
 		return nil, fmt.Errorf("unknown databaseType %q", entry.DatabaseType)
 	}
+}
+
+// catalogAllowsMissing is true when the row can start with no on-disk file: a URL
+// to wait for, or empty path and empty defaultFile (ASN wait-without-file).
+func catalogAllowsMissing(src dbsource.Config) bool {
+	return src.URL != "" || (src.Path == "" && src.DefaultFileName == "")
 }
 
 // setDecisionLogHeader writes logStatusDetailHeader as "{status}:{reason}" when that header is configured.

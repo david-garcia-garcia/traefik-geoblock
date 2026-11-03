@@ -25,6 +25,7 @@ import (
 type MMDBConfig struct {
 	Dir             string
 	Source          dbsource.Config
+	AllowMissing    bool
 	DefaultFileName string
 	MinAge          time.Duration
 }
@@ -82,7 +83,7 @@ func newMMDB(cfg MMDBConfig, logger *slog.Logger) (*MMDB, error) {
 		// A bundled MMDB defaultFile may be a dummy fixture, so it does not go live
 		// ahead of a dated catalog file.
 		seedFirst:    false,
-		allowMissing: false,
+		allowMissing: cfg.AllowMissing,
 		source:       mmdbSourceCfg(cfg),
 		logger:       logger.With("key", cfg.Source.Key),
 	}

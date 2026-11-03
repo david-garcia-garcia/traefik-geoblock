@@ -62,7 +62,7 @@ type Config struct {
 	Mode         string `json:"mode,omitempty" mapstructure:"mode"`
 	DefaultAllow bool   // Default behavior when IP matches no rules
 	AllowPrivate bool   // Allow requests from private/internal networks
-	BanIfError   bool   // Ban requests if IP lookup fails
+	BanIfError   bool   // Ban on lookup failure / empty country. Default true. false is fail-open on lookup only.
 
 	// DatabaseSources is the catalog of lookup sources (path, URL, databaseType, defaultFile, fields, enabled).
 	DatabaseSources map[string]DatabaseSource `json:"databaseSources,omitempty" mapstructure:"databaseSources"`
