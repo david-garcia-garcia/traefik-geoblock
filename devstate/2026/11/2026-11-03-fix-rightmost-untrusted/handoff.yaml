@@ -12,7 +12,7 @@ localTests: none
 requirement: requirement.md
 comments: none
 explore: explore.md
-change: none
+change: fix-rightmost-untrusted
 pr:
   id: 97
   url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/97

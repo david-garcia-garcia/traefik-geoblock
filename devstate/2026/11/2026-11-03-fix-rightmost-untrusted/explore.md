@@ -92,8 +92,8 @@ Rejected:
 
 - Q: Does the maintainer want an OpenSpec spec for IP header strategies?
   Rank: additive incidental — new catalog folder this change would create; Unknowns on requirement.md, no In-scope/acceptance line names a spec.
-  Decision: assumed — yes: propose `core_geoblock_ip-header-strategy` with R1–R4 scenarios. New public config (`RightmostUntrusted`, `trustedProxies`, alternative-header rule) is a live promise. FindSpecHost at propose.
-  By: explore
+  Decision: assumed — yes: propose `core_geoblock_plugin_ip-header-strategy` with R1–R4 scenarios. FindSpecHost: new, high; candidates `core_geoblock_plugin_request-mode`, `std_go_iplookup_family-isolated`, `core_geoblock_observability_decision-header`, illegal 3-part `core_geoblock_ip-header-strategy`. Family `core_geoblock_plugin` already exists; this is a large new capability (new strategy, `trustedProxies`, alternative-header rule), not a 1–3 requirement fold. Neighbors keep empty-hop/`banIfError` and `Contains`; no second delta. Change kebab is not the 4th part.
+  By: propose
 
 - Q: Which real proxies emit `X-Forwarded-For` as separate HTTP field lines?
   Rank: additive incidental — README wording only; Unknowns say the R2 fix does not depend on the answer.
