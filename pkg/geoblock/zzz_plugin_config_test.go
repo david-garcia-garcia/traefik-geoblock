@@ -995,14 +995,12 @@ func TestNew(t *testing.T) {
 		dbwrappers.Reset()
 		t.Cleanup(dbwrappers.Reset)
 		t.Setenv(fileutils.PluginPathEnv, t.TempDir())
-		updateDir := t.TempDir()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "missing", http.StatusNotFound)
 		}))
 		t.Cleanup(srv.Close)
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Mode:                  ModeEnrichAndBlock,
-			DatabaseAutoUpdateDir: updateDir,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
 				"lite": {
@@ -1030,14 +1028,12 @@ func TestNew(t *testing.T) {
 		dbwrappers.Reset()
 		t.Cleanup(dbwrappers.Reset)
 		t.Setenv(fileutils.PluginPathEnv, t.TempDir())
-		updateDir := t.TempDir()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "missing", http.StatusNotFound)
 		}))
 		t.Cleanup(srv.Close)
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
-			Mode:                  ModeEnrichAndBlock,
-			DatabaseAutoUpdateDir: updateDir,
+			Mode: ModeEnrichAndBlock,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
 				"geolite": {
