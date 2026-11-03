@@ -249,6 +249,15 @@ func TestRightmostUntrusted_BareIPv6MatchesOnlyThatAddress(t *testing.T) {
 	}
 }
 
+func TestRightmostUntrusted_UnparsableHopIsEvaluated(t *testing.T) {
+	plugin := newRightmostPlugin(t, []string{"x-forwarded-for"}, []string{testTrustedCIDR})
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("X-Forwarded-For", "not-an-ip, 10.10.60.5")
+	if got := evaluatedHop(t, plugin, req); got != "not-an-ip" {
+		t.Errorf("evaluated hop %q, want not-an-ip", got)
+	}
+}
+
 func TestRightmostUntrusted_InvalidTrustedProxiesEntry(t *testing.T) {
 	_, err := newRoute(holdCtx(t), &noopHandler{}, rightmostCfg([]string{"x-forwarded-for"}, []string{"not-an-ip"}), pluginName)
 	if err == nil {
