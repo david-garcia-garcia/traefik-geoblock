@@ -17,17 +17,17 @@ Hop collection is split: `collectHops` reads headers and `cleanIPAddress` with n
 **End users.** When operators enable this strategy, geo allow/block follows the rightmost untrusted hop, not a forged left-side IP.
 
 ## Merge readiness
-Needs changes. 0 items remain.
+Ready for review. 0 items remain.
 
 Priority: P2 — real operator pain selecting the client hop behind proxies, with CheckAll as a different-semantics workaround
-Reviewed head: b6c2248
+Reviewed head: a661da0
 Owner decision: None.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 2/6 | Needs work |
-| CI proof | 2/6 | failed |
+| Overall readiness | 6/6 | Ready |
+| CI proof | 6/6 | succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712634951 |
 | Local tests proof | N/A | remote PR — CI proof covers this |
 | Review resolution | 6/6 | no open PR comments |
 
@@ -37,7 +37,7 @@ Owner decision: None.
 | Branch | 2026-11-03-fix-rightmost-untrusted pushed | `git` |
 | OpenSpec | fix-rightmost-untrusted | `openspec/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/97 | pr-host |
-| CI | build 41712132307 failed https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712132307 | https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712132307 |
+| CI | build 41712634951 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712634951 | https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712634951 |
 | Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | devstate/comments.md |
 
@@ -56,7 +56,7 @@ None.
 None.
 
 ## How this fits together
-Ticket 2026-11-03-fix-rightmost-untrusted on branch 2026-11-03-fix-rightmost-untrusted targeting master; PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/97; CI build 41712132307 failed https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712132307.
+Ticket 2026-11-03-fix-rightmost-untrusted on branch 2026-11-03-fix-rightmost-untrusted targeting master; PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/97; CI build 41712634951 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712634951.
 
 ## Explore Decisions
 None.
@@ -82,7 +82,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 2 added / 0 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | b6c224872b662016d27adf3cac0e2aee5262eff9 | Card must match the branch you measured |
+| Reviewed head | a661da0f5433e711dc2ffa2c5c3a28907218824e | Card must match the branch you measured |
 
 ### Stored data model
 None.
