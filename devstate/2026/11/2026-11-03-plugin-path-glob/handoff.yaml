@@ -1,0 +1,14 @@
+issueKey: 2026-11-03-plugin-path-glob
+jobName: 2026-11-03-plugin-path-glob
+issueHost: local
+issueRef: none
+prHost: github
+ciHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+localTests: none
+requirement: requirement.md
+comments: none
+explore: none
+change: none
+pr: none
