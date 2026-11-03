@@ -75,15 +75,16 @@ func TestOpenMMDB_OpenIsHotSwap(t *testing.T) {
 func TestOpenMMDB_URLMissingDefaultFileStarts(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
+	updateDir := t.TempDir()
+	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "missing", http.StatusNotFound)
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	w, err := OpenMMDB(holdCtx(t), MMDBConfig{
-		Dir:             t.TempDir(),
+		Dir:             updateDir,
 		AllowMissing:    true,
 		DefaultFileName: "GeoLite2-Country.mmdb",
 		Source: dbsource.Config{
@@ -94,6 +95,7 @@ func TestOpenMMDB_URLMissingDefaultFileStarts(t *testing.T) {
 			DefaultFileName: "GeoLite2-Country.mmdb",
 		},
 	}, logger)
+	t.Cleanup(Reset)
 	if err != nil {
 		t.Fatalf("URL + missing defaultFile: %v", err)
 	}

@@ -102,15 +102,16 @@ func TestOpenBIN_AllowMissing(t *testing.T) {
 func TestOpenBIN_URLMissingDefaultFileStarts(t *testing.T) {
 	Reset()
 	t.Cleanup(Reset)
+	updateDir := t.TempDir()
+	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "missing", http.StatusNotFound)
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	w, err := OpenBIN(holdCtx(t), BINConfig{
-		Dir:             t.TempDir(),
+		Dir:             updateDir,
 		AllowMissing:    true,
 		DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
 		Source: dbsource.Config{
@@ -121,6 +122,7 @@ func TestOpenBIN_URLMissingDefaultFileStarts(t *testing.T) {
 			DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
 		},
 	}, logger)
+	t.Cleanup(Reset)
 	if err != nil {
 		t.Fatalf("URL + missing defaultFile: %v", err)
 	}

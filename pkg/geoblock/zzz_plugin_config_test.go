@@ -995,13 +995,14 @@ func TestNew(t *testing.T) {
 		dbwrappers.Reset()
 		t.Cleanup(dbwrappers.Reset)
 		t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+		updateDir := t.TempDir()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "missing", http.StatusNotFound)
 		}))
 		t.Cleanup(srv.Close)
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                  ModeEnrichAndBlock,
-			DatabaseAutoUpdateDir: t.TempDir(),
+			DatabaseAutoUpdateDir: updateDir,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
 				"lite": {
@@ -1022,19 +1023,21 @@ func TestNew(t *testing.T) {
 		if plugin == nil {
 			t.Fatal("expected plugin")
 		}
+		t.Cleanup(dbwrappers.Reset)
 	})
 
 	t.Run("MMDB_URL_MissingDefaultFile_Starts", func(t *testing.T) {
 		dbwrappers.Reset()
 		t.Cleanup(dbwrappers.Reset)
 		t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+		updateDir := t.TempDir()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "missing", http.StatusNotFound)
 		}))
 		t.Cleanup(srv.Close)
 		plugin, err := newRoute(holdCtx(t), &noopHandler{}, &Config{
 			Mode:                  ModeEnrichAndBlock,
-			DatabaseAutoUpdateDir: t.TempDir(),
+			DatabaseAutoUpdateDir: updateDir,
 			DatabaseSources: map[string]DatabaseSource{
 				DefaultIP2LocationCatalogKey: {Enabled: boolPtr(false), DatabaseType: dbsource.TypeBIN},
 				"geolite": {
@@ -1055,6 +1058,7 @@ func TestNew(t *testing.T) {
 		if plugin == nil {
 			t.Fatal("expected plugin")
 		}
+		t.Cleanup(dbwrappers.Reset)
 	})
 
 	t.Run("MissingDefaultFile_NoURL_ShouldError", func(t *testing.T) {
