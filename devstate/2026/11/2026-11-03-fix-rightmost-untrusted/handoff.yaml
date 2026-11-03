@@ -1,0 +1,14 @@
+issueKey: 2026-11-03-fix-rightmost-untrusted
+jobName: 2026-11-03-fix-rightmost-untrusted
+issueHost: local
+issueRef: none
+prHost: github
+ciHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+localTests: none
+requirement: requirement.md
+comments: none
+explore: none
+change: none
+pr: none
