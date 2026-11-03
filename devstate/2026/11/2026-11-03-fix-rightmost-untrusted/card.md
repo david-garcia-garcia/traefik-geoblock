@@ -17,7 +17,7 @@ Not yet.
 In progress. 0 items remain.
 
 Priority: unknown — motivation not written
-Reviewed head: 972ef6b
+Reviewed head: b84df8f
 Owner decision: None.
 
 ## Review scores
@@ -66,7 +66,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | none | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 972ef6bf70d9f08438a4aa95de002c5bd099eade | Card must match the branch you measured |
+| Reviewed head | b84df8f7f6ae0547b7504405c23113650f1cd3ca | Card must match the branch you measured |
 
 ### Stored data model
 None.
