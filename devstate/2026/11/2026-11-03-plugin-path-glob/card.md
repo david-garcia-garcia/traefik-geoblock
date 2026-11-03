@@ -33,7 +33,7 @@ README names Traefik's `gop-*` unpack and documents `banIfError: false` as fail-
 In progress. 0 items remain.
 
 Priority: P2 — real operator, admin-user, or end-user pain, with a workaround or limited blast radius
-Reviewed head: c1d25eb
+Reviewed head: c5c5b7a
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
@@ -56,8 +56,12 @@ Owner decision: Required. See Explore Decisions.
 
 ## Specs
 Worktree:
-- [core_geoblock_database_source-catalog](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-plugin-path-glob/openspec/changes/plugin-path-glob/proposal.md) — modified
-- [core_geoblock_database_url-download](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-plugin-path-glob/openspec/changes/plugin-path-glob/proposal.md) — modified
+- [core_geoblock_database_source-catalog](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-plugin-path-glob/openspec/changes/archive/2026-11-03-plugin-path-glob/proposal.md) — modified
+- [core_geoblock_database_url-download](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-plugin-path-glob/openspec/changes/archive/2026-11-03-plugin-path-glob/proposal.md) — modified
+
+Completed:
+- [core_geoblock_database_source-catalog](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-plugin-path-glob/openspec/specs/core_geoblock_database_source-catalog/spec.md) — modified
+- [core_geoblock_database_url-download](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-plugin-path-glob/openspec/specs/core_geoblock_database_url-download/spec.md) — modified
 
 
 ## Deviations from the ask
@@ -94,9 +98,9 @@ None.
 ### Review metrics
 | Metric | Value | Why it matters |
 | --- | --- | --- |
-| Specs in this PR | 0 added / 2 modified | Same list as ## Specs |
+| Specs in this PR | 0 added / 4 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | c1d25eb07fb57ca12906706c95bd3931f3bea728 | Card must match the branch you measured |
+| Reviewed head | c5c5b7a157e5cc2941a9da3002a88e2a24cff604 | Card must match the branch you measured |
 
 ### Stored data model
 None.
