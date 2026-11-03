@@ -6,9 +6,13 @@ prHost: github
 ciHost: github
 repoSlug: traefik-geoblock
 destBranch: master
+qualify: qualified-with-gaps
+src: 06d0dc92696ed3e98f58d791305537e3f7b4b38090111f8cc63eb56b1262ee67
 localTests: none
 requirement: requirement.md
 comments: none
 explore: none
 change: none
-pr: none
+pr:
+  id: 97
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/97
