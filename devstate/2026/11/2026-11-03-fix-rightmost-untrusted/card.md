@@ -17,17 +17,17 @@ Hop collection is split: `collectHops` reads headers and `cleanIPAddress` with n
 **End users.** When operators enable this strategy, geo allow/block follows the rightmost untrusted hop, not a forged left-side IP.
 
 ## Merge readiness
-Ready for review. 0 items remain.
+Needs changes. 0 items remain.
 
 Priority: P2 — real operator pain selecting the client hop behind proxies, with CheckAll as a different-semantics workaround
-Reviewed head: 12cfb35
+Reviewed head: 39dc414
 Owner decision: None.
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| Overall readiness | 6/6 | Ready |
-| CI proof | 6/6 | succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41708892990 |
+| Overall readiness | 2/6 | Needs work |
+| CI proof | 2/6 | failed |
 | Local tests proof | N/A | remote PR — CI proof covers this |
 | Review resolution | 6/6 | no open PR comments |
 
@@ -37,13 +37,16 @@ Owner decision: None.
 | Branch | 2026-11-03-fix-rightmost-untrusted pushed | `git` |
 | OpenSpec | fix-rightmost-untrusted | `openspec/` |
 | Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/97 | pr-host |
-| CI | build 41708892990 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41708892990 | https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41708892990 |
+| CI | build 41710683870 failed https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41710683870 | https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41710683870 |
 | Local tests | passed | handoff.yaml localTests |
 | PR comments | no comments | devstate/comments.md |
 
 ## Specs
 Worktree:
-- [core_geoblock_plugin_ip-header-strategy](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/openspec/changes/fix-rightmost-untrusted/proposal.md) — added
+- [core_geoblock_plugin_ip-header-strategy](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/openspec/changes/archive/2026-11-03-fix-rightmost-untrusted/proposal.md) — added
+
+Completed:
+- [core_geoblock_plugin_ip-header-strategy](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/openspec/specs/core_geoblock_plugin_ip-header-strategy/spec.md) — added
 
 
 ## Deviations from the ask
@@ -53,7 +56,7 @@ None.
 None.
 
 ## How this fits together
-Ticket 2026-11-03-fix-rightmost-untrusted on branch 2026-11-03-fix-rightmost-untrusted targeting master; PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/97; CI build 41708892990 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41708892990.
+Ticket 2026-11-03-fix-rightmost-untrusted on branch 2026-11-03-fix-rightmost-untrusted targeting master; PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/97; CI build 41710683870 failed https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41710683870.
 
 ## Explore Decisions
 None.
@@ -77,9 +80,9 @@ None.
 ### Review metrics
 | Metric | Value | Why it matters |
 | --- | --- | --- |
-| Specs in this PR | 1 added / 0 modified | Same list as ## Specs |
+| Specs in this PR | 2 added / 0 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 12cfb35233f91394bf4acd1968826ad55f059fb7 | Card must match the branch you measured |
+| Reviewed head | 39dc41489f4d71790f6e6b868550c0b10ee76f3b | Card must match the branch you measured |
 
 ### Stored data model
 None.
