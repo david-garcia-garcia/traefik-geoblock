@@ -5,3 +5,4 @@
 - updated knowledge/devdocs/core_geoblock_test-harness.md
 - updated knowledge/devdocs/std_go_iplookup.md
 - updated knowledge/devdocs/core_geoblock_plugin_ip-header-strategy.md
+- updated knowledge/devdocs/core_geoblock_plugin_request-mode.md
