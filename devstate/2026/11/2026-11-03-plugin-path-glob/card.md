@@ -33,7 +33,7 @@ README names Traefik's `gop-*` unpack and documents `banIfError: false` as fail-
 In progress. 0 items remain.
 
 Priority: P2 — real operator, admin-user, or end-user pain, with a workaround or limited blast radius
-Reviewed head: 6d437c8
+Reviewed head: c1d25eb
 Owner decision: Required. See Explore Decisions.
 
 ## Review scores
@@ -96,7 +96,7 @@ None.
 | --- | --- | --- |
 | Specs in this PR | 0 added / 2 modified | Same list as ## Specs |
 | Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | 6d437c8a850cd9296aae740490887ecf0f8bc89d | Card must match the branch you measured |
+| Reviewed head | c1d25eb07fb57ca12906706c95bd3931f3bea728 | Card must match the branch you measured |
 
 ### Stored data model
 None.
