@@ -11,7 +11,7 @@ src: 9690db2bb741ad2193e3311d83e97d10d42f414b40e4a15bff968967d90b4861
 localTests: none
 requirement: requirement.md
 comments: none
-explore: none
+explore: explore.md
 change: none
 pr:
   id: 96
