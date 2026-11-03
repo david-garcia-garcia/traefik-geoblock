@@ -370,7 +370,9 @@ http:
             - x-real-ip
             # - cf-connecting-ip          # Cloudflare
             # - remoteAddress             # SYNTHETIC: req.RemoteAddr
-          ipHeaderStrategy: CheckAll   # CheckAll | CheckFirst | CheckFirstNonePrivate
+          ipHeaderStrategy: CheckAll   # CheckAll | CheckFirst | CheckFirstNonePrivate | RightmostUntrusted
+          # trustedProxies:              # only with RightmostUntrusted
+          #   - 10.10.60.0/24
           ignoreVerbs:
             - OPTIONS
             - HEAD
@@ -416,6 +418,36 @@ ipHeaders:
 | `CheckAll` | Every IP found (default) |
 | `CheckFirst` | Only the first IP |
 | `CheckFirstNonePrivate` | First public IP; if none, the last private hop |
+| `RightmostUntrusted` | Walk the selected chain from the right; skip `trustedProxies`; evaluate one hop |
+
+`CheckAll` / `CheckFirst` / `CheckFirstNonePrivate` still concatenate every present `ipHeaders` entry and keep the first occurrence of a repeated IP. They read only the first field line of each header.
+
+#### `RightmostUntrusted`
+
+This strategy uses the same rule as Traefik `ipStrategy.excludedIPs`: walk hops from the right, skip trusted proxies, evaluate exactly one hop. A client cannot pick the country by forging left-side hops.
+
+Forwarding headers (every `ipHeaders` entry except `remoteAddress`) are alternatives, tried in config order. The first header that yields at least one hop is the selected header. Later forwarding headers are ignored for that request; they are never concatenated. The default `ipHeaders` (`x-forwarded-for`, `x-real-ip`) stays valid: `X-Forwarded-For` when present, else `X-Real-IP`.
+
+`remoteAddress`, when listed, must be last and always closes the chain. A direct peer that is not in `trustedProxies` is then the evaluated hop, so every forwarding header is ignored. Omitting `remoteAddress` is allowed (one warning at creation): headers are trusted without checking who sent them. Put `remoteAddress` last so a request that did not come through your proxies cannot choose a header.
+
+Several HTTP field lines of the selected header are one list (every line, in order, each split on `,`).
+
+```yaml
+ipHeaders:
+  - cf-connecting-ip     # requests that come through Cloudflare
+  - x-forwarded-for      # requests that come through the load balancer
+  - remoteAddress        # always last: the direct peer
+ipHeaderStrategy: RightmostUntrusted
+trustedProxies:
+  - 10.10.60.0/24        # load balancer
+  - 173.245.48.0/20      # Cloudflare range (example; use the published list)
+```
+
+Each proxy in front of Traefik must overwrite or strip every configured forwarding header it does not set. Otherwise a client that can get an earlier header through (for example `CF-Connecting-IP` through a load balancer that only sets `X-Forwarded-For`) picks the header. Binding each header to the proxies allowed to set it is not implemented.
+
+`trustedProxies` is rejected with `CheckAll` / `CheckFirst` / `CheckFirstNonePrivate`. Empty `trustedProxies` with `RightmostUntrusted` is valid: the rightmost hop (often the direct peer) is the client.
+
+Traefik entrypoint `forwardedHeaders.trustedIPs` runs before this plugin. When the TCP peer is not in that list and `insecure` is false, Traefik deletes managed `X-Forwarded-*` / `X-Real-Ip` and then fills empties: `X-Forwarded-For` is empty at middleware time, `X-Real-Ip` is the TCP peer, and `req.RemoteAddr` is still the TCP peer. Listing `remoteAddress` last still gives this plugin a hop to evaluate. This product's compose sets `forwardedHeaders.insecure=true`, so it does not show that delete path.
 
 Country allow/block uses the single `countryHeader` value (first public country written). `CheckAll` still applies CIDR and private rules to every selected IP. To choose which hop’s country is written, use `CheckFirst` / `CheckFirstNonePrivate`. To deny a later hop by address, use `blockedIPBlocks`, or omit that hop from `ipHeaders`.
 

@@ -67,6 +67,7 @@ type Plugin struct {
 	bypassHeaders         map[string]string
 	ipHeaders             []string            // List of headers to check for client IP addresses
 	ipHeaderStrategy      string              // Strategy for processing multiple IP addresses
+	trustedProxies        *iplookup.Helper    // CIDR membership for RightmostUntrusted hops
 	ignoreVerbs           map[string]struct{} // Set of HTTP verbs to ignore for blocking
 	includedPathsRegex    *regexp.Regexp      // When set, only matching {host}{path} may be blocked
 	excludedPathsRegex    *regexp.Regexp      // Matching {host}{path} skip blocking (after include)
@@ -205,6 +206,17 @@ func NewCore(name string, cfg *Config) (*Plugin, error) {
 		logStatusDetailHeader: cfg.LogStatusDetailHeader,
 		requestHeaderEnrich:   requestHeaderEnrich,
 	}
+	if cfg.IPHeaderStrategy == IPHeaderStrategyRightmostUntrusted {
+		helper, err := newTrustedProxyHelper(cfg.TrustedProxies)
+		if err != nil {
+			lifeCancel()
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		pluginInstance.trustedProxies = helper
+		if remoteAddressIndex(pluginInstance.ipHeaders) < 0 {
+			logger.Warn("RightmostUntrusted has no remoteAddress in ipHeaders; headers are trusted without checking the direct peer")
+		}
+	}
 	if ModeLooksUp(mode) {
 		if err := pluginInstance.bindDatabase(life, cfg); err != nil {
 			lifeCancel()
@@ -316,8 +328,7 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request, next http.H
 		return
 	}
 
-	remoteIPs := p.GetRemoteIPs(req)
-	ipChain := p.traceIPChain(remoteIPs)
+	remoteIPs, ipChain := p.clientHops(req)
 
 	// 1. Enrich: look up and write countryHeader / requestHeaderEnrich. Does not ban.
 	lookupFailed := false
@@ -345,6 +356,24 @@ func (p Plugin) ServeHTTP(rw http.ResponseWriter, req *http.Request, next http.H
 		return
 	}
 	next.ServeHTTP(rw, req)
+}
+
+// clientHops is the evaluated hop list and the chain string ServeHTTP passes to enrich / block / logs.
+func (p Plugin) clientHops(req *http.Request) (remoteIPs []string, ipChain string) {
+	if p.ipHeaderStrategy != IPHeaderStrategyRightmostUntrusted {
+		remoteIPs = p.GetRemoteIPs(req)
+		return remoteIPs, p.traceIPChain(remoteIPs)
+	}
+	hops := p.rightmostChain(req)
+	remoteIPs = p.rightmostUntrusted(hops)
+	ipChain = strings.Join(hops, ", ")
+	if len(remoteIPs) == 0 {
+		p.logger.Debug("no untrusted hop found", "ip_chain", ipChain)
+		return remoteIPs, ipChain
+	}
+	logging.Trace(p.logger, "rightmost untrusted hop selected",
+		"ip", remoteIPs[0], "ip_chain", ipChain)
+	return remoteIPs, ipChain
 }
 
 // traceIPChain is the joined hop list when trace logging is on.

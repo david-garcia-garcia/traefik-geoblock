@@ -17,7 +17,7 @@ _Avoid_: concatenating every present `ipHeaders` entry for `RightmostUntrusted`
 ## How to use
 
 - Call `GetRemoteIPs` only for `CheckAll` / `CheckFirst` / `CheckFirstNonePrivate`. That path is `dedupeFirst(collectHops)` with first-line `Header.Get` so existing dedup tests stay byte-for-byte.
-- For `RightmostUntrusted`, call `rightmostChain(req)` then `rightmostUntrusted(hops)`. Do not call `GetRemoteIPs` on that path. Do not copy Traefik `ipStrategy.excludedIPs`.
+- For `RightmostUntrusted`, call `clientHops` (or `rightmostChain` then `rightmostUntrusted`). Do not call `GetRemoteIPs` on that path. Do not copy Traefik `ipStrategy.excludedIPs`. `clientHops` joins the pre-filter chain for error logs even when trace is off.
 - `collectHops` reads one header or the whole `ipHeaders` list, splits on `,`, runs `cleanIPAddress`, and does not dedupe. Pass all field lines (`Header.Values`) only on the `RightmostUntrusted` path.
 - `rightmostChain`: forwarding `ipHeaders` (every entry except `remoteAddress`) are alternatives in config order. Take the first header with at least one hop. Then append `cleanIPAddress(req.RemoteAddr)` when `remoteAddress` is listed. Never concatenate two forwarding headers.
 - Trusted-proxy membership: a dedicated builder onto `iplookup.Helper` (plain address → `/32` or `/128`, then `AddCIDR`). Do not reuse `loadIPBlockHelper` (directory lists). `Contains` error → hop is not trusted.
@@ -26,20 +26,13 @@ _Avoid_: concatenating every present `ipHeaders` entry for `RightmostUntrusted`
 ## Pattern snippet
 
 ```go
-if p.ipHeaderStrategy == IPHeaderStrategyRightmostUntrusted {
-	hops := p.rightmostChain(req)
-	remoteIPs := p.rightmostUntrusted(hops)
-	ipChain := p.traceIPChain(hops)
-} else {
-	remoteIPs := p.GetRemoteIPs(req)
-	ipChain := p.traceIPChain(remoteIPs)
-}
+remoteIPs, ipChain := p.clientHops(req)
 ```
 
 ## Key files
 
 - `pkg/geoblock/ip.go` — `collectHops`, `GetRemoteIPs`, `rightmostChain`, `rightmostUntrusted`, trusted-proxy builder
-- `pkg/geoblock/plugin.go` — `ServeHTTP` strategy branch; `Plugin` helper field
+- `pkg/geoblock/plugin.go` — `ServeHTTP` / `clientHops` strategy branch; `Plugin` helper field
 - `pkg/geoblock/config.go` — `Prepare` (`RightmostUntrusted`, `remoteAddress` last, `trustedProxies` only with that strategy)
 - `pkg/geoblock/zzz_plugin_ipheaders_test.go` — existing first-occurrence dedup
 - `pkg/geoblock/zzz_plugin_rightmost_untrusted_test.go` — RightmostUntrusted cases
