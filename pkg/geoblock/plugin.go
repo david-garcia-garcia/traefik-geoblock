@@ -366,13 +366,12 @@ func (p Plugin) clientHops(req *http.Request) (remoteIPs []string, ipChain strin
 	}
 	hops := p.rightmostChain(req)
 	remoteIPs = p.rightmostUntrusted(hops)
-	ipChain = strings.Join(hops, ", ")
-	if len(remoteIPs) == 0 {
-		p.logger.Debug("no untrusted hop found", "ip_chain", ipChain)
-		return remoteIPs, ipChain
+	// Same trace gate as the other strategies; error logs fall back to the evaluated hop.
+	ipChain = p.traceIPChain(hops)
+	if len(remoteIPs) > 0 {
+		logging.Trace(p.logger, "rightmost untrusted hop selected",
+			"ip", remoteIPs[0], "ip_chain", ipChain)
 	}
-	logging.Trace(p.logger, "rightmost untrusted hop selected",
-		"ip", remoteIPs[0], "ip_chain", ipChain)
 	return remoteIPs, ipChain
 }
 
@@ -480,7 +479,11 @@ func (p Plugin) blockFromHeader(rw http.ResponseWriter, req *http.Request, remot
 				p.serveBanHtml(rw, ip, "Unknown", req.Method)
 				return true
 			}
-			continue
+			if p.ipHeaderStrategy != IPHeaderStrategyRightmostUntrusted {
+				continue
+			}
+			// RightmostUntrusted evaluates exactly this hop, so it cannot be skipped: defaultAllow decides it.
+			allowed, phase = p.defaultAllow, PhaseDefaultAllow
 		}
 		if !allowed {
 			p.setDecisionLogHeader(req, LogStatusBlock, phase)

@@ -1,88 +1,74 @@
-## Motivation
-Operators who put this plugin behind one or more reverse proxies need one evaluated hop: the original client, not the load balancer. Dest only offers `CheckAll` / `CheckFirst` / `CheckFirstNonePrivate`, which concatenate every present `ipHeaders` entry, read the first field line, and drop repeated IPs while keeping the first occurrence.
+## In one sentence
+Adds an opt-in `ipHeaderStrategy: RightmostUntrusted` so that, behind load balancers or CDNs, the plugin geo-checks the real client instead of an IP the client wrote into a header.
 
-That collection lets a client pick the country. Repeating `8.8.8.8` on both sides of a forged `1.1.1.1` in `X-Forwarded-For` hides the real rightmost untrusted hop after first-occurrence dedup. A second `X-Forwarded-For` field line is invisible to `Header.Get`. Two configured headers on one request are walked as one concatenated list, so `X-Real-IP` can win over `X-Forwarded-For`.
+## Why
+The existing strategies (`CheckAll`, `CheckFirst`, `CheckFirstNonePrivate`) merge every configured header into one list and drop repeated IPs. A client can use that to choose which country gets checked:
 
-Left alone, a `RightmostUntrusted` strategy that reused `GetRemoteIPs` would ship the Traefik `excludedIPs` shape without the guarantee a client cannot choose the country. Dest has no such strategy yet; CheckAll is a different contract (every hop, including proxies).
-
-Priority: P2 — real operator pain selecting the client hop behind proxies, with CheckAll as a different-semantics workaround
-
-## Implementation
-Hop collection is split: `collectHops` reads headers and `cleanIPAddress` with no dedup; `GetRemoteIPs` stays `dedupeFirst(collectHops(..., false))` for the three existing strategies. `RightmostUntrusted` uses `clientHops` → `rightmostChain` (first forwarding header with hops, every field line, `remoteAddress` last when listed) then `rightmostUntrusted` (walk from the right, skip `trustedProxies` on a dedicated `iplookup.Helper`). Empty result reuses the existing empty-hop / `banIfError` path. `Prepare` rejects `trustedProxies` with any other strategy and requires `remoteAddress` last when listed.
-
-## What this changes
-**Operators.** Opt-in `ipHeaderStrategy: RightmostUntrusted` and `trustedProxies`. Pairing `trustedProxies` with CheckAll / CheckFirst / CheckFirstNonePrivate fails creation. Default `ipHeaders` stay valid; put `remoteAddress` last so a direct untrusted peer ignores forged headers. Each proxy must overwrite or strip configured headers it does not set.
-**Admin users.** None.
-**Developers.** `Config.TrustedProxies` and `IPHeaderStrategyRightmostUntrusted` are public. `GetRemoteIPs` remains first-line Get plus first-occurrence dedup; the new strategy must not call it.
-**End users.** When operators enable this strategy, geo allow/block follows the rightmost untrusted hop, not a forged left-side IP.
-
-## Merge readiness
-Ready for review. 0 items remain.
-
-Priority: P2 — real operator pain selecting the client hop behind proxies, with CheckAll as a different-semantics workaround
-Reviewed head: a661da0
-Owner decision: None.
-
-## Review scores
-| Measure | Result | What it means |
+| What arrives | What the old strategies see | Real client |
 | --- | --- | --- |
-| Overall readiness | 6/6 | Ready |
-| CI proof | 6/6 | succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712634951 |
-| Local tests proof | N/A | remote PR — CI proof covers this |
-| Review resolution | 6/6 | no open PR comments |
+| `X-Forwarded-For: 8.8.8.8, 1.1.1.1, 8.8.8.8` (client forged the first two, proxy added the last) | `8.8.8.8, 1.1.1.1`: dedup removes the last entry, so the forged `1.1.1.1` is now the last hop | `8.8.8.8`, the rightmost hop |
+| A second `X-Forwarded-For` line | nothing (only the first line is read) | on the second line |
+| `X-Real-IP` and `X-Forwarded-For` together | both, merged into one list | only the header your proxy sets |
+
+Priority: P2. Operators behind proxies have no safe way to select the client IP today.
+
+## How the new strategy picks the client IP
+1. **Choose one header.** Forwarding headers in `ipHeaders` are tried in the order you list them. The first one that contains an address wins. Absent or empty headers are skipped. Headers are never merged.
+2. **Add the direct peer.** If `remoteAddress` is listed (it must be last), the TCP peer is appended as the last hop.
+3. **Walk from the right.** Skip every hop that is in `trustedProxies`. The first hop that is not trusted is the only one checked.
+4. **Edge cases.**
+   - Every hop is trusted (for example a load balancer health check): the leftmost hop, where the request started, is checked. A private LB address follows `allowPrivate`.
+   - The checked hop is not an IP (`garbage`): blocked when `banIfError: true`; otherwise `defaultAllow` decides.
+   - No hop at all: same as today (`banIfError`).
+
+```yaml
+ipHeaders:
+  - cf-connecting-ip     # requests that come through Cloudflare
+  - x-forwarded-for      # requests that come through the load balancer
+  - remoteAddress        # always last: the direct peer
+ipHeaderStrategy: RightmostUntrusted
+trustedProxies:
+  - 10.10.60.0/24        # load balancer
+  - 173.245.48.0/20      # Cloudflare range (example)
+```
+
+## Changes after code review (2026-11-05)
+| # | Problem found | What changed |
+| --- | --- | --- |
+| 1 | A `trustedProxies` or `blockedIPBlocks` entry like `::ffff:10.0.0.0/104` crashed plugin creation (bug in `iplookup` v1.0.3). | `traefik-middleware-utilities` bumped to the build that fixes it. |
+| 2 | A bare `::ffff:10.10.60.5` in `trustedProxies` trusted the whole IPv6 range `::/32` and not the load balancer. | `trustedProxies` now uses the new `iplookup.AddEntry`, which stores a bare address as its exact host. |
+| 3 | With `banIfError: false`, an evaluated hop that is not an IP passed even with `defaultAllow: false`. | `defaultAllow` now decides that hop. |
+| 4 | Requests coming straight from a trusted proxy (health checks) had no hop left: a WARN per request and a 403 with the default `banIfError: true`. | The leftmost hop is checked instead; health checks from a private LB pass with `allowPrivate`. No warning. |
+| 5 | Question: should an empty header stop the search? | No. Confirmed rule: the first **non-empty** header in the order you configure wins. Now covered by tests and stated in the spec. |
+| 6 | The default `CheckAll` path allocated 3–4 times per request after the refactor. | Back to one pass with inline dedup: one allocation for a single hop (guarded by a test). |
+| 7 | Hop parsing was duplicated between the two paths. | One shared `appendHops` loop. |
+| 8 | Every request joined the full chain into a string and locked the trusted-proxy helper even when the list was empty. | The chain is joined only at trace level; no helper when `trustedProxies` is empty; `iplookup` now uses a read lock. |
+
+## Who is affected
+- **Operators:** nothing changes unless you set `ipHeaderStrategy: RightmostUntrusted`. `trustedProxies` with another strategy fails at startup. Put `remoteAddress` last. Each proxy must overwrite or strip the forwarding headers it does not set, or a client can supply an earlier header.
+- **Developers:** `Config.TrustedProxies` and `IPHeaderStrategyRightmostUntrusted` are new public names. `RightmostUntrusted` must not call `GetRemoteIPs`.
+- **End users:** with the new strategy, geo allow/block follows the real client, not a forged IP.
+
+## Before merging
+- [ ] Merge the `traefik-middleware-utilities` PR (branch `2026-11-05-iplookup-addentry`, adds `AddEntry`) and tag it `v1.0.8`.
+- [ ] In this branch, replace the temporary pseudo-version `v1.0.8-0.20261105124818-0dd96da2e3db` with `v1.0.8`, then run `go mod tidy`, `go mod vendor`, and `scripts/apply-oschwald-yaegi-patch.ps1`.
+- [ ] CI green on the new head.
 
 ## Verification
-| Check | Result | Evidence |
-| --- | --- | --- |
-| Branch | 2026-11-03-fix-rightmost-untrusted pushed | `git` |
-| OpenSpec | fix-rightmost-untrusted | `openspec/` |
-| Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/97 | pr-host |
-| CI | build 41712634951 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712634951 | https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712634951 |
-| Local tests | passed | handoff.yaml localTests |
-| PR comments | no comments | devstate/comments.md |
+| Check | Result |
+| --- | --- |
+| `go test ./...` (local, 2026-11-05) | passed |
+| New tests run against the previous code | 9 behaviour tests fail before the fix, pass after |
+| `golangci-lint run ./...` (local) | no findings |
+| CI on the new head | pending |
+| Pull request | https://github.com/david-garcia-garcia/traefik-geoblock/pull/97 |
 
 ## Specs
-Worktree:
-- [core_geoblock_plugin_ip-header-strategy](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/openspec/changes/archive/2026-11-03-fix-rightmost-untrusted/proposal.md) — added
-
-Completed:
-- [core_geoblock_plugin_ip-header-strategy](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/openspec/specs/core_geoblock_plugin_ip-header-strategy/spec.md) — added
-
+- [core_geoblock_plugin_ip-header-strategy](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/openspec/specs/core_geoblock_plugin_ip-header-strategy/spec.md) — added (updated after review: empty headers, all-trusted chain, unparsable hop, IPv4-mapped entries)
+- [Change proposal](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/openspec/changes/archive/2026-11-03-fix-rightmost-untrusted/proposal.md)
 
 ## Deviations from the ask
-None.
+- When every hop is trusted, the original spec sent the request to the `banIfError` path. That broke load balancer health checks, so the leftmost hop, where the request started, is now checked instead. It is a real hop, not an invented one, and it goes through the normal rules (`allowPrivate`, CIDR lists, country).
 
 ## Follow-up issues
-None.
-
-## How this fits together
-Ticket 2026-11-03-fix-rightmost-untrusted on branch 2026-11-03-fix-rightmost-untrusted targeting master; PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/97; CI build 41712634951 succeeded https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/41712634951.
-
-## Explore Decisions
-None.
-
-## Findings
-None.
-
-## Axis review
-[Standards](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/devstate/2026/11/2026-11-03-fix-rightmost-untrusted/codereview_standards.md) — 1 total, 0 pending, 0 completed, 1 skipped
-[Nitpicks](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/devstate/2026/11/2026-11-03-fix-rightmost-untrusted/codereview_nitpicks.md) — 0 total, 0 pending, 0 completed
-[Spec](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/devstate/2026/11/2026-11-03-fix-rightmost-untrusted/codereview_spec.md) — 0 total, 0 pending, 0 completed
-[Scope](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/devstate/2026/11/2026-11-03-fix-rightmost-untrusted/codereview_scope.md) — 0 total, 0 pending, 0 completed
-[Security](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/devstate/2026/11/2026-11-03-fix-rightmost-untrusted/codereview_security.md) — 0 total, 0 pending, 0 completed
-[Performance](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/devstate/2026/11/2026-11-03-fix-rightmost-untrusted/codereview_performance.md) — 0 total, 0 pending, 0 completed
-[Dead](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/devstate/2026/11/2026-11-03-fix-rightmost-untrusted/codereview_dead.md) — 0 total, 0 pending, 0 completed
-[Test coverage](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-fix-rightmost-untrusted/devstate/2026/11/2026-11-03-fix-rightmost-untrusted/codereview_coverage.md) — 1 total, 0 pending, 1 completed
-
-
-## Agent review details
-
-### Review metrics
-| Metric | Value | Why it matters |
-| --- | --- | --- |
-| Specs in this PR | 2 added / 0 modified | Same list as ## Specs |
-| Open reviewer comments walked | 0 FIX / 0 ANSWER / 0 open | Unanswered review is merge risk |
-| Reviewed head | a661da0f5433e711dc2ffa2c5c3a28907218824e | Card must match the branch you measured |
-
-### Stored data model
-None.
+- Binding each header to the proxies allowed to set it (for example, accepting `CF-Connecting-IP` only from Cloudflare ranges) is not implemented. Today this relies on each proxy stripping headers it does not set.

@@ -11,119 +11,84 @@ import (
 
 // GetRemoteIPs is first-line Header.Get plus first-occurrence dedup for CheckAll / CheckFirst / CheckFirstNonePrivate.
 func (p Plugin) GetRemoteIPs(req *http.Request) []string {
-	return dedupeFirst(collectHops(req, p.ipHeaders, false))
+	var ips []string
+	var seen map[string]struct{}
+	for _, headerName := range p.ipHeaders {
+		value := req.RemoteAddr
+		if headerName != remoteAddressHeader {
+			value = req.Header.Get(headerName)
+		}
+		ips = appendHops(ips, value, &seen)
+	}
+	return ips
 }
 
-// collectHops reads the named headers, splits on ',', runs cleanIPAddress, and does not dedupe.
-// allLines true uses every field line (Header.Values); false uses the first line (Header.Get).
-func collectHops(req *http.Request, names []string, allLines bool) []string {
+// rightmostChain is the RightmostUntrusted hop chain, left to right.
+// Forwarding headers are tried in ipHeaders order and only the first one that yields a hop is used:
+// an absent header, an empty value, or a value with no hop (" , ") is skipped. Every field line of that
+// header is read in order. RemoteAddr closes the chain when remoteAddress is listed (Prepare keeps it last).
+// Repeated hops are kept.
+func (p Plugin) rightmostChain(req *http.Request) []string {
 	var hops []string
-	for _, headerName := range names {
+	for _, headerName := range p.ipHeaders {
 		if headerName == remoteAddressHeader {
-			ip := cleanIPAddress(req.RemoteAddr)
-			if ip != "" {
-				hops = append(hops, ip)
-			}
+			return appendHops(hops, req.RemoteAddr, nil)
+		}
+		if len(hops) > 0 {
 			continue
 		}
-		for _, line := range headerLines(req, headerName, allLines) {
-			hops = append(hops, splitHops(line)...)
+		for _, line := range req.Header.Values(headerName) {
+			hops = appendHops(hops, line, nil)
 		}
 	}
 	return hops
 }
 
-// headerLines is the field lines of one header, or nothing when the header is absent.
-func headerLines(req *http.Request, headerName string, allLines bool) []string {
-	if allLines {
-		return req.Header.Values(headerName)
-	}
-	value := req.Header.Get(headerName)
-	if value == "" {
-		return nil
-	}
-	return []string{value}
-}
-
-// splitHops is the comma-separated hops in one field line after cleanIPAddress.
-func splitHops(headerValue string) []string {
-	var hops []string
-	for len(headerValue) > 0 {
+// appendHops appends the comma-separated hops of value after cleanIPAddress.
+// A non-nil seen drops hops already appended (first occurrence wins); the map is made on the second hop.
+func appendHops(dst []string, value string, seen *map[string]struct{}) []string {
+	for len(value) > 0 {
 		var part string
-		if i := strings.IndexByte(headerValue, ','); i >= 0 {
-			part = headerValue[:i]
-			headerValue = headerValue[i+1:]
+		if i := strings.IndexByte(value, ','); i >= 0 {
+			part = value[:i]
+			value = value[i+1:]
 		} else {
-			part = headerValue
-			headerValue = ""
+			part = value
+			value = ""
 		}
 		ip := cleanIPAddress(part)
 		if ip == "" {
 			continue
 		}
-		hops = append(hops, ip)
+		if seen != nil && len(dst) > 0 {
+			if *seen == nil {
+				*seen = make(map[string]struct{}, 2)
+				(*seen)[dst[0]] = struct{}{}
+			}
+			if _, dup := (*seen)[ip]; dup {
+				continue
+			}
+			(*seen)[ip] = struct{}{}
+		}
+		dst = append(dst, ip)
 	}
-	return hops
+	return dst
 }
 
-// dedupeFirst keeps the first occurrence of each hop and drops later repeats.
-func dedupeFirst(hops []string) []string {
-	if len(hops) < 2 {
-		return hops
-	}
-	var ips []string
-	var seenIPs map[string]struct{}
-	for _, ip := range hops {
-		if len(ips) == 0 {
-			ips = append(ips, ip)
-			continue
-		}
-		if seenIPs == nil {
-			seenIPs = make(map[string]struct{}, 2)
-			seenIPs[ips[0]] = struct{}{}
-		}
-		if _, seen := seenIPs[ip]; seen {
-			continue
-		}
-		seenIPs[ip] = struct{}{}
-		ips = append(ips, ip)
-	}
-	return ips
-}
-
-// rightmostChain is the first present forwarding header plus RemoteAddr when remoteAddress is listed.
-func (p Plugin) rightmostChain(req *http.Request) []string {
-	var hops []string
-	hasRemoteAddress := false
-	for _, headerName := range p.ipHeaders {
-		if headerName == remoteAddressHeader {
-			hasRemoteAddress = true
-			continue
-		}
-		if len(hops) > 0 {
-			continue
-		}
-		hops = collectHops(req, []string{headerName}, true)
-	}
-	if !hasRemoteAddress {
-		return hops
-	}
-	ip := cleanIPAddress(req.RemoteAddr)
-	if ip == "" {
-		return hops
-	}
-	return append(hops, ip)
-}
-
-// rightmostUntrusted walks hops from the right and returns the first hop that is not a trusted proxy.
+// rightmostUntrusted is the one hop RightmostUntrusted evaluates: walking from the right, the first hop
+// not in trustedProxies. When every hop is trusted the request started inside the proxy chain (a load
+// balancer health check, an internal call), so its origin, the leftmost hop, is evaluated.
+// Empty only when the chain is empty. The result aliases hops.
 func (p Plugin) rightmostUntrusted(hops []string) []string {
 	for i := len(hops) - 1; i >= 0; i-- {
-		if p.trustedHop(hops[i]) {
-			continue
+		if !p.trustedHop(hops[i]) {
+			return hops[i : i+1]
 		}
-		return []string{hops[i]}
 	}
-	return nil
+	if len(hops) == 0 {
+		return nil
+	}
+	return hops[:1]
 }
 
 // trustedHop reports whether hop is in trustedProxies. Unparsable and Contains errors are not trusted.
@@ -142,28 +107,20 @@ func (p Plugin) trustedHop(hop string) bool {
 	return found
 }
 
-// newTrustedProxyHelper stores trustedProxies on a family-isolated helper. A plain address becomes /32 or /128.
+// newTrustedProxyHelper stores trustedProxies (CIDRs or bare addresses) on a family-isolated helper.
+// nil when no entry is set, so membership costs nothing.
 func newTrustedProxyHelper(entries []string) (*iplookup.Helper, error) {
 	helper := iplookup.New()
 	for _, entry := range entries {
-		cidr := strings.TrimSpace(entry)
-		if cidr == "" {
+		if strings.TrimSpace(entry) == "" {
 			continue
 		}
-		if !strings.Contains(cidr, "/") {
-			ipAddr := net.ParseIP(cidr)
-			if ipAddr == nil {
-				return nil, fmt.Errorf("trustedProxies: invalid entry %q", entry)
-			}
-			if ipAddr.To4() != nil {
-				cidr = cidr + "/32"
-			} else {
-				cidr = cidr + "/128"
-			}
-		}
-		if err := helper.AddCIDR(cidr, ""); err != nil {
+		if err := helper.AddEntry(entry, ""); err != nil {
 			return nil, fmt.Errorf("trustedProxies: invalid entry %q: %w", entry, err)
 		}
+	}
+	if helper.Count() == 0 {
+		return nil, nil
 	}
 	return helper, nil
 }

@@ -16,12 +16,14 @@ _Avoid_: concatenating every present `ipHeaders` entry for `RightmostUntrusted`
 
 ## How to use
 
-- Call `GetRemoteIPs` only for `CheckAll` / `CheckFirst` / `CheckFirstNonePrivate`. That path is `dedupeFirst(collectHops)` with first-line `Header.Get` so existing dedup tests stay byte-for-byte.
-- For `RightmostUntrusted`, call `clientHops` (or `rightmostChain` then `rightmostUntrusted`). Do not call `GetRemoteIPs` on that path. Do not copy Traefik `ipStrategy.excludedIPs`. `clientHops` joins the pre-filter chain for error logs even when trace is off.
-- `collectHops` reads one header or the whole `ipHeaders` list, splits on `,`, runs `cleanIPAddress`, and does not dedupe. Pass all field lines (`Header.Values`) only on the `RightmostUntrusted` path.
-- `rightmostChain`: forwarding `ipHeaders` (every entry except `remoteAddress`) are alternatives in config order. Take the first header with at least one hop. Then append `cleanIPAddress(req.RemoteAddr)` when `remoteAddress` is listed. Never concatenate two forwarding headers.
-- Trusted-proxy membership: a dedicated builder onto `iplookup.Helper` (plain address → `/32` or `/128`, then `AddCIDR`). Do not reuse `loadIPBlockHelper` (directory lists). `Contains` error → hop is not trusted.
-- Empty `GetRemoteIPs` / empty `rightmostUntrusted` result is still the request-mode empty-hop path (`banIfError`). Do not invent a hop.
+- Call `GetRemoteIPs` only for `CheckAll` / `CheckFirst` / `CheckFirstNonePrivate`. It reads the first field line (`Header.Get`) of every entry and dedupes inline in `appendHops` (first occurrence wins; the map is made on the second hop). One hop is one allocation; keep it that way.
+- For `RightmostUntrusted`, call `clientHops` (or `rightmostChain` then `rightmostUntrusted`). Do not call `GetRemoteIPs` on that path. Do not copy Traefik `ipStrategy.excludedIPs`. `clientHops` joins the chain only when trace is on, like the other strategies; error logs fall back to the evaluated hop.
+- `appendHops` is the one comma-split + `cleanIPAddress` loop for both paths. Pass a nil `seen` to keep repeated hops.
+- `rightmostChain`: forwarding `ipHeaders` (every entry except `remoteAddress`) are alternatives in config order. Take the first header with at least one hop: absent, empty, and comma-only headers are skipped. Read every field line (`Header.Values`) of that header. Then append `req.RemoteAddr` when `remoteAddress` is listed (always last). Never concatenate two forwarding headers.
+- `rightmostUntrusted`: from the right, the first hop not in `trustedProxies`. All hops trusted → the leftmost hop (the request's origin), so LB health checks follow `allowPrivate` instead of the empty-hop path. Empty only when the chain is empty. The result aliases the chain slice.
+- Trusted-proxy membership: `newTrustedProxyHelper` calls `iplookup.Helper.AddEntry` (CIDR or bare address; a bare `::ffff:a.b.c.d` is the IPv4 `/32`). Do not append `/32` or `/128` here. The helper is nil when no entry is set. Do not reuse `loadIPBlockHelper` (directory lists). `Contains` error → hop is not trusted.
+- `blockFromHeader`: a `decide` error on the `RightmostUntrusted` hop with `banIfError: false` is decided by `defaultAllow` (`PhaseDefaultAllow`), never skipped. The other strategies still skip that hop.
+- An empty chain is still the request-mode empty-hop path (`banIfError`). Do not invent a hop.
 
 ## Pattern snippet
 
@@ -31,7 +33,7 @@ remoteIPs, ipChain := p.clientHops(req)
 
 ## Key files
 
-- `pkg/geoblock/ip.go` — `collectHops`, `GetRemoteIPs`, `rightmostChain`, `rightmostUntrusted`, trusted-proxy builder
+- `pkg/geoblock/ip.go` — `appendHops`, `GetRemoteIPs`, `rightmostChain`, `rightmostUntrusted`, `newTrustedProxyHelper`
 - `pkg/geoblock/plugin.go` — `ServeHTTP` / `clientHops` strategy branch; `Plugin` helper field
 - `pkg/geoblock/config.go` — `Prepare` (`RightmostUntrusted`, `remoteAddress` last, `trustedProxies` only with that strategy)
 - `pkg/geoblock/zzz_plugin_ipheaders_test.go` — existing first-occurrence dedup

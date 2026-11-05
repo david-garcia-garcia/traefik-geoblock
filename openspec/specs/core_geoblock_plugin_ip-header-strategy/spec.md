@@ -5,7 +5,7 @@ Selects one client hop for enrich and block from `ipHeaders` by walking the coll
 ## Requirements
 
 ### Requirement: RightmostUntrusted consumes the client-address owner's chain
-When `ipHeaderStrategy` is `RightmostUntrusted`, the plugin SHALL take the hop chain from this plugin's client-address owner (`collectHops` / `rightmostChain` in `pkg/geoblock/ip.go`). That chain SHALL keep hop order and repeated addresses. The plugin MUST NOT rebuild the chain from `GetRemoteIPs` (first-occurrence dedup). The plugin MUST NOT copy Traefik `ipStrategy.excludedIPs`. An empty result SHALL use the existing empty-hop path (`banIfError`). The plugin MUST NOT invent a hop.
+When `ipHeaderStrategy` is `RightmostUntrusted`, the plugin SHALL take the hop chain from this plugin's client-address owner (`collectHops` / `rightmostChain` in `pkg/geoblock/ip.go`). That chain SHALL keep hop order and repeated addresses. The plugin MUST NOT rebuild the chain from `GetRemoteIPs` (first-occurrence dedup). The plugin MUST NOT copy Traefik `ipStrategy.excludedIPs`. An empty chain SHALL use the existing empty-hop path (`banIfError`). The plugin MUST NOT invent a hop.
 
 The plugin SHALL walk that chain from the right and evaluate exactly the first hop that is not in `trustedProxies`.
 
@@ -35,7 +35,7 @@ On the `RightmostUntrusted` path, a forwarding header sent as several HTTP field
 - **THEN** the evaluated hop is `8.8.8.8`
 
 ### Requirement: Forwarding ipHeaders are alternatives and remoteAddress closes the chain
-When `ipHeaderStrategy` is `RightmostUntrusted`, every `ipHeaders` entry except `remoteAddress` SHALL be an alternative, tried in config order. The first header that yields at least one hop SHALL be the selected header. Later forwarding headers MUST NOT be concatenated into that chain.
+When `ipHeaderStrategy` is `RightmostUntrusted`, every `ipHeaders` entry except `remoteAddress` SHALL be an alternative, tried in config order. The first header that yields at least one hop SHALL be the selected header. A header that is absent, empty, or holds no hop after splitting and trimming SHALL be skipped. Later forwarding headers MUST NOT be concatenated into that chain.
 
 When `remoteAddress` is listed, it SHALL be the last `ipHeaders` entry and SHALL be appended as the last hop of the chain. Plugin creation SHALL fail if `remoteAddress` is listed and is not last. Plugin creation SHALL succeed if `remoteAddress` is omitted; creation SHALL warn once that headers are trusted without checking the direct peer.
 
@@ -47,6 +47,11 @@ When `remoteAddress` is listed and the direct peer is not in `trustedProxies`, t
 - **WHEN** `ipHeaders` is `cf-connecting-ip, x-forwarded-for, remoteAddress`, `ipHeaderStrategy` is `RightmostUntrusted`, and `RemoteAddr` is in `trustedProxies`
 - **AND** the request has `CF-Connecting-IP: 1.1.1.1` and `X-Forwarded-For: 8.8.8.8`
 - **THEN** the evaluated hop is `1.1.1.1`
+
+#### Scenario: Present but empty header is skipped
+- **WHEN** `ipHeaders` is `cf-connecting-ip, x-forwarded-for, remoteAddress`, `ipHeaderStrategy` is `RightmostUntrusted`, and `RemoteAddr` is in `trustedProxies`
+- **AND** the request has `CF-Connecting-IP` with an empty value and `X-Forwarded-For: 8.8.8.8`
+- **THEN** the evaluated hop is `8.8.8.8`
 
 #### Scenario: Later header is used when the earlier one is absent
 - **WHEN** `ipHeaders` is `cf-connecting-ip, x-forwarded-for, remoteAddress`, `ipHeaderStrategy` is `RightmostUntrusted`, and `RemoteAddr` is in `trustedProxies`
@@ -80,13 +85,13 @@ When `remoteAddress` is listed and the direct peer is not in `trustedProxies`, t
 ### Requirement: trustedProxies load and membership
 `trustedProxies` set (non-empty after trimming) with a strategy other than `RightmostUntrusted` SHALL fail plugin creation. Empty `trustedProxies` with `RightmostUntrusted` SHALL succeed.
 
-Plugin creation SHALL parse `trustedProxies` once onto the shared family-isolated CIDR helper. A plain address SHALL be stored as `addr/32` (IPv4) or `addr/128` (IPv6). An invalid entry SHALL fail creation and name that entry. There SHALL NOT be a second `trustedProxies` parser.
+Plugin creation SHALL parse `trustedProxies` once onto the shared family-isolated CIDR helper through `iplookup.Helper.AddEntry`. A plain address SHALL be stored as its host prefix: `/32` for IPv4 and IPv4-mapped IPv6 (an IPv4-mapped literal is the IPv4 host), `/128` for IPv6. An IPv4-mapped CIDR SHALL load without error. An invalid entry SHALL fail creation and name that entry. There SHALL NOT be a second `trustedProxies` parser.
 
 Membership SHALL use that helper's `Contains` on the hop `net.IP` the client-address owner already chose. A `Contains` error SHALL treat the hop as not trusted (the hop is evaluated, not skipped). An IPv4 prefix MUST NOT match an IPv6 hop.
 
-When every hop in the chain is trusted, the result SHALL be empty and SHALL use the existing empty-hop path (`banIfError`).
+When every hop in the chain is trusted, the leftmost hop (where the request started) SHALL be the evaluated hop. It MUST NOT use the empty-hop path.
 
-An unparsable rightmost untrusted hop SHALL still be the evaluated hop (enrich `XX` / `defaultAllow`).
+An unparsable rightmost untrusted hop SHALL still be the evaluated hop. With `banIfError` true the request is blocked; with `banIfError` false, `defaultAllow` SHALL decide it. It MUST NOT pass without a decision.
 
 #### Scenario: trustedProxies with CheckAll fails creation
 - **WHEN** `trustedProxies` is `10.0.0.0/8` and `ipHeaderStrategy` is `CheckAll`
@@ -111,6 +116,25 @@ An unparsable rightmost untrusted hop SHALL still be the evaluated hop (enrich `
 - **WHEN** `ipHeaderStrategy` is `RightmostUntrusted` and `trustedProxies` contains `10.0.0.0/33`
 - **THEN** plugin creation fails and the error names `10.0.0.0/33`
 
-#### Scenario: All hops trusted uses banIfError
-- **WHEN** `ipHeaderStrategy` is `RightmostUntrusted`, every hop in the chain is in `trustedProxies`, and `banIfError` is true
+#### Scenario: Bare IPv4-mapped address trusts the IPv4 host
+- **WHEN** `ipHeaderStrategy` is `RightmostUntrusted` and `trustedProxies` is `::ffff:10.10.60.5`
+- **AND** the chain is `8.8.8.8, 10.10.60.5`
+- **THEN** the evaluated hop is `8.8.8.8`
+- **AND** a chain ending in `::5` evaluates `::5`
+
+#### Scenario: Health check from a trusted proxy follows allowPrivate
+- **WHEN** `ipHeaders` is `x-forwarded-for, remoteAddress`, `ipHeaderStrategy` is `RightmostUntrusted`, `trustedProxies` is `10.10.60.0/24`, `allowPrivate` is true, and `banIfError` is true
+- **AND** the request has no `X-Forwarded-For` and `RemoteAddr` is `10.10.60.5:443`
+- **THEN** the evaluated hop is `10.10.60.5`
+- **AND** the request passes with reason `allow_private`
+- **AND** no empty-hop warning is logged
+
+#### Scenario: Unparsable hop with banIfError false uses defaultAllow
+- **WHEN** `ipHeaderStrategy` is `RightmostUntrusted`, `banIfError` is false, and `defaultAllow` is false
+- **AND** the evaluated hop is `garbage`
+- **THEN** the request is blocked with reason `default_allow`
+
+#### Scenario: Empty chain uses banIfError
+- **WHEN** `ipHeaders` is `x-forwarded-for`, `ipHeaderStrategy` is `RightmostUntrusted`, and `banIfError` is true
+- **AND** the request has no `X-Forwarded-For`
 - **THEN** the request is blocked

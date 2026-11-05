@@ -426,7 +426,7 @@ ipHeaders:
 
 This strategy uses the same rule as Traefik `ipStrategy.excludedIPs`: walk hops from the right, skip trusted proxies, evaluate exactly one hop. A client cannot pick the country by forging left-side hops.
 
-Forwarding headers (every `ipHeaders` entry except `remoteAddress`) are alternatives, tried in config order. The first header that yields at least one hop is the selected header. Later forwarding headers are ignored for that request; they are never concatenated. The default `ipHeaders` (`x-forwarded-for`, `x-real-ip`) stays valid: `X-Forwarded-For` when present, else `X-Real-IP`.
+Forwarding headers (every `ipHeaders` entry except `remoteAddress`) are alternatives, tried in config order, so list them by priority. The first header that yields at least one hop is the selected header; a header that is absent, empty, or has no address in it (`" , "`) is skipped. Later forwarding headers are ignored for that request; they are never concatenated. The default `ipHeaders` (`x-forwarded-for`, `x-real-ip`) stays valid: `X-Forwarded-For` when present, else `X-Real-IP`.
 
 `remoteAddress`, when listed, must be last and always closes the chain. A direct peer that is not in `trustedProxies` is then the evaluated hop, so every forwarding header is ignored. Omitting `remoteAddress` is allowed (one warning at creation): headers are trusted without checking who sent them. Put `remoteAddress` last so a request that did not come through your proxies cannot choose a header.
 
@@ -444,6 +444,12 @@ trustedProxies:
 ```
 
 Each proxy in front of Traefik must overwrite or strip every configured forwarding header it does not set. Otherwise a client that can get an earlier header through (for example `CF-Connecting-IP` through a load balancer that only sets `X-Forwarded-For`) picks the header. Binding each header to the proxies allowed to set it is not implemented.
+
+When every hop is a trusted proxy (a load balancer health check, an internal call from inside the proxy chain), the leftmost hop, where the request started, is evaluated. A private load balancer address therefore follows `allowPrivate`; to allow it with `allowPrivate: false`, add it to `allowedIPBlocks`. Only a request with no hop at all goes to the `banIfError` path.
+
+When the evaluated hop is not an IP address (for example `CF-Connecting-IP: garbage`), `banIfError: true` blocks it; with `banIfError: false`, `defaultAllow` decides.
+
+`trustedProxies` entries are CIDRs or single addresses (`10.10.60.5`, `2001:db8::1`, `::ffff:10.10.60.5`). A single address trusts only that host; an IPv4-mapped address is the IPv4 host.
 
 `trustedProxies` is rejected with `CheckAll` / `CheckFirst` / `CheckFirstNonePrivate`. Empty `trustedProxies` with `RightmostUntrusted` is valid: the rightmost hop (often the direct peer) is the client.
 
