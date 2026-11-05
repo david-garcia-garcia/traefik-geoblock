@@ -134,6 +134,18 @@ func TestFindLatestDatedFile(t *testing.T) {
 	}
 }
 
+func TestFindLatestDatedFile_MissingDirIsNotCreated(t *testing.T) {
+	// The keep-current goroutine calls this after a dir may be gone; it must not recreate it.
+	dir := filepath.Join(t.TempDir(), "removed")
+	latest, err := FindLatestDatedFile(dir, "*_ipinfo_lite.mmdb")
+	if err != nil || latest != "" {
+		t.Fatalf("missing dir: got %q, %v; want empty, nil", latest, err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("FindLatestDatedFile created %s (stat err %v)", dir, err)
+	}
+}
+
 func TestGetDBVersion(t *testing.T) {
 	// Test successful case
 	version, err := GetDatabaseVersion(dbFilePath)
