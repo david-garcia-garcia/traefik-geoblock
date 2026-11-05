@@ -8,7 +8,7 @@ _Avoid_: first-party `pkg/iplookup`; one shared radix for IPv4 and IPv6
 
 ## Overview
 
-The helper is `github.com/david-garcia-garcia/traefik-middleware-utilities/iplookup`, pinned in `go.mod` and loaded from `vendor/`. Do not copy it into `pkg/iplookup`. `go mod vendor` omits `*_test.go`; library tests stay upstream. This plugin loads `allowedIPBlocks` / `blockedIPBlocks` and directory `.txt` lists onto it in `pkg/geoblock`.
+The helper is `github.com/david-garcia-garcia/traefik-middleware-utilities/iplookup`, pinned in `go.mod` and loaded from `vendor/`. Do not copy it into `pkg/iplookup`. `go mod vendor` omits `*_test.go`; library tests stay upstream. This plugin loads `allowedIPBlocks` / `blockedIPBlocks` and directory `.txt` lists onto it in `pkg/geoblock`. `trustedProxies` uses the same helper through `newTrustedProxyHelper` (plain address → `/32` or `/128`, then `AddCIDR`). Do not reuse `loadIPBlockHelper` for that list.
 
 ## How to use
 
@@ -30,7 +30,8 @@ found, prefixLen, _, err := helper.Contains(ipAddr)
 
 - `vendor/github.com/david-garcia-garcia/traefik-middleware-utilities/iplookup`
 - `pkg/geoblock/ip_blocks.go` — `loadIPBlockHelper`
-- `pkg/geoblock/plugin.go` — `allowedIPBlocks` / `blockedIPBlocks`
+- `pkg/geoblock/ip.go` — `newTrustedProxyHelper`
+- `pkg/geoblock/plugin.go` — `allowedIPBlocks` / `blockedIPBlocks` / `trustedProxies`
 
 ## Gotchas
 

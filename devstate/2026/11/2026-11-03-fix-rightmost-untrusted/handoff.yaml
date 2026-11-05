@@ -1,0 +1,18 @@
+issueKey: 2026-11-03-fix-rightmost-untrusted
+jobName: 2026-11-03-fix-rightmost-untrusted
+issueHost: local
+issueRef: none
+prHost: github
+ciHost: github
+repoSlug: traefik-geoblock
+destBranch: master
+qualify: qualified-with-gaps
+src: 06d0dc92696ed3e98f58d791305537e3f7b4b38090111f8cc63eb56b1262ee67
+localTests: passed
+requirement: requirement.md
+comments: none
+explore: explore.md
+change: fix-rightmost-untrusted
+pr:
+  id: 97
+  url: https://github.com/david-garcia-garcia/traefik-geoblock/pull/97

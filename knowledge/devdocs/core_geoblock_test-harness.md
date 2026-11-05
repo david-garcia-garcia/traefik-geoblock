@@ -20,7 +20,7 @@ Unit and bench tests live next to the owner package. Traefik behavior is proven 
 
 ## How to use
 
-- Change `pkg/geoblock` policy or config → add or extend a package test in `pkg/geoblock/plugin_*_test.go` (config, policy, ipheaders, filters, observe). Shared fixtures stay in `pkg/geoblock/plugin_test.go`.
+- Change `pkg/geoblock` policy or config → add or extend a package test in `pkg/geoblock/zzz_plugin_*_test.go` (config, policy, ipheaders, filters, observe, rightmost untrusted). Shared fixtures stay in `pkg/geoblock/plugin_test.go`.
 - Change instance reclaim (name+config key, grace) → add or extend `plugin_instance_test.go` at module root. That file calls root `New`, not `newTestPlugin`.
 - Change a helper in `pkg/<name>` → add or extend `pkg/<name>/*_test.go`.
 - Change lookup or `ServeHTTP` cost → run `go test -bench=BenchmarkPlugin -benchmem`. MaxMind benches (`BenchmarkPlugin_*MaxMind`) use dummy IP `81.2.69.142`, not 8.8.8.8. Keep `TestThroughput_*` floors conservative; raise them only after CI samples.
@@ -53,7 +53,8 @@ func TestRequestHeaderEnrich(t *testing.T) {
 - `pkg/geoblock/plugin_test.go` — shared fixtures (`noopHandler`, BIN helpers)
 - `pkg/geoblock/plugin_config_test.go` — `New`, deprecated aliases, auto-update
 - `pkg/geoblock/plugin_policy_test.go` — country / IP / private allow-deny
-- `pkg/geoblock/plugin_ipheaders_test.go` — IP extraction and `ipHeaderStrategy`
+- `pkg/geoblock/zzz_plugin_ipheaders_test.go` — IP extraction and `ipHeaderStrategy` (`CheckAll` / `CheckFirst` / `CheckFirstNonePrivate`)
+- `pkg/geoblock/zzz_plugin_rightmost_untrusted_test.go` — `RightmostUntrusted` and `trustedProxies`
 - `pkg/geoblock/plugin_filters_test.go` — ignore verbs, include/exclude path regex, bypass headers
 - `pkg/geoblock/plugin_observe_test.go` — `logStatusDetailHeader` and `requestHeaderEnrich`
 - `pkg/geoblock/perf_test.go` — throughput gates and `BenchmarkPlugin_*`

@@ -10,6 +10,11 @@ priority: normal
 local: core_geoblock_plugin_request-mode.md
 description: How Config mode splits GeoIP lookup from country allow/block on one ServeHTTP.
 
+## IP header strategy
+priority: normal
+local: core_geoblock_plugin_ip-header-strategy.md
+description: How this plugin collects hops from ipHeaders and which slice ServeHTTP evaluates.
+
 ## Plugin instance
 priority: normal
 local: core_geoblock_plugin_instance.md
