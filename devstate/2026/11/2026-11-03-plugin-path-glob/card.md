@@ -20,6 +20,8 @@ Priority: P2 — real operator pain with a workaround (set the exact path by han
 
 **Starting without a database** (`pkg/geoblock`, `pkg/dbwrappers`): a source with a `url` starts even when no local file exists, BIN and MMDB alike. It logs one WARN `no database file yet; waiting for auto-update` with the reason, and the download runs as usual. A source without a `url` and without a file still fails to start.
 
+**Update dir:** `dbutils.FindLatestDatedFile` no longer creates the directory it reads. It ran `os.MkdirAll(dir, 0755)` before looking for dated files, and the keep-current goroutine calls it on every tick (also for rows without a URL), so a removed update dir came back. The download path still creates the dir before writing.
+
 **Logs:** finding a file no longer writes to the log. The error says which folder was used, where it came from (variable or Traefik default) and the exact paths tried. The caller logs it once: a WARN when the source waits for a download, otherwise it is the startup error. A missing seed when a downloaded file is already in use is DEBUG.
 
 **Yaegi:** Traefik runs plugins in the Yaegi interpreter, not as compiled Go. Yaegi v0.16.1 mis-runs a tuple assignment such as `a, b = x, t.ModTime()`; the first version of this change used one, and the folder search found nothing inside Traefik while `go test` passed. The code now uses two statements, and CI runs the `fileutils`, `dbutils` and `logging` tests under Yaegi (`make test-yaegi`).
@@ -31,21 +33,21 @@ README, the url-download spec and the devdocs describe this behaviour.
 
 **Admin users.** None.
 
-**Developers.** `fileutils.Search` and `dbsource.BundledFile` no longer take a logger and never log; callers decide the level. `fileutils.PluginDir` is the single place that locates the plugin folder. `MMDBConfig` gains `AllowMissing`. Code that Traefik runs must avoid tuple assignments that Yaegi mis-runs; `make test-yaegi` checks the packages that support it.
+**Developers.** `fileutils.Search` and `dbsource.BundledFile` no longer take a logger and never log; callers decide the level. `fileutils.PluginDir` is the single place that locates the plugin folder. `MMDBConfig` gains `AllowMissing`. `dbutils.FindLatestDatedFile` returns empty for a missing dir instead of creating it. Code that Traefik runs must avoid tuple assignments that Yaegi mis-runs; `make test-yaegi` checks the packages that support it.
 
 **End users.** Only during the first start without any local database file: requests are blocked (default) until the download finishes. In the Docker check that took under a second; without outbound internet access it never finishes.
 
 ## Merge readiness
-Not ready: the CI **Test** job is red because of a flaky test that already fails on `master` (see Verification). Everything else is green.
+Ready for review. CI: 4 of 4 jobs green.
 
 Priority: P2 — real operator pain with a workaround
-Reviewed head: 5435941
+Reviewed head: 99507f6
 Owner decision: Required on the two choices in "Deviations from the ask" (folder order, and one folder for all files).
 
 ## Review scores
 | Measure | Result | What it means |
 | --- | --- | --- |
-| CI | 3 of 4 jobs green | Lint, Yaegi tests and Docker integration tests pass; **Test** fails on a pre-existing flaky test |
+| CI | 4 of 4 jobs green | Lint, unit tests, Yaegi tests and Docker integration tests |
 | Local tests | passed | `go test ./...`, `go vet ./...`, `golangci-lint` clean on changed files |
 | Review resolution | 8 of 9 findings fixed, 1 kept by owner decision | See Findings |
 | PR comments | none open | |
@@ -60,8 +62,8 @@ Owner decision: Required on the two choices in "Deviations from the ask" (folder
 | Official image, exact path and glob in the variable | seed opened from the plugin folder; same decisions | same |
 | Catalog layout | `/plugins-storage/sources/gop-<n>/src/<module>/seeds/` with working directory `/` | `traefik:v3.7.11` with the catalog plugin v1.2.1; this branch's code covered by a unit test on that layout (also run under Yaegi) |
 | Conflicts with master | resolved | merge of `b1f45f2` (#97); one devdocs line kept from each side |
-| CI | Lint, Test (Yaegi), Integration Tests passed; **Test failed** | [run 42038831232](https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/42038831232) on `5435941` |
-| Flaky `TestNew` | fails 2/5 on `master`, 4/5 on this PR before the review fixes, 2/5 after | Linux, non-root, clean clone. `FreeCatalogKeySucceeds` or `GeoNamedKeyIsOrdinary` fail with `TempDir RemoveAll cleanup: directory not empty`: the update dir is empty when the subtest ends and a file appears afterwards, so something keeps writing after the plugin is torn down. Writer not identified yet. |
+| CI | 4 of 4 jobs green | [run 42040611354](https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/42040611354) on `99507f6` |
+| Flaky `TestNew` (pre-existing on `master`) | fixed: 0/20 failures, no leftover dirs (was 2/5 on `master`) | Linux, non-root. See Findings. |
 
 ## Specs
 Worktree:
@@ -81,12 +83,10 @@ Completed:
 | — (not asked) | CI job running tests under Yaegi | Needed to catch Yaegi-only bugs like the one found during review. |
 
 ## Follow-up issues
-Open: the flaky `TestNew` above (pre-existing on `master`). Decision pending on whether it is fixed in this PR.
-
 Proposed, not filed yet: run more packages under Yaegi. `dbsource` tests locate `seeds/` with `runtime.Caller`, which points at the Go install under Yaegi. `dbwrappers` (MMDB tests) and `geoblock`/`dbprovider` (a `reflect.Set` panic with test stubs) fail under Yaegi; the real lookups worked in the Docker run, but the cause is not confirmed.
 
 ## How this fits together
-Ticket 2026-11-03-plugin-path-glob, branch `2026-11-03-plugin-path-glob` into `master`, PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/96. CI: [run 42038831232](https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/42038831232).
+Ticket 2026-11-03-plugin-path-glob, branch `2026-11-03-plugin-path-glob` into `master`, PR https://github.com/david-garcia-garcia/traefik-geoblock/pull/96. CI: [run 42040611354](https://github.com/david-garcia-garcia/traefik-geoblock/actions/runs/42040611354).
 
 ## Explore Decisions
 | Question | Rank | Decision | By |
@@ -109,6 +109,7 @@ Code review of `3de4849`, fixed in `64afdb4` unless noted.
 | 8 | Tests leave temp folders behind | Kept: test-only (owner decision) |
 | 9 | Throwaway logger per call and a duplicate check | Fixed |
 | — | Found while verifying in Docker: the folder search failed inside Traefik (Yaegi tuple assignment) | Fixed; CI Yaegi job added in `01b0fc8` |
+| — | Found in CI: `TestNew` flaky on Linux (`TempDir RemoveAll cleanup: directory not empty`), also on `master`. Cause: `FindLatestDatedFile` ran `MkdirAll` on every keep-current tick; the subtest removes its update dir before cancelling its context, so the still-running goroutine recreated the dir (0755, where `t.TempDir` makes 0700) during or after `RemoveAll`. | Fixed in `99507f6`: the read no longer creates the dir; regression test added |
 
 ## Axis review
 [Standards](https://github.com/david-garcia-garcia/traefik-geoblock/blob/2026-11-03-plugin-path-glob/devstate/2026/11/2026-11-03-plugin-path-glob/codereview_standards.md) — 2 total, 0 pending, 2 completed
@@ -129,7 +130,7 @@ These axis files are from the automated review of `3de4849`; the later review is
 | --- | --- | --- |
 | Specs in this PR | 0 added / 4 modified | Same list as Specs |
 | Open reviewer comments | 0 | Unanswered review is merge risk |
-| Reviewed head | 5435941a0634634e8ddf62fae850faa13d34cc71 | Card must match the branch you measured |
+| Reviewed head | 99507f6 | Card must match the branch you measured |
 
 ### Stored data model
 None.
