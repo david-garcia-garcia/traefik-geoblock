@@ -90,10 +90,10 @@ The plugin MUST NOT construct IP2Location `file=` URLs, IPinfo `ipinfo_{code}.mm
 The shared source component SHALL choose the file the source opens. When `databaseAutoUpdateDir` is set, the newest dated `YYYYMMDD_<catalogKey>` file in that directory SHALL win. Else if the catalog `path` is an existing file, that file SHALL be used. `path` is an operator file path (typically absolute), not a basename and not a directory to walk. When `path` is non-empty and is not an existing file, the plugin SHALL WARN `seed was specified but not found` and SHALL include that path, then SHALL continue Resolve. Else when `defaultFile` is set, the plugin SHALL open the first existing file of `{pluginDir}/seeds/<defaultFile>` then `{pluginDir}/<defaultFile>`. It MUST NOT walk a directory for a basename. It MUST NOT compute a second on-disk plugin directory (Traefik’s plugin Manager already owns that path). `pluginDir` SHALL be located from `TRAEFIK_PLUGIN_GEOBLOCK_PATH` as follows:
 
 - When the env is set and names an existing directory, that directory SHALL be used and glob matching SHALL be skipped.
-- When the env is set and is not an existing directory, the env value SHALL be treated as a glob. Matching directories SHALL be considered in lexicographic order. Zero directory matches MUST NOT fall through to the unset defaults.
-- When the env is unset, the plugin SHALL try `/plugins-storage/sources/*/src/github.com/david-garcia-garcia/traefik-geoblock` then `/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock`.
+- When the env is set and is not an existing directory, the env value SHALL be treated as a glob. Zero directory matches MUST NOT fall through to the unset defaults.
+- When the env is unset, the plugin SHALL try `plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock` then `plugins-storage/sources/*/src/github.com/david-garcia-garcia/traefik-geoblock`, relative to Traefik's working directory (Traefik resolves `./plugins-local` and `./plugins-storage` the same way; the official image runs from `/`). The first pattern that matches a directory wins.
 
-When several directories match a glob, the plugin SHALL keep the first lexicographic match that contains `seeds/<defaultFile>` for that call, else the first that contains `<defaultFile>` at that directory. None SHALL be the same not-found outcome as a missing bundled file today. When the env is unset and those defaults locate no directory or no file, the plugin SHALL log that `TRAEFIK_PLUGIN_GEOBLOCK_PATH` must be set to the plugin directory. When the env is set and both exact files are missing under the chosen directory, the plugin SHALL log those exact paths and SHALL say the env is probably not the plugin directory. A bundled-file miss that is the only remaining resolution path SHALL WARN. A bundled-file miss when a dated catalog file has already won SHALL DEBUG. Those misses MUST NOT be logged as Error. A row with `fieldsPreconfigured` `ip2location_asn` SHALL NOT set a bundled `defaultFile`. Empty ASN `path` and no dated ASN file SHALL wait for auto-update without searching `IP2LOCATION-LITE-ASN.IPV6.BIN`. Wrapper and source log lines for an open or missing file SHALL include `key` equal to the catalog map key. Config SHALL NOT expose `ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, `ipinfo_databaseFilePath`, `maxmind_databaseFilePath`, or unprefixed `databaseFilePath`.
+`pluginDir` SHALL be one directory for every bundled file (each `defaultFile` and `geoblockban.html`); it MUST NOT depend on which file is requested. When several directories match a pattern, the most recently modified SHALL win (Traefik unpacks a catalog plugin again at each start), then lexicographic order. A file missing under that directory MUST NOT be taken from another match. The plugin directory search SHALL NOT log; it SHALL return an error that names the chosen directory and the exact paths tried, or, when no directory matched, the env value or the default patterns and the working directory. When the env is unset that error SHALL say the env must be set to the plugin directory only when no default matched. When the env is set and both exact files are missing under the chosen directory, the error SHALL say the env is probably not the plugin directory. A bundled-file miss on a row that waits for auto-update SHALL be one WARN that includes that error. A bundled-file miss on a row that cannot wait SHALL fail plugin creation with that error and SHALL NOT also be logged by the wrapper. A bundled-file miss when a dated catalog file has already won SHALL DEBUG. Those misses MUST NOT be logged as Error by the plugin. A row with `fieldsPreconfigured` `ip2location_asn` SHALL NOT set a bundled `defaultFile`. Empty ASN `path` and no dated ASN file SHALL wait for auto-update without searching `IP2LOCATION-LITE-ASN.IPV6.BIN`. Wrapper and source log lines for an open or missing file SHALL include `key` equal to the catalog map key. Config SHALL NOT expose `ip2location_databaseFilePath`, `ip2location_asnDatabaseFilePath`, `ipinfo_databaseFilePath`, `maxmind_databaseFilePath`, or unprefixed `databaseFilePath`.
 
 #### Scenario: Dated catalog file wins
 - **WHEN** an enabled row key is `lite` and `databaseAutoUpdateDir` contains a dated `YYYYMMDD_lite` file
@@ -132,26 +132,38 @@ When several directories match a glob, the plugin SHALL keep the first lexicogra
 - **THEN** the plugin does not open that default path
 - **AND** bundled resolution fails
 
-#### Scenario: Unset env tries default globs
+#### Scenario: Unset env finds the catalog unpack
 - **WHEN** a bundled default is needed and `TRAEFIK_PLUGIN_GEOBLOCK_PATH` is unset
-- **AND** `/plugins-storage/sources/*/src/github.com/david-garcia-garcia/traefik-geoblock` matches a directory that contains `seeds/<defaultFile>`
+- **AND** Traefik's working directory contains `plugins-storage/sources/gop-<random>/src/github.com/david-garcia-garcia/traefik-geoblock/seeds/<defaultFile>`
 - **THEN** plugin creation opens that `seeds/<defaultFile>`
+
+#### Scenario: Unset env prefers the local plugin
+- **WHEN** `TRAEFIK_PLUGIN_GEOBLOCK_PATH` is unset
+- **AND** both `plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock` and a catalog unpack exist under Traefik's working directory
+- **THEN** the plugin directory is the local one
 
 #### Scenario: Unset env with no default match names the plugin directory
 - **WHEN** a bundled default is needed and `TRAEFIK_PLUGIN_GEOBLOCK_PATH` is unset
-- **AND** neither default path locates the file
-- **THEN** the plugin logs that the env must be set to the plugin directory
+- **AND** no default pattern matches a directory
+- **THEN** the error lists the patterns and the working directory
+- **AND** says the env must be set to the plugin directory
 
-#### Scenario: Several glob matches keep the seeded directory
-- **WHEN** the env glob matches two directories in lexicographic order `a` then `b`
-- **AND** only `b` contains `seeds/<defaultFile>`
-- **THEN** the plugin opens `{b}/seeds/<defaultFile>`
+#### Scenario: Several glob matches use the newest directory for every file
+- **WHEN** the env glob matches two directories `a` and `b`, and `b` was modified more recently
+- **THEN** every bundled file, including `geoblockban.html`, is read from `b`
+- **AND** a file missing under `b` is not read from `a`
 
 #### Scenario: Env set but exact files missing
 - **WHEN** a bundled default is needed and `TRAEFIK_PLUGIN_GEOBLOCK_PATH` is set to an existing directory
 - **AND** neither `{dir}/seeds/<defaultFile>` nor `{dir}/<defaultFile>` exists
-- **THEN** the plugin WARNs those exact paths
+- **THEN** the error names those exact paths
 - **AND** says the env is probably not the plugin directory
+
+#### Scenario: Env unset and file missing under the found directory
+- **WHEN** `TRAEFIK_PLUGIN_GEOBLOCK_PATH` is unset and a default pattern found a directory
+- **AND** neither exact file exists under it
+- **THEN** the error names that directory and says it was found from Traefik's default plugin paths
+- **AND** does not blame the env
 
 #### Scenario: Bundled miss while dated file won is debug
 - **WHEN** `databaseAutoUpdateDir` contains a dated file for the catalog key that Resolve already chose
@@ -174,7 +186,7 @@ When an enabled row has a non-empty `url` and Resolve finds no file (no dated ca
 - **WHEN** an enabled BIN row has a URL and `defaultFile` set
 - **AND** no dated file, catalog `path`, or bundled `defaultFile` exists
 - **THEN** plugin creation succeeds
-- **AND** a WARN says there is no database file yet
+- **AND** one WARN says there is no database file yet and includes why the bundled file was not found
 - **AND** keep-current starts
 
 #### Scenario: MMDB URL and missing defaultFile starts

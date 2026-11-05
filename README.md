@@ -215,9 +215,12 @@ RUN git clone https://github.com/david-garcia-garcia/traefik-geoblock \
     --branch v1.2.0 --single-branch
 ```
 
-Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to that plugin root. An exact directory still wins. The value may also be a glob. Traefik unpacks catalog plugins under `/plugins-storage/sources/gop-<random>/src/github.com/david-garcia-garcia/traefik-geoblock` (`{dir}/sources/gop-<random>/src/github.com/david-garcia-garcia/traefik-geoblock`). If the env is unset, the plugin tries `/plugins-storage/sources/*/src/github.com/david-garcia-garcia/traefik-geoblock` then `/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock`. A set env (glob or exact) does not fall through to those defaults. Traefik's process working directory is not the plugin tree. The plugin opens `{that dir}/seeds/<filename>` or `{that dir}/<filename>` — it does not walk the tree. `geoblockban.html` is at the plugin root, not under `seeds/`. If the env is unset and those defaults miss, logs say it must be the plugin root. If a set glob matches no directory, logs warn. If the chosen directory is missing those exact files, logs say the env is probably not the plugin root.
+With the official Traefik image you normally do not need `TRAEFIK_PLUGIN_GEOBLOCK_PATH`. When it is unset, the plugin looks where Traefik puts it, relative to Traefik's working directory (`/` in the official image): `plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock` (local plugin), then `plugins-storage/sources/*/src/github.com/david-garcia-garcia/traefik-geoblock` (catalog plugin; Traefik unpacks it under `gop-<random>`).
+
+Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` when the plugin lives elsewhere. It takes the plugin root: an exact directory, or a glob. A set env (glob or exact) does not fall through to the defaults. If several directories match, the most recently modified one is used for every bundled file. The plugin opens `{that dir}/seeds/<filename>` or `{that dir}/<filename>` — it does not walk the tree. `geoblockban.html` is at the plugin root, not under `seeds/`. When the bundled file cannot be found, the error names the directory and the exact paths tried. A source with a `url` then logs one WARN and waits for the download; a source without one fails to start.
 
 ```bash
+# Only when the plugin is not under Traefik's default plugin paths
 # Docker Compose
 environment:
   - TRAEFIK_PLUGIN_GEOBLOCK_PATH=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock

@@ -219,7 +219,7 @@ func Prepare(cfg *Config, name string) error {
 
 	if cfg.BanHtmlFilePath != "" {
 		var err error
-		cfg.BanHtmlFilePath, err = fileutils.Default.Search(cfg.BanHtmlFilePath, "geoblockban.html", logger)
+		cfg.BanHtmlFilePath, err = fileutils.Default.Search(cfg.BanHtmlFilePath, "geoblockban.html")
 		if err != nil {
 			return fmt.Errorf("%s: failed to find ban HTML file: %w", name, err)
 		}

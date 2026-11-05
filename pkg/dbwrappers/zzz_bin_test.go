@@ -123,8 +123,8 @@ func TestOpenBIN_URLMissingDefaultFileStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("URL + missing defaultFile: %v", err)
 	}
-	if !strings.Contains(buf.String(), "no database file yet") {
-		t.Fatalf("waiting should WARN: %s", buf.String())
+	if !strings.Contains(buf.String(), "no database file yet") || !strings.Contains(buf.String(), "not found in plugin directory") {
+		t.Fatalf("waiting should WARN with the reason: %s", buf.String())
 	}
 	if _, err := w.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil ||
 		!strings.Contains(err.Error(), "BIN is not open") {

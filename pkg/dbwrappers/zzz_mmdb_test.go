@@ -96,8 +96,8 @@ func TestOpenMMDB_URLMissingDefaultFileStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("URL + missing defaultFile: %v", err)
 	}
-	if !strings.Contains(buf.String(), "no database file yet") {
-		t.Fatalf("waiting should WARN: %s", buf.String())
+	if !strings.Contains(buf.String(), "no database file yet") || !strings.Contains(buf.String(), "not found in plugin directory") {
+		t.Fatalf("waiting should WARN with the reason: %s", buf.String())
 	}
 	if err := w.Lookup("8.8.8.8", &struct{}{}); err == nil ||
 		!strings.Contains(err.Error(), "MMDB is not open") {
