@@ -18,6 +18,10 @@ _Avoid_: treating a file brand as a wrapper type; hidden vendor structs; inferri
 The live vendor database object currently visible on a Wrapper (`*ip2loc.DB` or `*maxminddb.Reader`). Neither format locks it: a lookup may see a stale Path/Version/SourcePath or the previous generation’s handle, and the handle a swap replaced is Closed only after `readGrace`.
 _Avoid_: a request-path mutex on either format; setting BIN `w.db` to nil on Close; a `closed` flag behind a mutex
 
+**AllowMissing**:
+A wrapper open flag that lets initialize return with no published handle so keep-current can GET. Catalog sets it when the row has a URL, or both `path` and `defaultFile` are empty.
+_Avoid_: treating a missing `defaultFile` with no URL as optional
+
 ## Overview
 
 `pkg/dbwrappers` owns BIN and MMDB open/hot-swap and the named presets. `BIN.LookupRecord` and `MMDB.LookupRecord` take a `FieldMap` (path → Field) and fill a `Record`. MMDB decode uses each Field's type (`string` or `uint32`) so unused keys are skipped. The plugin never type-asserts a wrapper. Prepare expands `fieldsPreconfigured` into that map.
@@ -25,6 +29,8 @@ _Avoid_: a request-path mutex on either format; setting BIN `w.db` to nil on Clo
 ## How to use
 
 - Open through `OpenBIN` or `OpenMMDB` with the plugin `New` context. Same config hash shares one file and one Updater. The wrapper logger is scoped with `key` equal to the catalog map key. BIN open from catalog uses `logging.NewOwner`: `owner_plugin` is the creating middleware; do not attach `plugin` on that logger.
+- Pass `AllowMissing` on BIN and MMDB when the catalog row has a URL, or both `Path` and `DefaultFileName` are empty. `MMDBConfig.AllowMissing` is the MMDB field; do not hardcode false. initialize WARNs `no database file yet; waiting for auto-update` (with `reason` when Resolve returned an error) and returns; when the row cannot wait it returns the error without logging it; keep-current still starts. Nil-handle lookup is `BIN is not open` / `MMDB is not open`. Missing `defaultFile` with no URL fails New.
+- When dated Latest already won, BIN seed-first peeks `BundledFile` (which does not log); a miss is DEBUG `bundled file not found`, not WARN.
 - `BIN opened` / `MMDB opened` is one info line per published handle, construction and hot-swap alike. `reason` says why it is live (`init`, `seed`, `promote`, `download`), `path` is the opened file (temp copy when one exists), `source_path` is the file that handle was taken from, `version` appears when the format has a header, and `size_bytes` is that opened file’s length. When a dated catalog BIN exists and `defaultFile` is found, construction opens that seed as `reason=seed` and the promote publishes `reason=promote`. The keep-current updater copies that Latest off `New`; a later tick GETs only if the file is older than MinAge. Temp copy basename is `bin_<catalogKey>_<unixNano>.BIN`.
 - Those opens go through the wrappers reclaim table (`std_go_reclaim.md`) with `bin:<catalogKey>:<hash>` / `mmdb:<catalogKey>:<hash>` keys. Sleep and Close join the keep-current loop by calling `Updater.Stop` only. Wake starts one updater again after the previous Stop has returned. Close marks the wrapper closed before that Stop, then closes the file or reader. Unreclaimed hash ends after grace. `OpenBIN` / `OpenMMDB` hand back the typed wrapper through `reclaim.OpenTyped`, then `LookupRecord(ip, fields)` via `dbprovider.Bind`.
 - After Close returns, that generation stays disposed: Lookup fails, and a download that finishes afterward must not assign a live handle. BIN closes and removes a temp copy opened after Close. `db == nil` is not closed (AllowMissing may start with no file).

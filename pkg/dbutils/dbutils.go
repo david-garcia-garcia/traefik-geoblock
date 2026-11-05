@@ -135,11 +135,11 @@ func DatedKeyGlob(key, ext string) string {
 }
 
 // FindLatestDatedFile returns the newest YYYYMMDD_* file in dir matching globPattern
-// (a filename glob, not a full path). Empty string means none matched.
+// (a filename glob, not a full path). Empty string means none matched, including a
+// missing dir. It only reads: the keep-current goroutine calls it in the background,
+// and creating dir here recreated an update dir after its owner had removed it.
+// The download path creates dir before writing.
 func FindLatestDatedFile(dir, globPattern string) (string, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create directory: %w", err)
-	}
 	files, err := filepath.Glob(filepath.Join(dir, globPattern))
 	if err != nil {
 		return "", err

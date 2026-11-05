@@ -4,7 +4,7 @@
 
 **Plugin root**:
 The module-root Go package Traefik Yaegi evals. It MUST export `New` and `CreateConfig`. It owns process-table instance reclaim for one Plugin per middleware name and config.
-_Avoid_: opening the geo database, ServeHTTP, or geo policy in this package; putting instance reclaim in `pkg/geoblock`.
+_Avoid_: opening the geo database, ServeHTTP, or geo policy in this package; putting instance reclaim in `pkg/geoblock`; the on-disk Traefik unpack path (that is Plugin directory).
 
 **Subpackage**:
 A Go package under `pkg/` that the plugin root imports. Yaegi can load these; crowdsec-bouncer uses the same layout.

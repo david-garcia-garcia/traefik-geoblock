@@ -90,14 +90,19 @@ type lifecycle struct {
 // If that dated file cannot be opened, it warns and publishes catalog Path then BundledFile.
 func (l *lifecycle) initialize() error {
 	resolved, err := dbsource.Resolve(l.source, l.logger)
-	if err != nil && resolved == "" && !l.allowMissing {
-		return fmt.Errorf("failed to resolve database path: %w", err)
-	}
 	if resolved == "" {
 		if !l.allowMissing {
+			// The caller logs the returned error; logging it here too would repeat it.
+			if err != nil {
+				return fmt.Errorf("failed to resolve database path: %w", err)
+			}
 			return fmt.Errorf("database file not found")
 		}
-		l.logger.Info("no database file yet; waiting for auto-update")
+		if err != nil {
+			l.logger.Warn("no database file yet; waiting for auto-update", "reason", err)
+		} else {
+			l.logger.Warn("no database file yet; waiting for auto-update")
+		}
 		return nil
 	}
 	version, err := l.publish(l.chooseStartupTarget(resolved))
@@ -123,7 +128,7 @@ func (l *lifecycle) startupSeed(failed string) string {
 	if path != "" && path != failed && fileutils.Exists(path) {
 		return path
 	}
-	seed, err := dbsource.BundledFile(l.source, l.logger)
+	seed, err := dbsource.BundledFile(l.source)
 	if err != nil || seed == "" || seed == failed {
 		return ""
 	}
@@ -140,9 +145,14 @@ func (l *lifecycle) chooseStartupTarget(resolved string) openTarget {
 		return inPlace
 	}
 	if l.seedFirst {
-		if seed, serr := dbsource.BundledFile(l.source, l.logger); serr == nil && seed != "" {
+		seed, serr := dbsource.BundledFile(l.source)
+		if serr == nil && seed != "" {
 			// Serve the seed so New returns; the keep-current loop promotes the dated file.
 			return openTarget{openPath: seed, sourcePath: seed, reason: reasonSeed}
+		}
+		if serr != nil {
+			// The dated file already won, so a bundled miss is DEBUG only.
+			l.logger.Debug("bundled file not found; opening the dated file", "reason", serr)
 		}
 	}
 	if !l.servesFromFile {

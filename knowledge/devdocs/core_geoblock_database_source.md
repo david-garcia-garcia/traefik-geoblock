@@ -22,6 +22,14 @@ _Avoid_: inventing a `vendor` key; combining with `fields`
 Keep-current loop for one source (ticker: promote Latest on disk, then GET if stale).
 _Avoid_: slot
 
+**Plugin directory**:
+The on-disk Traefik plugin tree Search joins (`seeds/<defaultFile>` then `<defaultFile>`). Located from `TRAEFIK_PLUGIN_GEOBLOCK_PATH` as an exact directory, an env glob, or the unset default globs.
+_Avoid_: Plugin root (the Yaegi entrypoint package); `GoPath()`; walking for a basename
+
+**Search**:
+The `fileutils` locator for a bundled file under the plugin directory.
+_Avoid_: directory walk; a second plugin-directory calculation
+
 ## Overview
 
 Each enabled catalog row is one wrapper plus one source. Merge happens after Lookup (`core_geoblock_database_lookup`). `tools/dbdownload` is the seed CLI, not this package.
@@ -30,8 +38,8 @@ Each enabled catalog row is one wrapper plus one source. Merge happens after Loo
 
 - Put seed `path` and/or `url` on a catalog entry. Set `databaseType` (`bin` / `mmdb`). Set `fieldsPreconfigured` or `fields` (path → Record key or `{key, type}`), not both. Empty both fails `Prepare` with `set fields or fieldsPreconfigured; plugin does not start; this middleware is not applied`. Unknown Record keys, field types, or preset names fail `Prepare`. Preset format must match the row. Full name list: `docs/fields-preconfigured.md`.
 - Lookup modes insert reserved rows when the key is absent: `default_ip2location` (enabled; free LITE ZIP + `IP2LOCATION-LITE-DB1.IPV6.BIN`), `default_ipinfo` (disabled; `ipinfo_lite.mmdb`), `default_maxmind` (disabled; dummy `GeoIP2-Country-Test.mmdb`), `default_geolite` (disabled; unofficial P3TERX Country GET). Keep an operator-defined reserved row. Do not commit a live GeoLite file.
-- Omitted `enabled` means on. Zero enabled rows in a lookup mode fails `Prepare`. Unknown or empty `databaseType` on an enabled row fails `Prepare`. Unknown `databaseType`/`archive` fails `New`. A bound URL with empty `databaseAutoUpdateDir` WARNs and uses `os.TempDir()`/`traefik-geoblock`.
-- Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path). A set `path` that is not a file WARNs `seed was specified but not found`. Else `{TRAEFIK_PLUGIN_GEOBLOCK_PATH}/seeds/<defaultFile>` then `{env}/<defaultFile>`. Empty `defaultFile` skips bundled search. No directory walk. An ASN LITE row (`databaseType: bin`, `fieldsPreconfigured: ip2location_asn`) ships no `defaultFile`; BIN open allows a missing file when both `path` and `defaultFile` are empty. There is no `*_databaseFilePath`.
+- Omitted `enabled` means on. Zero enabled rows in a lookup mode fails `Prepare`. Unknown or empty `databaseType` on an enabled row fails `Prepare`. Unknown `databaseType`/`archive` fails `New`. A bound URL with empty `databaseAutoUpdateDir` WARNs and uses `os.TempDir()`/`traefik-geoblock`. A bound URL with no on-disk file (including a set `defaultFile` Search cannot locate) WARNs `no database file yet; waiting for auto-update` and starts keep-current for BIN and MMDB. Missing `defaultFile` with no URL fails New.
+- Resolve order: newest `YYYYMMDD_<catalogKey>` in the auto-update dir, else catalog `path` if that path is an existing file (operator full path). A set `path` that is not a file WARNs `seed was specified but not found`. Else Search locates the plugin directory and opens `{pluginDir}/seeds/<defaultFile>` then `{pluginDir}/<defaultFile>`. Exact `TRAEFIK_PLUGIN_GEOBLOCK_PATH` directory skips glob. A set env glob is exclusive (zero directory matches do not fall through). Unset env tries `plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock` then `plugins-storage/sources/*/src/github.com/david-garcia-garcia/traefik-geoblock`, relative to Traefik's working directory like Traefik itself (`/` in the official image). `fileutils.PluginDir` picks one directory for every bundled file (newest mtime among matches, then lexicographic) and caches a hit per env value. Empty `defaultFile` skips bundled search. No directory walk. Do not calculate a second plugin directory. An ASN LITE row (`databaseType: bin`, `fieldsPreconfigured: ip2location_asn`) ships no `defaultFile`; BIN open allows a missing file when both `path` and `defaultFile` are empty, or when the row has a URL. MMDB open allows a missing file the same way. There is no `*_databaseFilePath`.
 - If that dated Latest file cannot be opened, initialize WARNs and opens catalog `path` then `defaultFile`. Plugin creation MUST NOT fail when a seed is readable. Keep-current may retry Latest; a failed hot-swap leaves the seed published. Do not delete the dated file.
 - Need the bundled `defaultFile` without dated Latest winning: `dbsource.BundledFile` (same Search as Resolve’s last step). BIN seed-first initialize calls that.
 - Wrapper and source logs include `key` (the `databaseSources` map key).
@@ -41,7 +49,8 @@ Each enabled catalog row is one wrapper plus one source. Merge happens after Loo
 
 - Failed GET/unpack errors use `DownloadHint` only. Do not log the URL (tokens may be in the query).
 - `Stop` waits out an in-flight GET (`HTTPGetTimeout` is 30m). `HTTPGet` has no `context`.
-- `TRAEFIK_PLUGIN_GEOBLOCK_PATH` must be the plugin root. Unset → say it must be set. Set but exact files missing → those paths plus “probably not the plugin root”.
+- `TRAEFIK_PLUGIN_GEOBLOCK_PATH` may be an exact plugin directory or a glob. Unset tries the default patterns. Env glob with zero directory matches does not fall through. `Search` and `BundledFile` do not log: the error names the chosen directory and exact paths, or the env value / default patterns and working directory. The wrapper logs it once: WARN `no database file yet; waiting for auto-update` with `reason` on a row that can wait, the returned error otherwise. BundledFile miss while a dated file already won is DEBUG. Do not document a second plugin-directory calculation.
+- Yaegi v0.16.1 (Traefik) mis-runs a tuple assignment such as `a, b = x, t.ModTime()`: write two statements. `pkg/fileutils` tests run under `yaegi test` (GOPATH layout); they set the env with `os.Setenv`, because the interpreter does not see `t.Setenv`.
 - Disable `default_ip2location` when another country row should win or be the only source.
 
 ## Pattern snippet
@@ -55,5 +64,6 @@ u, err := dbsource.Start(cfg, logger, onUpdate)
 ## Key files
 
 - `pkg/dbsource` — Config, Resolve, Update, unpack, Updater
+- `pkg/fileutils/fileutils.go` — `Search`, `PluginPathEnv`
 - `pkg/geoblock/config.go` — `databaseSources`, `insertReservedCatalog`, `catalogSource`
 - `pkg/dbutils` — HTTP GET, `DatedKeyGlob`, `DownloadHint`

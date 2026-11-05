@@ -3,13 +3,22 @@ package fileutils
 import (
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 )
 
 // FileUtils provides utility functions for file operations
-type FileUtils struct{}
+type FileUtils struct {
+	// mu guards the PluginDir cache.
+	mu sync.Mutex
+	// pluginDirKey is the PluginPathEnv value (and default patterns) pluginDir was found for.
+	pluginDirKey string
+	// pluginDir is the last directory PluginDir found.
+	pluginDir string
+}
 
 // NewFileUtils creates a new FileUtils instance
 func NewFileUtils() *FileUtils {
@@ -25,7 +34,7 @@ func (fu *FileUtils) ExistsPath(filename string) bool {
 // ExistsAndIsFile checks if a file exists and is not a directory
 func (fu *FileUtils) ExistsAndIsFile(filename string) bool {
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return !info.IsDir()
@@ -34,7 +43,7 @@ func (fu *FileUtils) ExistsAndIsFile(filename string) bool {
 // ExistsAndIsDir checks if a file exists and is a directory
 func (fu *FileUtils) ExistsAndIsDir(filename string) bool {
 	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
 	return info.IsDir()
@@ -82,16 +91,31 @@ func (fu *FileUtils) Copy(src string, dst string, overwrite bool) error {
 	return nil
 }
 
-// PluginPathEnv is the plugin-root directory (local clone or registry unpack).
+// PluginPathEnv is an exact plugin directory or a glob (local clone or registry unpack).
 const PluginPathEnv = "TRAEFIK_PLUGIN_GEOBLOCK_PATH"
 
-// Search returns an existing file path. It does not walk a directory tree.
-// If basePathOrFile is an existing file, that path is returned.
-// Otherwise it joins PluginPathEnv with seeds/<defaultFile>, then <defaultFile>.
-func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *slog.Logger) (string, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
+const (
+	// pluginModuleDir is this module under a Traefik plugin GOPATH.
+	pluginModuleDir = "src/github.com/david-garcia-garcia/traefik-geoblock"
+	// bundledSeedsDir is the committed seed folder under the plugin directory.
+	bundledSeedsDir = "seeds"
+)
+
+// defaultPluginDirPatterns is where Traefik puts this plugin when PluginPathEnv is
+// unset. Traefik resolves ./plugins-local and ./plugins-storage against its working
+// directory ("/" in the official image), so these are relative too: the local plugin
+// first, then the catalog unpack (plugins-storage/sources/gop-<random>/src/<module>).
+// It is a var so tests do not depend on the host filesystem.
+var defaultPluginDirPatterns = []string{
+	filepath.FromSlash("plugins-local/" + pluginModuleDir),
+	filepath.FromSlash("plugins-storage/sources/*/" + pluginModuleDir),
+}
+
+// Search returns an existing file path. It does not walk a directory tree and does
+// not log: the error names what was tried, and the caller decides its level.
+// If basePathOrFile is an existing file, that path is returned. Otherwise it joins
+// PluginDir with seeds/<defaultFile>, then <defaultFile>.
+func (fu *FileUtils) Search(basePathOrFile string, defaultFile string) (string, error) {
 	// Configured path already names a file.
 	if basePathOrFile != "" && fu.ExistsAndIsFile(basePathOrFile) {
 		return basePathOrFile, nil
@@ -100,31 +124,94 @@ func (fu *FileUtils) Search(basePathOrFile string, defaultFile string, logger *s
 	if defaultFile == "" {
 		return "", fmt.Errorf("fileutils: defaultFile must be provided when performing a search")
 	}
-
-	envPath := os.Getenv(PluginPathEnv)
-	// Env unset: operator must point at the plugin root.
-	if envPath == "" {
-		logger.Error(PluginPathEnv + " must be set to the plugin root")
-		return "", fmt.Errorf("%s must be set to the plugin root", PluginPathEnv)
+	pluginDir, err := fu.PluginDir()
+	if err != nil {
+		return "", err
 	}
-	// Env set but not a directory: wrong plugin-root value.
-	if !fu.ExistsAndIsDir(envPath) {
-		logger.Error(PluginPathEnv+" is not a directory; it is probably not the plugin root", "path", envPath)
-		return "", fmt.Errorf("%s is not a directory: %s", PluginPathEnv, envPath)
-	}
-
-	// Exact joins only: seeds/<name>, then <name> at the plugin root.
-	seedsPath := filepath.Join(envPath, "seeds", defaultFile)
-	rootPath := filepath.Join(envPath, defaultFile)
+	seedsPath := filepath.Join(pluginDir, bundledSeedsDir, defaultFile)
 	if fu.ExistsAndIsFile(seedsPath) {
 		return seedsPath, nil
 	}
+	rootPath := filepath.Join(pluginDir, defaultFile)
 	if fu.ExistsAndIsFile(rootPath) {
 		return rootPath, nil
 	}
-	logger.Error("bundled file not found; "+PluginPathEnv+" is probably not the plugin root",
-		"tried", seedsPath, "also", rootPath)
-	return "", fmt.Errorf("file not found: %s (tried %s and %s)", defaultFile, seedsPath, rootPath)
+	source := "found from Traefik's default plugin paths"
+	if env := os.Getenv(PluginPathEnv); env != "" {
+		source = fmt.Sprintf("from %s=%q; it is probably not the plugin root", PluginPathEnv, env)
+	}
+	return "", fmt.Errorf("bundled file %s not found in plugin directory %s (%s; tried %s and %s)",
+		defaultFile, pluginDir, source, seedsPath, rootPath)
+}
+
+// PluginDir is the one plugin directory every bundled file is read from, so a seed
+// and geoblockban.html never come from two unpacks. An exact PluginPathEnv directory
+// wins. A set PluginPathEnv is otherwise a glob and never falls through to the
+// defaults. Several matches: the most recently modified wins (Traefik unpacks the
+// catalog plugin again at each start), then lexicographic order. A found directory
+// is cached per PluginPathEnv value and checked again on reuse; a miss is not cached.
+func (fu *FileUtils) PluginDir() (string, error) {
+	env := os.Getenv(PluginPathEnv)
+	key := env + "|" + strings.Join(defaultPluginDirPatterns, "|")
+	fu.mu.Lock()
+	defer fu.mu.Unlock()
+	if fu.pluginDirKey == key && fu.pluginDir != "" && fu.ExistsAndIsDir(fu.pluginDir) {
+		return fu.pluginDir, nil
+	}
+	dir, err := fu.findPluginDir(env)
+	if err != nil {
+		return "", err
+	}
+	fu.pluginDirKey = key
+	fu.pluginDir = dir
+	return dir, nil
+}
+
+// findPluginDir is PluginDir without the cache.
+func (fu *FileUtils) findPluginDir(env string) (string, error) {
+	if env != "" {
+		if fu.ExistsAndIsDir(env) {
+			return env, nil
+		}
+		if dir := fu.newestDir(env); dir != "" {
+			return dir, nil
+		}
+		return "", fmt.Errorf("%s=%q matched no plugin directory", PluginPathEnv, env)
+	}
+	for _, pattern := range defaultPluginDirPatterns {
+		if dir := fu.newestDir(pattern); dir != "" {
+			if abs, err := filepath.Abs(dir); err == nil {
+				return abs, nil
+			}
+			return dir, nil
+		}
+	}
+	cwd, _ := os.Getwd()
+	return "", fmt.Errorf("plugin directory not found: %s is unset and Traefik's default plugin paths matched nothing in %q (tried %s); set %s to the plugin root",
+		PluginPathEnv, cwd, strings.Join(defaultPluginDirPatterns, ", "), PluginPathEnv)
+}
+
+// newestDir is the most recently modified directory pattern matches, ties broken by
+// lexicographic order, or "" when nothing matches.
+func (fu *FileUtils) newestDir(pattern string) string {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return ""
+	}
+	var newest string
+	var newestMod time.Time
+	for _, match := range matches {
+		info, err := os.Stat(match)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		if newest == "" || info.ModTime().After(newestMod) {
+			// Two statements: Yaegi v0.16.1 (Traefik) drops this pair as one tuple assignment.
+			newest = match
+			newestMod = info.ModTime()
+		}
+	}
+	return newest
 }
 
 // Default is the shared FileUtils used by package-level helpers.
@@ -141,8 +228,8 @@ func Copy(src string, dst string, overwrite bool) error {
 }
 
 // Search finds a file using Default. On error it returns "".
-func Search(baseFile string, defaultFile string, logger *slog.Logger) string {
-	result, err := Default.Search(baseFile, defaultFile, logger)
+func Search(baseFile string, defaultFile string) string {
+	result, err := Default.Search(baseFile, defaultFile)
 	if err != nil {
 		return ""
 	}

@@ -1,0 +1,47 @@
+{
+  "issueKey": "2026-11-03-plugin-path-glob",
+  "jobName": "2026-11-03-plugin-path-glob",
+  "startedAt": "2026-11-03T18:57:36.436Z",
+  "phases": {
+    "prepare": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T19:06:44.035Z"
+    },
+    "explore": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T19:17:03.120Z"
+    },
+    "propose": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T19:25:12.849Z"
+    },
+    "implement": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T20:13:17.493Z"
+    },
+    "codereview": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T20:25:42.021Z"
+    },
+    "devdocsimpact": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T20:30:29.449Z"
+    },
+    "archive": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T20:35:27.505Z"
+    },
+    "pullrequest": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T20:40:22.702Z"
+    }
+  }
+}

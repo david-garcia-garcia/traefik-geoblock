@@ -215,9 +215,12 @@ RUN git clone https://github.com/david-garcia-garcia/traefik-geoblock \
     --branch v1.2.0 --single-branch
 ```
 
-Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` to that plugin root (the local clone, or the catalog unpack such as `/plugins-storage/sources/github.com/david-garcia-garcia/traefik-geoblock`). Traefik's process working directory is not the plugin tree. The plugin opens `{that dir}/seeds/<filename>` or `{that dir}/<filename>` — it does not walk the tree. `geoblockban.html` is at the plugin root, not under `seeds/`. If the env is unset, logs say it must be the plugin root. If it is set but is not a directory, or those exact files are missing, logs say the env is probably not the plugin root. Without this variable, empty seed paths fail unless a dated file is already on an auto-update volume.
+With the official Traefik image you normally do not need `TRAEFIK_PLUGIN_GEOBLOCK_PATH`. When it is unset, the plugin looks where Traefik puts it, relative to Traefik's working directory (`/` in the official image): `plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock` (local plugin), then `plugins-storage/sources/*/src/github.com/david-garcia-garcia/traefik-geoblock` (catalog plugin; Traefik unpacks it under `gop-<random>`).
+
+Set `TRAEFIK_PLUGIN_GEOBLOCK_PATH` when the plugin lives elsewhere. It takes the plugin root: an exact directory, or a glob. A set env (glob or exact) does not fall through to the defaults. If several directories match, the most recently modified one is used for every bundled file. The plugin opens `{that dir}/seeds/<filename>` or `{that dir}/<filename>` — it does not walk the tree. `geoblockban.html` is at the plugin root, not under `seeds/`. When the bundled file cannot be found, the error names the directory and the exact paths tried. A source with a `url` then logs one WARN and waits for the download; a source without one fails to start.
 
 ```bash
+# Only when the plugin is not under Traefik's default plugin paths
 # Docker Compose
 environment:
   - TRAEFIK_PLUGIN_GEOBLOCK_PATH=/plugins-local/src/github.com/david-garcia-garcia/traefik-geoblock
@@ -343,7 +346,7 @@ http:
           mode: enrichandblock
           defaultAllow: false
           allowPrivate: true             # default is false
-          banIfError: true
+          banIfError: true              # default true (fail-closed until a handle exists)
           disallowedStatusCode: 403
 
           allowedCountries:
@@ -510,7 +513,7 @@ excludedPathsRegex: "^[^/]*/(health|ready|live)$"
 | `ipHeaders` | Where to read client IPs (`remoteAddress` is the direct connection) |
 | `ipHeaderStrategy` | Which hop to evaluate when several IPs are present |
 | `ignoreVerbs` / path regex / `bypassHeaders` | Skip blocking; enrichment still runs |
-| `banIfError` / `disallowedStatusCode` / `banHtmlFilePath` | Lookup failure, missing country header, or no client IP |
+| `banIfError` / `disallowedStatusCode` / `banHtmlFilePath` | Lookup failure, missing country header, or no client IP. Default `banIfError: true`. `false` is fail-open on lookup only: CIDR, private, country lists, and `defaultAllow` still apply. |
 | `databaseSources` / `databaseAutoUpdateDir` | Local files and optional download. An unreadable dated file falls back to the seed and warns. |
 | `logLevel` / `logFormat` | Plugin logs on Traefik stdout (`logFormat` default `text`) |
 

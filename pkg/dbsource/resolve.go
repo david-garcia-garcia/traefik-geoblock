@@ -8,7 +8,7 @@ import (
 )
 
 // Resolve returns the file to open: dated update, then catalog Path (existing file),
-// then the bundled default at {TRAEFIK_PLUGIN_GEOBLOCK_PATH}/seeds/<name> or {env}/<name>.
+// then the bundled default Search locates under the plugin directory.
 func Resolve(cfg Config, logger *slog.Logger) (string, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -27,20 +27,14 @@ func Resolve(cfg Config, logger *slog.Logger) (string, error) {
 		}
 		logger.Warn("seed was specified but not found", "path", cfg.Path)
 	}
-	return BundledFile(cfg, logger)
+	return BundledFile(cfg)
 }
 
-// BundledFile is the plugin-root defaultFile ({env}/seeds/<name> or {env}/<name>), or empty.
-func BundledFile(cfg Config, logger *slog.Logger) (string, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
+// BundledFile is the plugin-directory defaultFile (seeds/<name> then <name>), or empty
+// when the row has no defaultFile. It does not log: the caller picks the level of a miss.
+func BundledFile(cfg Config) (string, error) {
 	if strings.TrimSpace(cfg.DefaultFileName) == "" {
 		return "", nil
 	}
-	found, err := fileutils.Default.Search("", cfg.DefaultFileName, logger)
-	if err != nil {
-		return "", err
-	}
-	return found, nil
+	return fileutils.Default.Search("", cfg.DefaultFileName)
 }

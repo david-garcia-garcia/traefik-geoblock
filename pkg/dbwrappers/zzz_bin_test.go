@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbprovider"
 	"github.com/david-garcia-garcia/traefik-geoblock/pkg/dbsource"
+	"github.com/david-garcia-garcia/traefik-geoblock/pkg/fileutils"
 )
 
 // testBINRecord looks up 8.8.8.8 with the LITE country map.
@@ -93,6 +96,98 @@ func TestOpenBIN_AllowMissing(t *testing.T) {
 	}
 	if _, err := w.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil {
 		t.Fatal("expected LookupRecord error when BIN is not open")
+	}
+}
+
+func TestOpenBIN_URLMissingDefaultFileStarts(t *testing.T) {
+	Reset()
+	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "missing", http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	w, err := OpenBIN(holdCtx(t), BINConfig{
+		AllowMissing:    true,
+		DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
+		Source: dbsource.Config{
+			URL:             srv.URL + "/db.BIN",
+			Key:             "lite",
+			DatabaseType:    dbsource.TypeBIN,
+			Archive:         dbsource.ArchiveNone,
+			DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
+		},
+	}, logger)
+	t.Cleanup(Reset)
+	if err != nil {
+		t.Fatalf("URL + missing defaultFile: %v", err)
+	}
+	if !strings.Contains(buf.String(), "no database file yet") || !strings.Contains(buf.String(), "not found in plugin directory") {
+		t.Fatalf("waiting should WARN with the reason: %s", buf.String())
+	}
+	if _, err := w.LookupRecord("8.8.8.8", mustFields(t, PresetIP2LocationLite)); err == nil ||
+		!strings.Contains(err.Error(), "BIN is not open") {
+		t.Fatalf("nil handle: %v", err)
+	}
+}
+
+func TestOpenBIN_MissingDefaultFileNoURLFails(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+	_, err := OpenBIN(holdCtx(t), BINConfig{
+		DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
+		Source: dbsource.Config{
+			Key:             "lite",
+			DatabaseType:    dbsource.TypeBIN,
+			DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
+		},
+	}, testLogger())
+	if err == nil {
+		t.Fatal("missing defaultFile with no URL must fail")
+	}
+}
+
+func TestOpenBIN_DatedWonBundledMissIsDebug(t *testing.T) {
+	Reset()
+	src, err := os.ReadFile(testBIN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	dated := filepath.Join(dir, "20260831_probe.BIN")
+	if err := os.WriteFile(dated, src, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(fileutils.PluginPathEnv, t.TempDir())
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	w, err := OpenBIN(holdCtx(t), BINConfig{
+		Dir:             dir,
+		DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
+		Source: dbsource.Config{
+			Key:             "probe",
+			DatabaseType:    dbsource.TypeBIN,
+			DefaultFileName: "IP2LOCATION-LITE-DB1.IPV6.BIN",
+		},
+	}, logger)
+	t.Cleanup(Reset)
+	if err != nil {
+		t.Fatalf("dated file should open: %v", err)
+	}
+	if w.SourcePath() != dated && !strings.Contains(w.SourcePath(), "20260831_probe.BIN") {
+		t.Fatalf("source %q want dated", w.SourcePath())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "bundled file not found") {
+		t.Fatalf("bundled miss should DEBUG: %s", out)
+	}
+	if strings.Contains(strings.ToLower(out), `level=warn`) && strings.Contains(out, "bundled file not found") {
+		t.Fatalf("dated-won bundled miss must not WARN: %s", out)
+	}
+	if strings.Contains(strings.ToLower(out), `level=error`) && strings.Contains(out, "bundled file not found") {
+		t.Fatalf("bundled miss must not Error: %s", out)
 	}
 }
 

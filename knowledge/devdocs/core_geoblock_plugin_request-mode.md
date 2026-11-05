@@ -14,6 +14,10 @@ _Avoid_: using the lookup `Record` country for allow/block
 A Config map of request header names to expected values. A present header whose first value equals the configured value skips the block stage.
 _Avoid_: treating an omitted header as a match; using `Get == ""` as absent
 
+**BanIfError**:
+Config bool for lookup failure and empty country. Default true (fail-closed until a handle exists). False is fail-open on lookup only.
+_Avoid_: a policy bypass; unfiltered until download
+
 ## Overview
 
 One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeaderEnrich`. Block applies CIDR and private rules per IP, then country allow/block from `countryHeader`. `block` and `disabled` do not open catalog sources. A `blockSkipReason` match (ignore verb, path regex, or BypassHeaders) skips the block stage; enrich still runs.
@@ -30,6 +34,7 @@ One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeade
 - After CIDR, a `countryHeader` value of `PRIVATE` follows `allowPrivate`. Private or loopback IPs still apply `allowPrivate` first.
 - When both CIDR lists match, the longer prefix wins. Length 0 (`0.0.0.0/0`) is a match, so a `/32` block beats a `/0` allow. Equal lengths keep allow-before-block.
 - Empty hop list from `clientHops` (empty `GetRemoteIPs`, or an empty `RightmostUntrusted` chain; an all-trusted chain evaluates its leftmost hop) is a lookup-class error: warn, then `banIfError`. Do not invent a hop.
+- Default `banIfError` is true (fail-closed until a handle exists). `false` skips `lookupFailed` / empty-country bans and continues into `decide()` — CIDR, private, country lists, and `defaultAllow` still apply. That is fail-open on lookup only.
 - After `foldCountryHeader`, if `countryHeader` maps to a non-country enrich key, warn and keep that mapping.
 - `Lookup` / `CheckAllowed` on `mode=block` return that the catalog is not bound. Do not dereference a nil catalog.
 - A public IP whose merged lookup returns an empty country is written as `XX`, never `PRIVATE`, so it reaches the country maps and `defaultAllow`. `writePublicLookupHeaders` writes `XX` without marking the country written, so a later hop that does resolve still wins. `Combined` fills only empty fields. A `bin` `country_short` `-` is empty, so an enabled `bin` row does not pre-empt a later source or `XX`.
