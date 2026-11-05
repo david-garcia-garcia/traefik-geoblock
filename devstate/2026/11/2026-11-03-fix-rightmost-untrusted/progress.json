@@ -1,0 +1,47 @@
+{
+  "issueKey": "2026-11-03-fix-rightmost-untrusted",
+  "jobName": "2026-11-03-fix-rightmost-untrusted",
+  "startedAt": "2026-11-03T19:13:16.996Z",
+  "phases": {
+    "prepare": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T19:21:50.823Z"
+    },
+    "explore": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T19:31:26.511Z"
+    },
+    "propose": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T19:39:08.894Z"
+    },
+    "implement": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T19:50:47.608Z"
+    },
+    "codereview": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T20:06:14.797Z"
+    },
+    "devdocsimpact": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T20:09:53.715Z"
+    },
+    "archive": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T20:16:16.347Z"
+    },
+    "pullrequest": {
+      "work": true,
+      "card": true,
+      "at": "2026-11-03T20:23:22.277Z"
+    }
+  }
+}

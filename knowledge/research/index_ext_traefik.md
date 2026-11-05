@@ -14,3 +14,8 @@ description: How Traefik instantiates, reloads, and tears down Yaegi and local p
 priority: normal
 local: ext_traefik_plugins_yaegi-generics/
 description: Whether Traefik Yaegi v0.16.1 can interpret a generic Table[T] used as a plugin singleton.
+
+## ForwardedHeaders trustedIPs
+priority: normal
+local: ext_traefik_forwardedheaders_trustedips/
+description: How Traefik sanitizes X-Forwarded-* at the entrypoint and what a Yaegi HTTP plugin then sees as the client address.

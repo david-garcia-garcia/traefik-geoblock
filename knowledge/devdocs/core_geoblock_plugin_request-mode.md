@@ -33,7 +33,7 @@ One `ServeHTTP` runs two stages. Lookup writes `countryHeader` and `requestHeade
 - Do not call `writeDefaultEnrichHeaders` in `block` (it would overwrite the inbound country).
 - After CIDR, a `countryHeader` value of `PRIVATE` follows `allowPrivate`. Private or loopback IPs still apply `allowPrivate` first.
 - When both CIDR lists match, the longer prefix wins. Length 0 (`0.0.0.0/0`) is a match, so a `/32` block beats a `/0` allow. Equal lengths keep allow-before-block.
-- Empty `GetRemoteIPs` is a lookup-class error: warn, then `banIfError`. Do not invent a hop.
+- Empty hop list from `clientHops` (empty `GetRemoteIPs`, or an empty `RightmostUntrusted` chain; an all-trusted chain evaluates its leftmost hop) is a lookup-class error: warn, then `banIfError`. Do not invent a hop.
 - Default `banIfError` is true (fail-closed until a handle exists). `false` skips `lookupFailed` / empty-country bans and continues into `decide()` — CIDR, private, country lists, and `defaultAllow` still apply. That is fail-open on lookup only.
 - After `foldCountryHeader`, if `countryHeader` maps to a non-country enrich key, warn and keep that mapping.
 - `Lookup` / `CheckAllowed` on `mode=block` return that the catalog is not bound. Do not dereference a nil catalog.

@@ -43,6 +43,10 @@ const (
 	IPHeaderStrategyCheckAll              = "CheckAll"
 	IPHeaderStrategyCheckFirst            = "CheckFirst"
 	IPHeaderStrategyCheckFirstNonePrivate = "CheckFirstNonePrivate"
+	IPHeaderStrategyRightmostUntrusted    = "RightmostUntrusted"
+
+	// remoteAddressHeader is the synthetic ipHeaders name for req.RemoteAddr.
+	remoteAddressHeader = "remoteAddress"
 )
 
 // Mode is the Traefik Config field that selects lookup, block, both, or pass-through.
@@ -100,7 +104,8 @@ type Config struct {
 
 	// IP extraction settings
 	IPHeaders        []string // List of headers to check for client IP addresses (cannot be empty)
-	IPHeaderStrategy string   // Strategy for processing multiple IP addresses: "CheckAll", "CheckFirst", "CheckFirstNonePrivate"
+	IPHeaderStrategy string   // Strategy for processing multiple IP addresses: "CheckAll", "CheckFirst", "CheckFirstNonePrivate", "RightmostUntrusted"
+	TrustedProxies   []string `json:"trustedProxies,omitempty" mapstructure:"trustedProxies"` // CIDRs skipped by RightmostUntrusted; rejected with other strategies
 
 	// HTTP verb filtering
 	IgnoreVerbs []string // List of HTTP verbs to ignore for blocking (still enriched with GeoIP)
@@ -198,12 +203,8 @@ func Prepare(cfg *Config, name string) error {
 			return fmt.Errorf("%s: BypassHeaders %q value cannot be empty", name, header)
 		}
 	}
-	if cfg.IPHeaderStrategy != IPHeaderStrategyCheckAll &&
-		cfg.IPHeaderStrategy != IPHeaderStrategyCheckFirst &&
-		cfg.IPHeaderStrategy != IPHeaderStrategyCheckFirstNonePrivate {
-		return fmt.Errorf("%s: invalid IPHeaderStrategy '%s', must be one of: %s, %s, %s",
-			name, cfg.IPHeaderStrategy,
-			IPHeaderStrategyCheckAll, IPHeaderStrategyCheckFirst, IPHeaderStrategyCheckFirstNonePrivate)
+	if err := prepareIPHeaderStrategy(cfg, name); err != nil {
+		return err
 	}
 	if strings.TrimSpace(cfg.CountryHeader) == "" {
 		cfg.CountryHeader = DefaultCountryHeader
@@ -225,6 +226,55 @@ func Prepare(cfg *Config, name string) error {
 		}
 	}
 	return nil
+}
+
+// prepareIPHeaderStrategy accepts the four strategies and the RightmostUntrusted gates.
+func prepareIPHeaderStrategy(cfg *Config, name string) error {
+	switch cfg.IPHeaderStrategy {
+	case IPHeaderStrategyCheckAll, IPHeaderStrategyCheckFirst, IPHeaderStrategyCheckFirstNonePrivate:
+		if trustedProxiesConfigured(cfg.TrustedProxies) {
+			return fmt.Errorf("%s: trustedProxies is only valid with ipHeaderStrategy %s",
+				name, IPHeaderStrategyRightmostUntrusted)
+		}
+		return nil
+	case IPHeaderStrategyRightmostUntrusted:
+		return validateRemoteAddressLast(name, cfg.IPHeaders)
+	default:
+		return fmt.Errorf("%s: invalid IPHeaderStrategy '%s', must be one of: %s, %s, %s, %s",
+			name, cfg.IPHeaderStrategy,
+			IPHeaderStrategyCheckAll, IPHeaderStrategyCheckFirst, IPHeaderStrategyCheckFirstNonePrivate,
+			IPHeaderStrategyRightmostUntrusted)
+	}
+}
+
+// trustedProxiesConfigured is true when any trustedProxies entry is non-empty after trim.
+func trustedProxiesConfigured(entries []string) bool {
+	for _, entry := range entries {
+		if strings.TrimSpace(entry) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// validateRemoteAddressLast fails when remoteAddress is listed and is not last.
+func validateRemoteAddressLast(name string, headers []string) error {
+	idx := remoteAddressIndex(headers)
+	if idx < 0 || idx == len(headers)-1 {
+		return nil
+	}
+	return fmt.Errorf("%s: RightmostUntrusted needs remoteAddress as the last ipHeaders entry; got [%s]",
+		name, strings.Join(headers, " "))
+}
+
+// remoteAddressIndex is the first remoteAddress slot, or -1.
+func remoteAddressIndex(headers []string) int {
+	for i, headerName := range headers {
+		if headerName == remoteAddressHeader {
+			return i
+		}
+	}
+	return -1
 }
 
 // sourceEnabled is true when enabled is omitted or true.
