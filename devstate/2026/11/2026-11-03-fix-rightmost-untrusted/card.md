@@ -35,7 +35,7 @@ trustedProxies:
 ## Changes after code review (2026-11-05)
 | # | Problem found | What changed |
 | --- | --- | --- |
-| 1 | A `trustedProxies` or `blockedIPBlocks` entry like `::ffff:10.0.0.0/104` crashed plugin creation (bug in `iplookup` v1.0.3). | `traefik-middleware-utilities` bumped to the build that fixes it. |
+| 1 | A `trustedProxies` or `blockedIPBlocks` entry like `::ffff:10.0.0.0/104` crashed plugin creation (bug in `iplookup` v1.0.3). | `traefik-middleware-utilities` bumped from v1.0.3 to v1.0.8, which fixes it. |
 | 2 | A bare `::ffff:10.10.60.5` in `trustedProxies` trusted the whole IPv6 range `::/32` and not the load balancer. | `trustedProxies` now uses the new `iplookup.AddEntry`, which stores a bare address as its exact host. |
 | 3 | With `banIfError: false`, an evaluated hop that is not an IP passed even with `defaultAllow: false`. | `defaultAllow` now decides that hop. |
 | 4 | Requests coming straight from a trusted proxy (health checks) had no hop left: a WARN per request and a 403 with the default `banIfError: true`. | The leftmost hop is checked instead; health checks from a private LB pass with `allowPrivate`. No warning. |
@@ -50,8 +50,8 @@ trustedProxies:
 - **End users:** with the new strategy, geo allow/block follows the real client, not a forged IP.
 
 ## Before merging
-- [ ] Merge the `traefik-middleware-utilities` PR (branch `2026-11-05-iplookup-addentry`, adds `AddEntry`) and tag it `v1.0.8`.
-- [ ] In this branch, replace the temporary pseudo-version `v1.0.8-0.20261105124818-0dd96da2e3db` with `v1.0.8`, then run `go mod tidy`, `go mod vendor`, and `scripts/apply-oschwald-yaegi-patch.ps1`.
+- [x] `traefik-middleware-utilities` PR #102 (adds `AddEntry`) merged and tagged `v1.0.8`.
+- [x] This branch uses `v1.0.8` (vendor refreshed, yaegi overlay for `maxminddb` re-applied).
 - [ ] CI green on the new head.
 
 ## Verification
